@@ -1,10 +1,10 @@
 #! /bin/sh
 
-TMP_DIR=/tmp/hitscore
-rm -fr $TMP_DIR
-mkdir -p $TMP_DIR
+RUN_DIR=/tmp/hitscore
+rm -fr $RUN_DIR
+mkdir -p $RUN_DIR
 
-cat <<EOF > $TMP_DIR/mime.types
+cat <<EOF > $RUN_DIR/mime.types
 application/atom+xml		atom
 application/mathml+xml		mathml
 application/msword		doc
@@ -81,31 +81,31 @@ video/x-msvideo			avi
 EOF
 
 
-cat <<EOF > $TMP_DIR/hitscoreweb.conf
+cat <<EOF > $RUN_DIR/hitscoreweb.conf
 <ocsigen>
   <server>
     <port>8080</port>
     <user></user>
     <group></group>
-    <commandpipe>$TMP_DIR/ocsigen_command</commandpipe>
-    <mimefile>$TMP_DIR/mime.types</mimefile>
+    <commandpipe>$RUN_DIR/ocsigen_command</commandpipe>
+    <mimefile>$RUN_DIR/mime.types</mimefile>
 
     <charset>utf-8</charset>
     <debugmode/>
     <extension findlib-package="ocsigenserver.ext.staticmod"/>
 
     <extension findlib-package="ocsigenserver.ext.ocsipersist-sqlite">
-      <database file="$TMP_DIR/ocsidb"/>
+      <database file="$RUN_DIR/ocsidb"/>
     </extension>
     <extension findlib-package="eliom.server"/>
  
     <host hostfilter="*">
-      <static dir="$TMP_DIR/static/" />
+      <static dir="$RUN_DIR/static/" />
       <eliom findlib-package="hitscoreweb"/>
     </host>
   </server>
 </ocsigen>
 EOF
 
-ocsigenserver -c $TMP_DIR/hitscoreweb.conf
+ocsigenserver -c $RUN_DIR/hitscoreweb.conf
 
