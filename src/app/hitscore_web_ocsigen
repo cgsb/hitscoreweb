@@ -1,0 +1,34 @@
+#! /bin/sh
+
+TMP_DIR=/tmp/hitscore
+rm -fr $TMP_DIR
+mkdir -p $TMP_DIR
+
+cat <<EOF > $TMP_DIR/hitscoreweb.conf
+<ocsigen>
+  <server>
+    <port>8080</port>
+    <user></user>
+    <group></group>
+    <commandpipe>$TMP_DIR/ocsigen_command</commandpipe>
+    <mimefile>$TMP_DIR/mime.types</mimefile>
+
+    <charset>utf-8</charset>
+    <debugmode/>
+    <extension findlib-package="ocsigenserver.ext.staticmod"/>
+
+    <extension findlib-package="ocsigenserver.ext.ocsipersist-sqlite">
+      <database file="$TMP_DIR/ocsidb"/>
+    </extension>
+    <extension findlib-package="eliom.server"/>
+ 
+    <host hostfilter="*">
+      <static dir="$TMP_DIR/static/" />
+      <eliom findlib-package="hitscoreweb"/>
+    </host>
+  </server>
+</ocsigen>
+EOF
+cat $TMP_DIR/hitscoreweb.conf
+ocsigenserver -c $TMP_DIR/hitscoreweb.conf
+

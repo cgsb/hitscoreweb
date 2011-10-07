@@ -1,0 +1,19 @@
+OASISFormat: 0.2
+Name:        Hitscore_web
+Version:     0.0
+Synopsis:    Website for the Core Facility
+Authors:     Sebastien Mondet
+License:     MIT
+Plugins:     META (0.2)
+BuildTools:  ocamlbuild
+
+Library Hitscore_web
+  Path: ./src/lib/
+# should be parentified when histcore is available (and needed)
+# FindlibParent: hitscore
+  FindlibName: hitscoreweb
+  BuildDepends: threads, batteries, eliom.server
+  Install: true
+  Modules: Hitscore_web,
+           Hitscore_web_std
+
