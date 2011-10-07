@@ -1,0 +1,8 @@
+# OASIS_START
+# DO NOT EDIT (digest: 357268fb8a9f32000f7fb4360c4d60aa)
+# Library Hitscore_web
+"src/lib": include
+<src/lib/*.ml{,i}>: pkg_threads
+<src/lib/*.ml{,i}>: pkg_eliom.server
+<src/lib/*.ml{,i}>: pkg_batteries
+# OASIS_STOP
