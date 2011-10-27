@@ -1,4 +1,5 @@
-include BatPrintf
+include Core.Std
 
-include Eliom_pervasives
+let (|>) x f = f x
 
+module Html5 = Eliom_pervasives.HTML5.M

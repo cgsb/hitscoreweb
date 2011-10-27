@@ -2,7 +2,6 @@ open Hitscore_web_std
 
 
 
-
 let default () =
   let default =
     Eliom_services.service
@@ -11,10 +10,12 @@ let default () =
     (fun () () ->
       eprintf "Registering default\n%!";
       Lwt.return
-        (let open HTML5.M in
+        (let open Html5 in
          html
            (head (title (pcdata "Hitscore Web")) [])
-           (body [p [pcdata "Histcore default web page."]])))
+           (body [p [pcdata (sprintf "Histcore default web page: %s"
+                               Time.Ofday.(now () |> to_string))]])))
+
 
 let () =
 

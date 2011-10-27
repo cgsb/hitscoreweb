@@ -1,8 +1,17 @@
 # OASIS_START
-# DO NOT EDIT (digest: 357268fb8a9f32000f7fb4360c4d60aa)
+# DO NOT EDIT (digest: 1949d7cd747bfd4f08ccbbfea3fd11e2)
 # Library Hitscore_web
 "src/lib": include
 <src/lib/*.ml{,i}>: pkg_threads
 <src/lib/*.ml{,i}>: pkg_eliom.server
-<src/lib/*.ml{,i}>: pkg_batteries
+<src/lib/*.ml{,i}>: pkg_core
+# Executable hitscoreweb
+<src/app/hitscoreweb.{native,byte}>: use_Hitscore_web
+<src/app/hitscoreweb.{native,byte}>: pkg_threads
+<src/app/hitscoreweb.{native,byte}>: pkg_eliom.server
+<src/app/hitscoreweb.{native,byte}>: pkg_core
+<src/app/*.ml{,i}>: use_Hitscore_web
+<src/app/*.ml{,i}>: pkg_threads
+<src/app/*.ml{,i}>: pkg_eliom.server
+<src/app/*.ml{,i}>: pkg_core
 # OASIS_STOP

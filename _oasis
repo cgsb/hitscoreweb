@@ -12,8 +12,13 @@ Library Hitscore_web
 # should be parentified when histcore is available (and needed)
 # FindlibParent: hitscore
   FindlibName: hitscoreweb
-  BuildDepends: threads, batteries, eliom.server
+  BuildDepends: threads, core, eliom.server
   Install: true
   Modules: Hitscore_web,
            Hitscore_web_std
 
+Executable hitscoreweb
+  Path:   ./src/app/
+  MainIs: hitscoreweb.ml
+  BuildDepends: hitscoreweb
+  CompiledObject: best

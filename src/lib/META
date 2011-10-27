@@ -1,8 +1,8 @@
 # OASIS_START
-# DO NOT EDIT (digest: 2ad4c996f8047ccbe8c5b3aa70b72071)
+# DO NOT EDIT (digest: 9166384a56516660bd0548b536cea3d5)
 version = "0.0"
 description = "Website for the Core Facility"
-requires = "threads batteries eliom.server"
+requires = "threads core eliom.server"
 archive(byte) = "Hitscore_web.cma"
 archive(native) = "Hitscore_web.cmxa"
 exists_if = "Hitscore_web.cma"
