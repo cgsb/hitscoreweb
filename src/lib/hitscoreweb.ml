@@ -1,4 +1,4 @@
-open Hitscore_web_std
+open Hitscoreweb_std
 
 
 

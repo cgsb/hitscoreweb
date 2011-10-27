@@ -1,4 +1,4 @@
-open Hitscore_web_std
+open Hitscoreweb_std
 
 let mime_types = "
 application/atom+xml		atom
@@ -99,7 +99,7 @@ let config ?(port=80) ~runtime_root kind =
   let hitscore_module =
     match kind with
     | `Ocsigen ->
-      sprintf " <eliom module=\"_build/src/lib/Hitscore_web.cma\"/> "
+      sprintf " <eliom module=\"_build/src/lib/hitscoreweb.cma\"/> "
     |`Static ->
       sprintf " <eliom name=\"hitscoreweb\"/> "
   in

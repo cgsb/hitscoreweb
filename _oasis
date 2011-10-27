@@ -7,15 +7,13 @@ License:     MIT
 Plugins:     META (0.2)
 BuildTools:  ocamlbuild
 
-Library Hitscore_web
+Library hitscoreweb
   Path: ./src/lib/
-# should be parentified when histcore is available (and needed)
-# FindlibParent: hitscore
   FindlibName: hitscoreweb
   BuildDepends: threads, core, eliom.server
   Install: true
-  Modules: Hitscore_web,
-           Hitscore_web_std
+  Modules: Hitscoreweb,
+           Hitscoreweb_std
 
 Executable hitscoreweb
   Path:   ./src/app/
