@@ -76,7 +76,8 @@ video/vnd.mpegurl		mxu m4u
 video/x-msvideo			avi
 "
 
-let config ?(port=80) ~runtime_root kind =
+let config ?(port=80) ~runtime_root ?conf_root kind =
+  let conf_dir = Option.value ~default:runtime_root conf_root in
   let extensions =
     match kind with
     | `Ocsigen ->
@@ -125,7 +126,7 @@ let config ?(port=80) ~runtime_root kind =
 "
 port
 runtime_root
-runtime_root
+conf_dir
 extensions
 runtime_root
 hitscore_module
@@ -134,6 +135,8 @@ let syscmd s =
   match Unix.system s with
   | `Exited 0 -> Ok ()
   | e -> Error (Failure (Unix.Process_status.to_string_hum e))
+let syscmd_exn s = syscmd s |> Result.raise_error
+
 
 let testing kind =
   let runtime_root = "/tmp/hitscoreweb" in
@@ -150,6 +153,84 @@ let testing kind =
   );
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
+let rpm_build () =
+  let tmp_dir = "/tmp/hitscorerpmbuild" in
+  let spec_file = sprintf "%s/SPECS/hitscoreweb.spec" tmp_dir in
+  let binary_tmp = sprintf "%s/hitscoreserver" (Unix.getcwd ()) in
+  let binary_dir = "/usr/libexec/hitscoreweb" in
+  let mimes_tmp = (sprintf "%s/mime.types" tmp_dir) in
+  let conf_tmp = (sprintf "%s/hitscoreweb.conf" tmp_dir) in
+  let conf_root = "/etc/hitscoreweb" in
+  let conf_target = (sprintf "%s/hitscoreweb.conf" conf_root) in
+  let mimes_target = (sprintf "%s/mime.types" conf_root) in
+  let runtime_root = "/var/run/hitscoreweb" in
+  Out_channel.(
+    with_file mimes_tmp
+      ~f:(fun o -> output_string o (mime_types));
+    with_file conf_tmp
+      ~f:(fun o -> output_string o (config ~port:80 ~runtime_root ~conf_root `Static))
+  );
+  List.iter [ "BUILD"; "SPECS"; "RPMS"; "SOURCES"; "SRPMS" ]
+    ~f:(fun dir ->
+      sprintf "mkdir -p %s/%s" tmp_dir dir |> syscmd_exn);
+  Out_channel.with_file spec_file
+    ~f:(fun o ->
+      fprintf o "%%define _topdir %s\n" tmp_dir;
+      fprintf o "%%define name hitscoreweb\n";
+      fprintf o "%%define release 1\n";
+      fprintf o "%%define version 1.12\n";
+      output_string o "
+Name:   %{name}
+Version: %{version}
+Release:        1%{?dist}
+Summary: Hitscoreweb web server and web app
+
+Group:  Web Server
+License: MIT
+URL:    http://seb.mondet.org
+#Source0:       
+BuildRoot:      %(mktemp -ud %{_topdir}/%{name}-%{version}-%{release}-XXXXXX)\
+
+Requires: libev openssl pcre sqlite zlib
+
+%description
+Hitscoreweb bundles an Ocsigen webserver with an embedded webapp.
+
+%prep
+# %setup -q
+echo 'Preparing'
+
+%build
+echo 'Building'
+
+%install
+rm -rf $RPM_BUILD_ROOT
+";
+      fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" binary_dir;
+      fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" conf_root;
+      fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" binary_tmp binary_dir;
+      fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" conf_tmp conf_root;
+      fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" mimes_tmp conf_root;
+      output_string o "
+%clean
+rm -rf $RPM_BUILD_ROOT
+
+%files
+";
+      output_string o "%defattr(0555,root,root,-)\n";
+      fprintf o "%s/hitscoreserver\n" binary_dir;
+      output_string o "%defattr(0444,root,root,-)\n";
+      fprintf o "%s\n" conf_target;
+      fprintf o "%s\n" mimes_target;
+      output_string o "
+
+%doc
+
+%changelog
+
+";
+    );
+  syscmd_exn (sprintf "rpmbuild -v -bb --clean %s" spec_file)
 
 let () =
   match Array.to_list Sys.argv with
@@ -159,5 +240,7 @@ let () =
     testing `Ocsigen
   | exec :: "static" :: _ ->
     testing `Static
+  | exec :: "rpm" :: _ ->
+    rpm_build ()
   | exec :: not_found :: _ ->
     eprintf "Unknown command: %s.\n" not_found
