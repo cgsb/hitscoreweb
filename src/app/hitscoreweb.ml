@@ -84,6 +84,8 @@ let config ?(port=80) ~runtime_root ?conf_root kind =
       sprintf "
     <extension findlib-package=\"ocsigenserver.ext.staticmod\"/>
     <extension findlib-package=\"core\"/>
+    <extension findlib-package=\"pgocaml\"/>
+    <extension findlib-package=\"hitscore\"/>
     <extension findlib-package=\"ocsigenserver.ext.ocsipersist-sqlite\">
       <database file=\"%s/ocsidb\"/>
     </extension>
@@ -145,12 +147,11 @@ let testing kind =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
   let open Result in
   syscmd (sprintf "mkdir -p %s" runtime_root) |> raise_error;
-  Out_channel.(
-    with_file (sprintf "%s/mime.types" runtime_root)
-      ~f:(fun o -> output_string o (mime_types));
-    with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
-      ~f:(fun o -> output_string o (config ~port ~runtime_root kind))
-  );
+  let open Out_channel in
+  with_file (sprintf "%s/mime.types" runtime_root)
+    ~f:(fun o -> output_string o (mime_types));
+  with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
+    ~f:(fun o -> output_string o (config ~port ~runtime_root kind));
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
 let rpm_build () =
@@ -164,12 +165,11 @@ let rpm_build () =
   let conf_target = (sprintf "%s/hitscoreweb.conf" conf_root) in
   let mimes_target = (sprintf "%s/mime.types" conf_root) in
   let runtime_root = "/var/run/hitscoreweb" in
-  Out_channel.(
-    with_file mimes_tmp
-      ~f:(fun o -> output_string o (mime_types));
-    with_file conf_tmp
-      ~f:(fun o -> output_string o (config ~port:80 ~runtime_root ~conf_root `Static))
-  );
+  let open Out_channel in
+  with_file mimes_tmp
+    ~f:(fun o -> output_string o (mime_types));
+  with_file conf_tmp
+    ~f:(fun o -> output_string o (config ~port:80 ~runtime_root ~conf_root `Static));
   List.iter [ "BUILD"; "SPECS"; "RPMS"; "SOURCES"; "SRPMS" ]
     ~f:(fun dir ->
       sprintf "mkdir -p %s/%s" tmp_dir dir |> syscmd_exn);

@@ -13,7 +13,7 @@ let default () =
         (let open Html5 in
          html
            (head (title (pcdata "Hitscore Web")) [])
-           (body [p [pcdata (sprintf "Histcore default web page: %s"
+           (body [p [pcdata (sprintf "Histcore's default web page: %s"
                                Time.Ofday.(now () |> to_string))]])))
 
 

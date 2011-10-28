@@ -7,7 +7,6 @@ static: install
 	ocamlfind ocamlopt -linkall \
 	    -package ocsigenserver,ocsigenserver.ext.ocsipersist-sqlite  \
 	    -package eliom.server,ocsigenserver.ext.staticmod  \
-	    -package batteries \
 	    -package hitscoreweb \
             server_main.cmx -o hitscoreserver -linkpkg -thread
 

@@ -1,17 +1,28 @@
 # OASIS_START
-# DO NOT EDIT (digest: e3b800183d5b52040d330cf7df734996)
+# DO NOT EDIT (digest: 266e26fe52b9a430d8cc098b4b37b103)
 # Library hitscoreweb
 "src/lib": include
 <src/lib/*.ml{,i}>: pkg_threads
+<src/lib/*.ml{,i}>: pkg_pgocaml.syntax
+<src/lib/*.ml{,i}>: pkg_lwt.syntax
+<src/lib/*.ml{,i}>: pkg_hitscore
 <src/lib/*.ml{,i}>: pkg_eliom.server
 <src/lib/*.ml{,i}>: pkg_core
 # Executable hitscoreweb
 <src/app/hitscoreweb.{native,byte}>: use_hitscoreweb
 <src/app/hitscoreweb.{native,byte}>: pkg_threads
+<src/app/hitscoreweb.{native,byte}>: pkg_pgocaml.syntax
+<src/app/hitscoreweb.{native,byte}>: pkg_lwt.syntax
+<src/app/hitscoreweb.{native,byte}>: pkg_hitscore
 <src/app/hitscoreweb.{native,byte}>: pkg_eliom.server
 <src/app/hitscoreweb.{native,byte}>: pkg_core
 <src/app/*.ml{,i}>: use_hitscoreweb
 <src/app/*.ml{,i}>: pkg_threads
+<src/app/*.ml{,i}>: pkg_pgocaml.syntax
+<src/app/*.ml{,i}>: pkg_lwt.syntax
+<src/app/*.ml{,i}>: pkg_hitscore
 <src/app/*.ml{,i}>: pkg_eliom.server
 <src/app/*.ml{,i}>: pkg_core
 # OASIS_STOP
+
+<src/*/*.ml>: syntax_camlp4o
