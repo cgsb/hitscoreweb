@@ -172,11 +172,11 @@ let sysv_init_file
 #
 ### BEGIN INIT INFO
 # Provides: hitscoreweb
-# Required-Start:  $syslog $network
-# Required-Stop:  $syslog $network
+# Required-Start:  $syslog $network postgresql
+# Required-Stop:  $syslog $network postgresql
 # Default-Start: 3 4 5
 # Default-Stop: 0 1 6
-# Short-Description: start and stop hitscoreweb
+# Short-Description:  Hitscoreweb HTTP server
 # Description: Start and stop Hitscoreweb
 ### END INIT INFO
 
@@ -290,27 +290,43 @@ let rpm_build () =
   let spec_file = sprintf "%s/SPECS/hitscoreweb.spec" tmp_dir in
   let binary_tmp = sprintf "%s/hitscoreserver" (Unix.getcwd ()) in
   let binary_dir = "/usr/libexec/hitscoreweb" in
-  let mimes_tmp = (sprintf "%s/mime.types" tmp_dir) in
+  let binary_target = sprintf "%s/hitscoreserver" binary_dir in
   let conf_tmp = (sprintf "%s/hitscoreweb.conf" tmp_dir) in
   let conf_root = "/etc/hitscoreweb" in
   let conf_target = (sprintf "%s/hitscoreweb.conf" conf_root) in
+  let mimes_tmp = (sprintf "%s/mime.types" tmp_dir) in
   let mimes_target = (sprintf "%s/mime.types" conf_root) in
+  let sysv_tmp = sprintf "%s/hitscoreweb.init" tmp_dir in
+  let sysv_target = "/etc/init.d/hitscoreweb" in
   let runtime_root = "/var/run/hitscoreweb" in
   let open Out_channel in
-  with_file mimes_tmp
-    ~f:(fun o -> output_string o (mime_types));
-  with_file conf_tmp
-    ~f:(fun o -> output_string o (config ~port:80 ~runtime_root ~conf_root `Static));
+
   List.iter [ "BUILD"; "SPECS"; "RPMS"; "SOURCES"; "SRPMS" ]
     ~f:(fun dir ->
       sprintf "mkdir -p %s/%s" tmp_dir dir |> syscmd_exn);
-  Out_channel.with_file spec_file
-    ~f:(fun o ->
-      fprintf o "%%define _topdir %s\n" tmp_dir;
-      fprintf o "%%define name hitscoreweb\n";
-      fprintf o "%%define release 1\n";
-      fprintf o "%%define version 1.12\n";
-      output_string o "
+
+  with_file mimes_tmp
+    ~f:(fun o -> output_string o (mime_types));
+
+  with_file conf_tmp
+    ~f:(fun o -> output_string o (config ~port:80 ~runtime_root 
+                                    ~conf_root `Static));
+  with_file sysv_tmp ~f:(fun o ->
+    sysv_init_file
+      ~path_to_binary:binary_target
+      ~config_file:conf_target
+      ~pid_file:(sprintf "%s/pidfile" runtime_root)
+      ~stdout_stderr_file:(sprintf "%s/stdout_and_stderr" runtime_root)
+      ~command_pipe:(sprintf "%s/ocsigen_command" runtime_root)
+      (output_string o)
+  );
+
+  with_file spec_file ~f:(fun o ->
+    fprintf o "%%define _topdir %s\n" tmp_dir;
+    fprintf o "%%define name hitscoreweb\n";
+    fprintf o "%%define release 1\n";
+    fprintf o "%%define version 1.12\n";
+    output_string o "
 Name:   %{name}
 Version: %{version}
 Release:        1%{?dist}
@@ -337,30 +353,42 @@ echo 'Building'
 %install
 rm -rf $RPM_BUILD_ROOT
 ";
-      fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" binary_dir;
-      fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" conf_root;
-      fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" binary_tmp binary_dir;
-      fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" conf_tmp conf_root;
-      fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" mimes_tmp conf_root;
-      output_string o "
+    fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" binary_dir;
+    fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" conf_root;
+    fprintf o "mkdir -p $RPM_BUILD_ROOT/etc/init.d\n";
+    fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" binary_tmp binary_dir;
+    fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" conf_tmp conf_root;
+    fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" mimes_tmp conf_root;
+    fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
+    output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
 
 %files
 ";
-      output_string o "%defattr(0555,root,root,-)\n";
-      fprintf o "%s/hitscoreserver\n" binary_dir;
-      output_string o "%defattr(0444,root,root,-)\n";
-      fprintf o "%s\n" conf_target;
-      fprintf o "%s\n" mimes_target;
-      output_string o "
+    output_string o "%defattr(0555,root,root,-)\n";
+    fprintf o "%s/hitscoreserver\n" binary_dir;
+    fprintf o "%s\n" sysv_target;
+    output_string o "%defattr(0444,root,root,-)\n";
+    fprintf o "%s\n" conf_target;
+    fprintf o "%s\n" mimes_target;
+    output_string o "
 
 %doc
 
 %changelog
 
+%post
+# Register the service
+/sbin/chkconfig --add hitscoreweb
+
+%preun
+if [ $1 = 0 ]; then
+        /sbin/service hitscoreweb stop > /dev/null 2>&1
+        /sbin/chkconfig --del hitscoreweb
+fi
 ";
-    );
+  );
   syscmd_exn (sprintf "rpmbuild -v -bb --clean %s" spec_file)
 
 let () =
