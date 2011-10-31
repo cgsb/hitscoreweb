@@ -187,30 +187,58 @@ let sysv_init_file
     sprintf "
 set -e
 case \"$1\" in" in
+  let check_running ~do_then ?do_else () =
+    sprintf "
+    if [ -r \"%s\" ] && read pid < \"%s\" && ps -p \"$pid\" > /dev/null 2>&1; then
+%s
+%s
+    fi
+"   pid_file pid_file do_then 
+      Option.(value ~default:"" (map ~f:(sprintf "else\n%s") do_else))
+  in
   let start_case =
     sprintf "
-   start|force-start)
-    if [ -r \"%s\" ] && read pid < \"%s\" && ps -p \"$pid\" > /dev/null 2>&1; then
-        echo \"Hitscoreweb is already running!\"
-        exit 0
-    fi
+   start|force-start)\
+%s
     nohup %s --verbose --pidfile %s -c %s \
         > %s 2>&1 &
-    echo \"Hitscoreweb started.\"
+    sleep 1    
+%s
+    ;;
 "
-      pid_file pid_file
+      (check_running () ~do_then:"   echo \"Hitscoreweb is already running\"\n\
+                              \   exit 0")
       path_to_binary pid_file config_file
       stdout_stderr_file
+      (check_running ()
+         ~do_then:"    echo \"Hitscoreweb started successfully\""
+         ~do_else:"    echo \"Looks like Hitscoreweb did not start!\"\n\
+                  \    exit 2")
   in
   let stop_case = 
     sprintf "
   stop)
     echo -n \"Stopping Hitscoreweb: \"
-    for pid in `cat %s`; do kill $pid || true; done
+    %s
     rm -f %s
     echo \"Done.\"
     ;;
-" pid_file pid_file in
+" 
+      (check_running ()
+         ~do_then:(sprintf
+                     "    echo shutdown > %s" command_pipe)
+         ~do_else:"    echo \"Hitscoreweb was not running\"")
+      pid_file in
+  let kill_case = 
+    sprintf "
+  force-stop)
+    echo -n \"Killing Hitscoreweb: \"
+    for pid in `cat %s`; do kill -9 $pid || true; done
+    rm -f %s
+    echo \"Done.\"
+    ;;
+" 
+      pid_file pid_file in
   let reload_case = 
     sprintf "
   reload)
@@ -240,7 +268,7 @@ case \"$1\" in" in
   let esac =
     sprintf "
   *)
-    echo \"Usage: $0 {start|stop|reload|status}\" >&2
+    echo \"Usage: $0 {start|stop|reload|status|force-stop}\" >&2
     exit 1
     ;;
 esac
@@ -251,6 +279,7 @@ exit 0
   output_string begining;
   output_string start_case;
   output_string stop_case;
+  output_string kill_case;
   output_string reload_case;
   output_string status_case;
   output_string esac
