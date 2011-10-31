@@ -139,7 +139,6 @@ let syscmd s =
   | e -> Error (Failure (Unix.Process_status.to_string_hum e))
 let syscmd_exn s = syscmd s |> Result.raise_error
 
-
 let testing kind =
   let runtime_root = "/tmp/hitscoreweb" in
   let port = 8080 in
@@ -153,6 +152,109 @@ let testing kind =
   with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
     ~f:(fun o -> output_string o (config ~port ~runtime_root kind));
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
+
+let sysv_init_file
+    ~path_to_binary 
+    ?(config_file="/etc/hitscoreweb/hitscoreweb.conf")
+    ?(pid_file="/tmp/hitscoreweb/pidfile")
+    ?(stdout_stderr_file="/tmp/hitscoreweb/stdout_stderr")
+    ?(command_pipe="/tmp/hitscoreweb/ocsigen_command")
+    output_string =
+  let centos_friendly_header =
+    sprintf  "#! /bin/sh
+#
+# hitscoreweb
+#
+# chkconfig: 345 99 01
+# description:  Starts and stops Hitscoreweb
+#
+# config: %s
+#
+### BEGIN INIT INFO
+# Provides: hitscoreweb
+# Required-Start:  $syslog $network
+# Required-Stop:  $syslog $network
+# Default-Start: 3 4 5
+# Default-Stop: 0 1 6
+# Short-Description: start and stop hitscoreweb
+# Description: Start and stop Hitscoreweb
+### END INIT INFO
+
+# This file has been auto-generated, do not edit directly please.\
+ 
+" config_file in
+  let begining =
+    sprintf "
+set -e
+case \"$1\" in" in
+  let start_case =
+    sprintf "
+   start|force-start)
+    if [ -r \"%s\" ] && read pid < \"%s\" && ps -p \"$pid\" > /dev/null 2>&1; then
+        echo \"Hitscoreweb is already running!\"
+        exit 0
+    fi
+    nohup %s --verbose --pidfile %s -c %s \
+        > %s 2>&1 &
+    echo \"Hitscoreweb started.\"
+"
+      pid_file pid_file
+      path_to_binary pid_file config_file
+      stdout_stderr_file
+  in
+  let stop_case = 
+    sprintf "
+  stop)
+    echo -n \"Stopping Hitscoreweb: \"
+    for pid in `cat %s`; do kill $pid || true; done
+    rm -f %s
+    echo \"Done.\"
+    ;;
+" pid_file pid_file in
+  let reload_case = 
+    sprintf "
+  reload)
+    echo -n \"Reloading Hitscoreweb: \"
+    echo reload > %s
+    echo \"Done.\"
+    ;;
+" command_pipe in
+  let status_case =
+    sprintf "
+  status)
+    echo -n \"Status of Hitscoreweb: \"
+    if [ ! -r \"%s\" ]; then
+      echo \"It is NOT running.\"
+      exit 3
+    fi
+    if read pid < \"%s\" && ps -p \"$pid\" > /dev/null 2>&1; then
+      echo \"It IS running (pid: $pid).\"
+      exit 0
+    else
+      echo \"it is NOT running BUT %s exists.\"
+      exit 1
+    fi
+    ;;
+" pid_file pid_file pid_file
+  in
+  let esac =
+    sprintf "
+  *)
+    echo \"Usage: $0 {start|stop|reload|status}\" >&2
+    exit 1
+    ;;
+esac
+
+exit 0
+" in
+  output_string centos_friendly_header;
+  output_string begining;
+  output_string start_case;
+  output_string stop_case;
+  output_string reload_case;
+  output_string status_case;
+  output_string esac
+
 
 let rpm_build () =
   let tmp_dir = "/tmp/hitscorerpmbuild" in
@@ -242,5 +344,7 @@ let () =
     testing `Static
   | exec :: "rpm" :: _ ->
     rpm_build ()
+  | exec :: "sysv" :: _ ->
+    sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
   | exec :: not_found :: _ ->
     eprintf "Unknown command: %s.\n" not_found
