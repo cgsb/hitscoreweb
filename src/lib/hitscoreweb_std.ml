@@ -15,17 +15,17 @@ module PGOCaml = PGOCaml_generic.Make(Lwt_thread)
 module TTT = Hitscore_std.Util
 
 let _dummy_pg_test_ () =
-  let host = "pg.bio.nyu.edu" in                                                                                  
-  let user = "hitscore" in                                                                                        
+  let host = "pg.bio.nyu.edu" in
+  let user = "hitscore" in
   let password = "TODOFIX" in
-  lwt dbh = PGOCaml.connect ~host ~user ~password ~port:5432 () in                                                
-  (*  PGSQL(dbh) "execute" "create temporary table tblpeople                                                        
-                          (name text not null, age int not null)";                                                
-      let report (name,age) =                                                                                         
-      Printf.printf "%s is %ld years old\n%!" name age in                                                           
-      let results =                                                                                                   
-      PGSQL (dbh) "select name, age from tblpeople" in                                                              
-      List.iter report results                                                                                        
-  *)                                                                                                                
-  PGOCaml.ping dbh >>                                                                                             
+  lwt dbh = PGOCaml.connect ~host ~user ~password ~port:5432 () in
+  (*  PGSQL(dbh) "execute" "create temporary table tblpeople
+                          (name text not null, age int not null)";
+      let report (name,age) = 
+      Printf.printf "%s is %ld years old\n%!" name age in 
+      let results = 
+      PGSQL (dbh) "select name, age from tblpeople" in 
+      List.iter report results 
+  *)
+  PGOCaml.ping dbh >>
   PGOCaml.close dbh   
