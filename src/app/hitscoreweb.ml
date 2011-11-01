@@ -153,12 +153,18 @@ let testing kind =
     ~f:(fun o -> output_string o (config ~port ~runtime_root kind));
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
+let camomile_stuff () =
+  let datadir = BatCamomile.CamConfig.datadir in
+  (datadir, Sys.readdir datadir |> Array.to_list)
+
+
 let sysv_init_file
     ~path_to_binary 
     ?(config_file="/etc/hitscoreweb/hitscoreweb.conf")
     ?(pid_file="/tmp/hitscoreweb/pidfile")
     ?(stdout_stderr_file="/tmp/hitscoreweb/stdout_stderr")
     ?(command_pipe="/tmp/hitscoreweb/ocsigen_command")
+    ?(camomile_data="/usr/share/camomile-unicode")
     output_string =
   let centos_friendly_header =
     sprintf  "#! /bin/sh
@@ -200,6 +206,7 @@ case \"$1\" in" in
     sprintf "
    start|force-start)\
 %s
+    export CAMOMILE_BASE=%s
     mkdir -p %s
     nohup %s --verbose --pidfile %s -c %s \
         > %s 2>&1 &
@@ -209,6 +216,7 @@ case \"$1\" in" in
 "
       (check_running () ~do_then:"   echo \"Hitscoreweb is already running\"\n\
                               \   exit 0")
+      camomile_data
       (Filename.dirname stdout_stderr_file)
       path_to_binary pid_file config_file
       stdout_stderr_file
@@ -301,6 +309,10 @@ let rpm_build () =
   let sysv_tmp = sprintf "%s/hitscoreweb.init" tmp_dir in
   let sysv_target = "/etc/init.d/hitscoreweb" in
   let runtime_root = "/var/run/hitscoreweb" in
+
+  let camo_dir, camo_files = camomile_stuff () in
+  let camo_target = "/usr/local/share/camomile-unicode" in
+
   let open Out_channel in
 
   List.iter [ "BUILD"; "SPECS"; "RPMS"; "SOURCES"; "SRPMS" ]
@@ -320,6 +332,7 @@ let rpm_build () =
       ~pid_file:(sprintf "%s/pidfile" runtime_root)
       ~stdout_stderr_file:(sprintf "%s/stdout_and_stderr" runtime_root)
       ~command_pipe:(sprintf "%s/ocsigen_command" runtime_root)
+      ~camomile_data:camo_target
       (output_string o)
   );
 
@@ -362,6 +375,10 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" conf_tmp conf_root;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" mimes_tmp conf_root;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
+    fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" camo_target;
+    List.iter camo_files ~f:(fun fname ->
+      fprintf o "cp %s/%s $RPM_BUILD_ROOT/%s\n" camo_dir fname camo_target;
+    );
     output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -374,6 +391,9 @@ rm -rf $RPM_BUILD_ROOT
     output_string o "%defattr(0444,root,root,-)\n";
     fprintf o "%s\n" conf_target;
     fprintf o "%s\n" mimes_target;
+    List.iter camo_files ~f:(fun fname ->
+      fprintf o "%s/%s\n"  camo_target fname;
+    );
     output_string o "
 
 %doc
