@@ -200,6 +200,7 @@ case \"$1\" in" in
     sprintf "
    start|force-start)\
 %s
+    mkdir -p %s
     nohup %s --verbose --pidfile %s -c %s \
         > %s 2>&1 &
     sleep 1    
@@ -208,6 +209,7 @@ case \"$1\" in" in
 "
       (check_running () ~do_then:"   echo \"Hitscoreweb is already running\"\n\
                               \   exit 0")
+      (Filename.dirname stdout_stderr_file)
       path_to_binary pid_file config_file
       stdout_stderr_file
       (check_running ()
