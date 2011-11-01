@@ -119,7 +119,7 @@ let config ?(port=80) ~runtime_root ?conf_root kind =
     <debugmode/>
 %s
     <host hostfilter=\"*\">
-      <static dir=\"%s/static/\" />
+      <static dir=\"%s/\" />
 %s
     </host>
   </server>
@@ -154,8 +154,15 @@ let testing kind =
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
 let camomile_stuff () =
-  let datadir = BatCamomile.CamConfig.datadir in
-  (datadir, Sys.readdir datadir |> Array.to_list)
+  let base = BatCamomile.CamConfig.datadir |> Filename.dirname in
+  let subdirs = [
+    "database"; "locales"; "charmaps"; "mappings"
+  ] in
+  (base,
+   List.map subdirs ~f:(
+     fun dir ->
+       (dir, Sys.readdir (base ^ "/" ^ dir) |> Array.to_list)))
+
 
 
 let sysv_init_file
@@ -376,9 +383,16 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" mimes_tmp conf_root;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
     fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" camo_target;
-    List.iter camo_files ~f:(fun fname ->
-      fprintf o "cp %s/%s $RPM_BUILD_ROOT/%s\n" camo_dir fname camo_target;
+    List.iter camo_files ~f:(fun (subdir, files) ->
+      List.iter files ~f:(fun file ->
+        fprintf o "mkdir -p $RPM_BUILD_ROOT/%s/%s\n" camo_target subdir;
+        fprintf o "cp %s/%s/%s $RPM_BUILD_ROOT/%s/%s\n"
+          camo_dir subdir (Filename.quote file) camo_target subdir;
+      );
     );
+    (* The Ugliest Hack: *)
+    fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" (Filename.dirname camo_dir);
+    fprintf o "ln -s %s $RPM_BUILD_ROOT/%s\n" camo_target camo_dir;
     output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -391,9 +405,12 @@ rm -rf $RPM_BUILD_ROOT
     output_string o "%defattr(0444,root,root,-)\n";
     fprintf o "%s\n" conf_target;
     fprintf o "%s\n" mimes_target;
-    List.iter camo_files ~f:(fun fname ->
-      fprintf o "%s/%s\n"  camo_target fname;
+    List.iter camo_files ~f:(fun (subdir, files) ->
+      List.iter files ~f:(fun file ->
+        fprintf o "/%s/%s/%s\n" camo_target subdir file;
+      );
     );
+    fprintf o "%s\n" camo_dir;
     output_string o "
 
 %doc
