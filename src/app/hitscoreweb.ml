@@ -76,8 +76,9 @@ video/vnd.mpegurl		mxu m4u
 video/x-msvideo			avi
 "
 
-let config ?(port=80) ~runtime_root ?conf_root kind =
+let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
   let conf_dir = Option.value ~default:runtime_root conf_root in
+  let log_dir = Option.value ~default:runtime_root log_root in
   let extensions =
     match kind with
     | `Ocsigen ->
@@ -106,32 +107,23 @@ let config ?(port=80) ~runtime_root ?conf_root kind =
     |`Static ->
       sprintf " <eliom name=\"hitscoreweb\"/> "
   in
-  sprintf "
-<ocsigen>
-  <server>
-    <port>%d</port>
-    <user></user>
-    <group></group>
-    <commandpipe>%s/ocsigen_command</commandpipe>
-    <mimefile>%s/mime.types</mimefile>
+  sprintf "<ocsigen>\n  <server>\n    <port>%d</port>\n" port |> output_string;
+  sprintf "    <user></user> <group></group>\n" |> output_string;
+  sprintf "    <logdir>%s</logdir>\n" log_dir |> output_string;
+  sprintf "    <commandpipe>%s/ocsigen_command</commandpipe>\n"
+    runtime_root |> output_string;
 
-    <charset>utf-8</charset>
-    <debugmode/>
-%s
+  sprintf "    <mimefile>%s/mime.types</mimefile>\n" 
+    conf_dir |> output_string;
+  output_string " <charset>utf-8</charset> <debugmode/>\n";
+  output_string extensions;
+  sprintf "
     <host hostfilter=\"*\">
       <static dir=\"%s/\" />
 %s
-    </host>
-  </server>
-</ocsigen>
-
-"
-port
-runtime_root
-conf_dir
-extensions
-runtime_root
-hitscore_module
+    </host>\n" runtime_root hitscore_module |> output_string;
+  output_string "  </server>\n</ocsigen>\n";
+  ()
 
 let syscmd s =
   match Unix.system s with
@@ -150,7 +142,7 @@ let testing kind =
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
   with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
-    ~f:(fun o -> output_string o (config ~port ~runtime_root kind));
+    ~f:(fun o -> config ~port ~runtime_root kind (output_string o));
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
 let camomile_stuff () =
@@ -170,6 +162,7 @@ let sysv_init_file
     ?(config_file="/etc/hitscoreweb/hitscoreweb.conf")
     ?(pid_file="/tmp/hitscoreweb/pidfile")
     ?(stdout_stderr_file="/tmp/hitscoreweb/stdout_stderr")
+    ?(log_dir="/tmp/hitscoreweb/log/")
     ?(command_pipe="/tmp/hitscoreweb/ocsigen_command")
     ?(camomile_data="/usr/share/camomile-unicode")
     output_string =
@@ -214,7 +207,7 @@ case \"$1\" in" in
    start|force-start)\
 %s
     export CAMOMILE_BASE=%s
-    mkdir -p %s
+    mkdir -p %s %s
     nohup %s --verbose --pidfile %s -c %s \
         > %s 2>&1 &
     sleep 1    
@@ -224,7 +217,7 @@ case \"$1\" in" in
       (check_running () ~do_then:"   echo \"Hitscoreweb is already running\"\n\
                               \   exit 0")
       camomile_data
-      (Filename.dirname stdout_stderr_file)
+      (Filename.dirname stdout_stderr_file) log_dir
       path_to_binary pid_file config_file
       stdout_stderr_file
       (check_running ()
@@ -320,6 +313,8 @@ let rpm_build () =
   let camo_dir, camo_files = camomile_stuff () in
   let camo_target = "/usr/local/share/camomile-unicode" in
 
+  let log_dir = "/var/log/hitscoreweb" in
+
   let open Out_channel in
 
   List.iter [ "BUILD"; "SPECS"; "RPMS"; "SOURCES"; "SRPMS" ]
@@ -329,9 +324,10 @@ let rpm_build () =
   with_file mimes_tmp
     ~f:(fun o -> output_string o (mime_types));
 
-  with_file conf_tmp
-    ~f:(fun o -> output_string o (config ~port:80 ~runtime_root 
-                                    ~conf_root `Static));
+  with_file conf_tmp ~f:(fun o -> 
+    config ~port:80 ~runtime_root ~conf_root 
+      ~log_root:log_dir `Static (output_string o));
+  
   with_file sysv_tmp ~f:(fun o ->
     sysv_init_file
       ~path_to_binary:binary_target
@@ -339,6 +335,7 @@ let rpm_build () =
       ~pid_file:(sprintf "%s/pidfile" runtime_root)
       ~stdout_stderr_file:(sprintf "%s/stdout_and_stderr" runtime_root)
       ~command_pipe:(sprintf "%s/ocsigen_command" runtime_root)
+      ~log_dir
       ~camomile_data:camo_target
       (output_string o)
   );
