@@ -276,6 +276,19 @@ exit 0
 
 
 let rpm_build () =
+  let () =
+    match Unix.system 
+      "test \"`ocamlfind list | grep batteries | grep 1.4 | wc -l`\" -eq 0"
+    with
+    | `Exited 1 -> 
+      printf
+        "ERR: It seems to be the wrong version of Batteries, \
+          I won't continue:\n";
+      printf "$ ocamlfind list | grep batteries\n%!";
+      syscmd_exn "ocamlfind list | grep batteries";
+      failwith "Batteries_version"
+    | _ -> ()
+  in
   let tmp_dir = "/tmp/hitscorerpmbuild" in
   let spec_file = sprintf "%s/SPECS/hitscoreweb.spec" tmp_dir in
   let binary_tmp = sprintf "%s/hitscoreserver" (Unix.getcwd ()) in
