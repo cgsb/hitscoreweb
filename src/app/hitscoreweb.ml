@@ -145,17 +145,6 @@ let testing kind =
     ~f:(fun o -> config ~port ~runtime_root kind (output_string o));
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
-let camomile_stuff () =
-  let base = BatCamomile.CamConfig.datadir |> Filename.dirname in
-  let subdirs = [
-    "database"; "locales"; "charmaps"; "mappings"
-  ] in
-  (base,
-   List.map subdirs ~f:(
-     fun dir ->
-       (dir, Sys.readdir (base ^ "/" ^ dir) |> Array.to_list)))
-
-
 
 let sysv_init_file
     ~path_to_binary 
@@ -164,7 +153,6 @@ let sysv_init_file
     ?(stdout_stderr_file="/tmp/hitscoreweb/stdout_stderr")
     ?(log_dir="/tmp/hitscoreweb/log/")
     ?(command_pipe="/tmp/hitscoreweb/ocsigen_command")
-    ?(camomile_data="/usr/share/camomile-unicode")
     output_string =
   let centos_friendly_header =
     sprintf  "#! /bin/sh
@@ -206,24 +194,16 @@ case \"$1\" in" in
     sprintf "
    start|force-start)\
 %s
-    export CAMOMILE_BASE=%s
     mkdir -p %s %s
     nohup %s --verbose --pidfile %s -c %s \
         > %s 2>&1 &
-    sleep 1    
-%s
     ;;
 "
       (check_running () ~do_then:"   echo \"Hitscoreweb is already running\"\n\
                               \   exit 0")
-      camomile_data
       (Filename.dirname stdout_stderr_file) log_dir
       path_to_binary pid_file config_file
       stdout_stderr_file
-      (check_running ()
-         ~do_then:"    echo \"Hitscoreweb started successfully\""
-         ~do_else:"    echo \"Looks like Hitscoreweb did not start!\"\n\
-                  \    exit 2")
   in
   let stop_case = 
     sprintf "
@@ -310,9 +290,6 @@ let rpm_build () =
   let sysv_target = "/etc/init.d/hitscoreweb" in
   let runtime_root = "/var/run/hitscoreweb" in
 
-  let camo_dir, camo_files = camomile_stuff () in
-  let camo_target = "/usr/local/share/camomile-unicode" in
-
   let log_dir = "/var/log/hitscoreweb" in
 
   let open Out_channel in
@@ -336,7 +313,6 @@ let rpm_build () =
       ~stdout_stderr_file:(sprintf "%s/stdout_and_stderr" runtime_root)
       ~command_pipe:(sprintf "%s/ocsigen_command" runtime_root)
       ~log_dir
-      ~camomile_data:camo_target
       (output_string o)
   );
 
@@ -379,17 +355,7 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" conf_tmp conf_root;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" mimes_tmp conf_root;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
-    fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" camo_target;
-    List.iter camo_files ~f:(fun (subdir, files) ->
-      List.iter files ~f:(fun file ->
-        fprintf o "mkdir -p $RPM_BUILD_ROOT/%s/%s\n" camo_target subdir;
-        fprintf o "cp %s/%s/%s $RPM_BUILD_ROOT/%s/%s\n"
-          camo_dir subdir (Filename.quote file) camo_target subdir;
-      );
-    );
-    (* The Ugliest Hack: *)
-    fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" (Filename.dirname camo_dir);
-    fprintf o "ln -s %s $RPM_BUILD_ROOT/%s\n" camo_target camo_dir;
+
     output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -402,12 +368,6 @@ rm -rf $RPM_BUILD_ROOT
     output_string o "%defattr(0444,root,root,-)\n";
     fprintf o "%s\n" conf_target;
     fprintf o "%s\n" mimes_target;
-    List.iter camo_files ~f:(fun (subdir, files) ->
-      List.iter files ~f:(fun file ->
-        fprintf o "/%s/%s/%s\n" camo_target subdir file;
-      );
-    );
-    fprintf o "%s\n" camo_dir;
     output_string o "
 
 %doc
