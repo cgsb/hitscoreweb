@@ -1,31 +1,20 @@
 include Core.Std
-include Lwt
+(* include Lwt *)
 
 let (|>) x f = f x
 
 module Html5 = Eliom_pervasives.HTML5.M
 
-module Lwt_thread = struct
+
+module Lwt_config = struct
   include Lwt
   include Lwt_chan
+  let map_sequential l ~f = Lwt_list.map_s f l
+  let log_error s = output_string Lwt_io.stderr s >>= fun () -> flush Lwt_io.stderr
 end
-module PGOCaml = PGOCaml_generic.Make(Lwt_thread)
+module Hitscore_lwt = Hitscore.Make(Lwt_config)
+module Layout = Hitscore_lwt.Layout
+module PGOCaml = Layout.PGOCaml
 
-(* Stupid force-linking test: *)
-module TTT = Hitscore_std.Util
+include Hitscore_lwt.Result_IO
 
-let _dummy_pg_test_ () =
-  let host = "pg.bio.nyu.edu" in
-  let user = "hitscore" in
-  let password = "TODOFIX" in
-  lwt dbh = PGOCaml.connect ~host ~user ~password ~port:5432 () in
-  (*  PGSQL(dbh) "execute" "create temporary table tblpeople
-                          (name text not null, age int not null)";
-      let report (name,age) = 
-      Printf.printf "%s is %ld years old\n%!" name age in 
-      let results = 
-      PGSQL (dbh) "select name, age from tblpeople" in 
-      List.iter report results 
-  *)
-  PGOCaml.ping dbh >>
-  PGOCaml.close dbh   
