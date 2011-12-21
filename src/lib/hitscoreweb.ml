@@ -8,6 +8,10 @@ module Services = struct
     Eliom_services.service
       ~path:[""] ~get_params:Eliom_parameters.unit ()
 
+  let flowcells =
+    Eliom_services.service
+      ~path:["flowcells"] ~get_params:Eliom_parameters.unit ()
+
 end
 
 let flowcells hsc =
@@ -38,7 +42,7 @@ let error_page msg =
              p [ksprintf pcdata "Error: %s" msg];
            ]))
 
-let default hsc =
+let flowcells hsc =
   let html =
     flowcells hsc
     >>= fun html_flowcells ->
@@ -47,8 +51,6 @@ let default hsc =
                (head (title (pcdata "Hitscore Web")) [])
                (body [
                  html_flowcells;
-                 p [pcdata (sprintf "Histcore's default web page: %s"
-                              Time.Ofday.(now () |> to_string))]
                ])) in
   Lwt.bind html (function
   | Ok html ->
@@ -60,6 +62,20 @@ let default hsc =
                   "Layout Inconsistency: Complain at bio.gencore@bio.nyu.edu")
   )
 
+let default hsc =
+  Lwt.return Html5.(
+    html
+      (head (title (pcdata "Hitscoreweb: Default")) [])
+      (body [
+        h1 [pcdata "Services:"];
+        ul [
+          li [
+            Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()
+          ];
+        ];
+        p [pcdata (sprintf "Histcore's default web page: %s"
+                     Time.(now () |> to_string))];
+      ]))
 
 
 let () =
@@ -69,7 +85,9 @@ let () =
   Eliom_services.register_eliom_module
     "hitscoreweb" 
     (fun () ->
-      (Eliom_output.Html5.register ~service:Services.default (fun () () ->
-        default hitscore_configuration))
+      Eliom_output.Html5.register ~service:Services.default (fun () () ->
+        default hitscore_configuration);
+      Eliom_output.Html5.register ~service:Services.flowcells (fun () () ->
+        flowcells hitscore_configuration);
     )
 
