@@ -15,6 +15,16 @@ module Services = struct
   let flowcell =
     Eliom_services.service
       ~path:["flowcell"] ~get_params:Eliom_parameters.(string "serial") ()
+
+  let library_name =
+    Eliom_services.service
+      ~path:["library"] ~get_params:Eliom_parameters.(string "name") ()
+
+  let library_project_name =
+    Eliom_services.service
+      ~path:["library"] 
+      ~get_params:Eliom_parameters.(string "project" ** string "name") ()
+
 end
 
 
@@ -49,6 +59,13 @@ let flowcells hsc =
     ul items
   ])
 
+let person_link dbh person_t =
+  Layout.Record_person.(
+    cache_value ~dbh person_t >>| get_fields
+    >>= fun { given_name; family_name; email; _ } ->
+    return (ksprintf Html5.pcdata "%s %s" given_name family_name))
+    
+
 let one_flowcell hsc serial_name =
   Hitscore_lwt.db_connect hsc
   >>= fun dbh ->
@@ -72,11 +89,7 @@ let one_flowcell hsc serial_name =
   	      requested_read_length_1 ;
   	      requested_read_length_2 ;
   	      contacts ; } ->
-            of_list_sequential (Array.to_list contacts) (fun person_t ->
-              Layout.Record_person.(
-                cache_value ~dbh person_t >>| get_fields
-                >>= fun { given_name; family_name; _ } ->
-                return (given_name, family_name)))
+            of_list_sequential (Array.to_list contacts) (person_link dbh)
             >>= fun people ->
             of_list_sequential
               (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
@@ -103,15 +116,18 @@ let one_flowcell hsc serial_name =
                 cellt [ksprintf pcdata "Lane %d" !lane];
                 cellf [opt seeding_concentration_pM pcf];
 		cellf [opt total_volume pcf];
-                cellt (List.map people 
-                        (fun (f,l) -> [ ksprintf pcdata "%s %s" f l; br () ])
-                                      |! List.flatten);
-                cellt [pcdata 
-                          (List.map libs 
-                             (function
-                             | (l, None) -> sprintf "%s" l
-                             | (l, Some p) -> sprintf "%s.%s" p l)
-                                            |! String.concat ~sep:", ")];
+                cellt (List.map people (fun html5 -> [ html5; br () ])
+                                                     |! List.flatten);
+                cellt (List.map libs 
+                         (function
+                         | (l, None) ->
+                           [Eliom_output.Html5.a Services.library_name [pcdata l] l]
+                         | (l, Some p) -> 
+                           let name = sprintf "%s.%s" p l in
+                           [Eliom_output.Html5.a Services.library_project_name
+                               [pcdata name] (p, l)])
+                           |! interleave_list ~sep:[pcdata ", "] 
+                           |! List.flatten);
               ]))))
     in
     lanes >>= fun lanes ->
@@ -194,6 +210,103 @@ let flowcell_service hsc serial_name =
   )
 
 
+let library_service ~name ?project hsc =
+  let full_name =
+    match project with None -> name | Some p -> sprintf "%s.%s" p name in
+  let sample_info dbh s =
+    Layout.Record_sample.(
+      cache_value ~dbh s >>| get_fields
+      >>= fun { name; organism; note } ->
+      let sample_name = name in
+      let sample_note = note in
+      match organism with
+      | Some o ->
+        Layout.Record_organism.(
+          cache_value ~dbh o >>| get_fields
+          >>= fun {name; informal; note } ->
+          return (sample_name, sample_note, name, informal, note))
+      | None -> return (sample_name, sample_note, None, None, None)) in
+  let library_info =
+    Hitscore_lwt.db_connect hsc
+    >>= fun dbh ->
+    let stocks =
+      Layout.Search.record_stock_library_by_name_project ~dbh name project in
+    stocks >>= fun sl_list ->
+    let stock_nb = List.length sl_list in
+    of_list_sequential sl_list (fun slt ->
+      Layout.Record_stock_library.(
+        cache_value ~dbh slt >>| get_fields
+        >>= fun { 
+  	  name; project; sample; protocol; application; stranded;
+  	  truseq_control; rnaseq_control;
+  	  barcode_type; barcodes; custom_barcodes;
+          p5_adapter_length; p7_adapter_length; preparator; note;
+        } ->
+        Html5.(
+          let opt o  = Option.bind o in
+          let lif name fmt =
+            let f s = Some Html5.(li [strong [pcdata name]; pcdata s]) in
+            ksprintf f (": " ^^ fmt ^^ ".") in
+          let sample_line =
+            of_option  sample (fun s ->
+              sample_info dbh s
+              >>= fun (sname, snote, oname, oinformal, onote) ->
+              return (li [
+                strong [pcdata "Sample info"];
+                pcdata ": ";
+                code [ksprintf pcdata "%S" sname];
+                Option.value_map snote ~default:(pcdata "")
+                  ~f:(fun n -> ksprintf pcdata " (%s)" n);
+                Option.value_map oname ~default:(em [pcdata " (no organism)"])
+                  ~f:(fun n -> ksprintf pcdata " from %S" n);
+                Option.value_map oinformal ~default:(pcdata "")
+                  ~f:(fun n -> ksprintf pcdata " (%s)" n);
+                Option.value_map onote ~default:(pcdata "")
+                  ~f:(fun n -> ksprintf pcdata " (%s)" n);
+                pcdata ".";
+              ])) in
+          sample_line >>= fun sample_line ->
+          of_option preparator (person_link dbh) >>= fun preparator_link ->
+          return (li [strong [ksprintf pcdata "%s:" full_name];
+                      ul (List.filter_opt [
+                        sample_line;
+                        opt application (lif "Application" "%S");
+                        lif "Stranded" "%b" stranded;
+                        lif "Truseq control" "%b" truseq_control;
+                        opt rnaseq_control (lif "RNA-seq control" "%s");
+                        Option.map preparator_link 
+                          ~f:(fun pl ->
+                            li [ strong [pcdata "Prepared by"];
+                                 pcdata ": ";
+                                 pl]);
+                        opt note (lif "Note" "%s");
+                      ])])
+        ))) 
+    >>= fun lib_info ->
+    return Html5.(div [
+      ksprintf pcdata "Found %d librar%s:"
+        stock_nb (if stock_nb = 1 then "y" else "ies");
+      ul lib_info
+    ])
+  in
+  Lwt.bind library_info (function
+  | Ok html_info ->
+    Lwt.return Html5.(
+      html
+        (head (title (ksprintf pcdata "Hitscoreweb: Library %s" full_name)) [])
+        (body [
+          h1 [ksprintf pcdata "Hitscoreweb: Library %s" full_name];
+          html_info
+        ]))
+  | Error (`pg_exn e) ->
+    Lwt.return (error_page (sprintf "PGOCaml: %s" (Exn.to_string e)))
+  | Error (`layout_inconsistency (_, _)) ->
+    Lwt.return (error_page 
+                  "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
+  )
+    
+
+
 let () =
 
   let hitscore_configuration = Hitscore_lwt.configure () in
@@ -207,5 +320,11 @@ let () =
         flowcells_service hitscore_configuration);
       Eliom_output.Html5.register ~service:Services.flowcell (fun (serial) () ->
         flowcell_service hitscore_configuration serial);
+      Eliom_output.Html5.register ~service:Services.library_name
+        (fun (name) () ->
+          library_service hitscore_configuration ~name);
+      Eliom_output.Html5.register ~service:Services.library_project_name
+        (fun (project, name) () ->
+          library_service hitscore_configuration ~name ~project);
     )
 

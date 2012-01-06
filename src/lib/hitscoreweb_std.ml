@@ -18,3 +18,7 @@ module PGOCaml = Layout.PGOCaml
 
 include Hitscore_lwt.Result_IO
 
+let rec interleave_list ~sep = function
+  | [] -> []
+  | [one] -> [one]
+  | l :: t -> l :: sep :: interleave_list ~sep t
