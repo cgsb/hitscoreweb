@@ -56,20 +56,81 @@ let one_flowcell hsc serial_name =
   >>= function
   | [ one ] ->
     let lanes =
+      let lane = ref 0 in
       Layout.Record_flowcell.(
         cache_value ~dbh one >>| get_fields
         >>= fun {serial_name; lanes} ->
         of_list_sequential (Array.to_list lanes) (fun lane_t ->
+          incr lane;
           Layout.Record_lane.(
             cache_value ~dbh lane_t >>| get_fields
-            >>= fun {seeding_concentration_pM; _} ->
-            ksprintf return "seeding_concentration_pM: %f"
-              (Option.value ~default:99999. seeding_concentration_pM)
-          )))
+            >>= fun {
+  	      seeding_concentration_pM ;
+  	      total_volume ;
+  	      libraries ;
+  	      pooled_percentages ;
+  	      requested_read_length_1 ;
+  	      requested_read_length_2 ;
+  	      contacts ; } ->
+            of_list_sequential (Array.to_list contacts) (fun person_t ->
+              Layout.Record_person.(
+                cache_value ~dbh person_t >>| get_fields
+                >>= fun { given_name; family_name; _ } ->
+                return (given_name, family_name)))
+            >>= fun people ->
+            of_list_sequential
+              (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
+              (fun (i, ilibt) ->
+                Layout.Record_input_library.(
+                  cache_value ~dbh ilibt >>| get_fields
+                  >>= fun { library; _ } ->
+                  Layout.Record_stock_library.(
+                    cache_value ~dbh library >>| get_fields
+                    >>= fun { name; project; _ } ->
+                    return (name, project))))
+            >>= fun libs ->
+            return Html5.(
+              let na = pcdata "—" in
+              let cellt =
+                td  ~a:[ a_style "border: 1px  solid grey; padding: 2px; \
+                                  max-width: 40em;" ] in
+              let cellf =
+                td  ~a:[ a_style "border: 1px  solid grey; padding: 4px; \
+                                  text-align: right;" ] in
+              let opt o f = Option.value_map ~default:na o ~f in
+              let pcf = (ksprintf pcdata "%.0f") in
+              tr [
+                cellt [ksprintf pcdata "Lane %d" !lane];
+                cellf [opt seeding_concentration_pM pcf];
+		cellf [opt total_volume pcf];
+                cellt (List.map people 
+                        (fun (f,l) -> [ ksprintf pcdata "%s %s" f l; br () ])
+                                      |! List.flatten);
+                cellt [pcdata 
+                          (List.map libs 
+                             (function
+                             | (l, None) -> sprintf "%s" l
+                             | (l, Some p) -> sprintf "%s.%s" p l)
+                                            |! String.concat ~sep:", ")];
+              ]))))
     in
     lanes >>= fun lanes ->
-    return Html5.(ul (List.mapi lanes (fun i s -> 
-      li [ksprintf pcdata "Lane %d: %s" i s])))
+    return Html5.(div [
+      let head_cell =  th ~a:[ a_style "border: 1px  solid black" ] in
+      table
+        ~a:[ a_style "border: 3px  solid black; \
+                      border-collapse: collapse; " ]
+        (* ~caption:(caption [pcdata "bouh"]) *)
+        (* ~columns:[colgroup [col (); col ()]] *)
+        (tr [ head_cell [pcdata "Lane Nb"]; 
+              head_cell [pcdata "Seeding C."];
+              head_cell [pcdata "Vol."];
+              head_cell [pcdata "Contacts"];
+              head_cell [pcdata "Libraries"];
+            ])
+        lanes
+    ]
+    )
   | more ->
     error (`layout_inconsistency (`record_flowcell, 
                                   `more_than_one_flowcell_called serial_name))
