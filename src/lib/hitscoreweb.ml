@@ -31,6 +31,72 @@ module Services = struct
 
 end
 
+module Display_service = struct
+
+
+  type content =
+  | Description of
+      (HTML5_types.phrasing Html5.elt * HTML5_types.flow5 Html5.elt) list 
+  | Section of HTML5_types.phrasing Html5.elt * content 
+  | List of content list
+
+  let description l = Description l
+  let description_opt l = Description (List.filter_opt l)
+  let content_section t c = Section (t, c)
+  let content_list l = List l
+
+  let error_page msg =
+    Html5.(html
+             (head (title (pcdata "ERROR; Hitscore Web")) [])
+             (body [
+               p [pcdata (sprintf "Histcore's error web page: %s"
+                            Time.(now () |> to_string))];
+               p [ksprintf pcdata "Error: %s" msg];
+             ]))
+
+  let rec html_of_content ?(section_level=2) content =
+    let open Html5 in
+    let h = function
+      | 2 -> h2
+      | 3 -> h3
+      | 4 -> h4
+      | 5 -> h5
+      | 6 -> h6
+      | _ -> span in
+    match content with
+    | Description desc ->
+      ul (List.map desc (fun (l, r) ->
+        li [strong [l]; pcdata ": "; r; pcdata "."]));
+    | Section (title, content) ->
+      div [h section_level [title];
+           html_of_content ~section_level:(section_level + 1) content]
+    | List cl ->
+      div (List.map cl (html_of_content ~section_level))
+
+  let make ~hsc ~main_title content =
+    let html = 
+      content
+      >>= fun content ->
+      return
+        Html5.(html
+                 (head (title (ksprintf pcdata "Hitscoreweb: %s" main_title)) [])
+                 (body [
+                   h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
+                   html_of_content content           
+                 ])) in
+    Lwt.bind html (function
+    | Ok html ->
+      Lwt.return html
+    | Error (`pg_exn e) ->
+      Lwt.return (error_page (sprintf "PGOCaml: %s" (Exn.to_string e)))
+    | Error (`layout_inconsistency (_, _)) ->
+      Lwt.return (error_page 
+                    "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
+    )
+
+
+end
+
 
 let error_page msg =
   Html5.(html
@@ -67,7 +133,9 @@ let person_link dbh person_t =
   Layout.Record_person.(
     cache_value ~dbh person_t >>| get_fields
     >>= fun { given_name; family_name; email; _ } ->
-    return (ksprintf Html5.pcdata "%s %s" given_name family_name))
+    return (
+      Eliom_output.Html5.a Services.person
+        [ksprintf Html5.pcdata "%s %s" given_name family_name] email))
 
 let person hsc email =
   Hitscore_lwt.db_connect hsc
@@ -86,14 +154,23 @@ let person hsc email =
   	login;
   	nickname;
   	note;} ->
-      return Html5.(
-        ul [
-          li [pcdata "Email: "; pcdata email]
-        ]))
+      return Html5.(Display_service.(
+        content_section 
+          (ksprintf pcdata "Person %S" email)
+          (description_opt [
+            Some (pcdata "Name", ksprintf pcdata "%s%s %s%s%s"
+              given_name
+              (Option.value_map ~default:"" middle_name ~f:(sprintf " %s"))
+              family_name
+              (Option.value_map ~default:"" print_name ~f:(sprintf " (%s)"))
+              (Option.value_map ~default:"" nickname ~f:(sprintf " (%s)"))); 
+            Some (pcdata "Email", code [pcdata email]);
+            Option.map login (fun l -> (pcdata "Login", pcdata l));
+          ]))))
   | more ->
     error (`layout_inconsistency (`record_person, 
                                   `more_than_one_person_with_that_email))
-
+      
 
 let one_flowcell hsc serial_name =
   Hitscore_lwt.db_connect hsc
@@ -238,31 +315,7 @@ let flowcell_service hsc serial_name =
                   "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
   )
 
-
-let person_service hsc email =
-  let html = 
-    person hsc email
-    >>= fun html_person ->
-    return Html5.(
-      html
-        (head (title (ksprintf pcdata "Hitscoreweb: Person %s" email)) [])
-        (body [
-          h1 [ksprintf pcdata "Hitscoreweb: Person %s" email];
-          html_person
-        ]))
-  in
-  Lwt.bind html (function
-  | Ok html ->
-    Lwt.return html
-  | Error (`pg_exn e) ->
-    Lwt.return (error_page (sprintf "PGOCaml: %s" (Exn.to_string e)))
-  | Error (`layout_inconsistency (_, _)) ->
-    Lwt.return (error_page 
-                  "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
-  )
-
-
-let library_service ~name ?project hsc =
+let library  ~name ?project hsc =
   let full_name =
     match project with None -> name | Some p -> sprintf "%s.%s" p name in
   let sample_info dbh s =
@@ -278,84 +331,62 @@ let library_service ~name ?project hsc =
           >>= fun {name; informal; note } ->
           return (sample_name, sample_note, name, informal, note))
       | None -> return (sample_name, sample_note, None, None, None)) in
-  let library_info =
-    Hitscore_lwt.db_connect hsc
-    >>= fun dbh ->
-    let stocks =
-      Layout.Search.record_stock_library_by_name_project ~dbh name project in
-    stocks >>= fun sl_list ->
-    let stock_nb = List.length sl_list in
-    of_list_sequential sl_list (fun slt ->
-      Layout.Record_stock_library.(
-        cache_value ~dbh slt >>| get_fields
-        >>= fun { 
-  	  name; project; sample; protocol; application; stranded;
-  	  truseq_control; rnaseq_control;
-  	  barcode_type; barcodes; custom_barcodes;
-          p5_adapter_length; p7_adapter_length; preparator; note;
-        } ->
-        Html5.(
-          let opt o  = Option.bind o in
-          let lif name fmt =
-            let f s = Some Html5.(li [strong [pcdata name]; pcdata s]) in
-            ksprintf f (": " ^^ fmt ^^ ".") in
-          let sample_line =
-            of_option  sample (fun s ->
-              sample_info dbh s
-              >>= fun (sname, snote, oname, oinformal, onote) ->
-              return (li [
-                strong [pcdata "Sample info"];
-                pcdata ": ";
-                code [ksprintf pcdata "%S" sname];
-                Option.value_map snote ~default:(pcdata "")
-                  ~f:(fun n -> ksprintf pcdata " (%s)" n);
-                Option.value_map oname ~default:(em [pcdata " (no organism)"])
-                  ~f:(fun n -> ksprintf pcdata " from %S" n);
-                Option.value_map oinformal ~default:(pcdata "")
-                  ~f:(fun n -> ksprintf pcdata " (%s)" n);
-                Option.value_map onote ~default:(pcdata "")
-                  ~f:(fun n -> ksprintf pcdata " (%s)" n);
-                pcdata ".";
-              ])) in
-          sample_line >>= fun sample_line ->
-          of_option preparator (person_link dbh) >>= fun preparator_link ->
-          return (li [strong [ksprintf pcdata "%s:" full_name];
-                      ul (List.filter_opt [
-                        sample_line;
-                        opt application (lif "Application" "%S");
-                        lif "Stranded" "%b" stranded;
-                        lif "Truseq control" "%b" truseq_control;
-                        opt rnaseq_control (lif "RNA-seq control" "%s");
-                        Option.map preparator_link 
-                          ~f:(fun pl ->
-                            li [ strong [pcdata "Prepared by"];
-                                 pcdata ": ";
-                                 pl]);
-                        opt note (lif "Note" "%s");
-                      ])])
-        ))) 
-    >>= fun lib_info ->
-    return Html5.(div [
-      ksprintf pcdata "Found %d librar%s:"
-        stock_nb (if stock_nb = 1 then "y" else "ies");
-      ul lib_info
-    ])
-  in
-  Lwt.bind library_info (function
-  | Ok html_info ->
-    Lwt.return Html5.(
-      html
-        (head (title (ksprintf pcdata "Hitscoreweb: Library %s" full_name)) [])
-        (body [
-          h1 [ksprintf pcdata "Hitscoreweb: Library %s" full_name];
-          html_info
-        ]))
-  | Error (`pg_exn e) ->
-    Lwt.return (error_page (sprintf "PGOCaml: %s" (Exn.to_string e)))
-  | Error (`layout_inconsistency (_, _)) ->
-    Lwt.return (error_page 
-                  "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
-  )
+  Hitscore_lwt.db_connect hsc
+  >>= fun dbh ->
+  let stocks =
+    Layout.Search.record_stock_library_by_name_project ~dbh name project in
+  stocks >>= fun sl_list ->
+  let stock_nb = List.length sl_list in
+  of_list_sequential sl_list (fun slt ->
+    Layout.Record_stock_library.(
+      cache_value ~dbh slt >>| get_fields
+      >>= fun { 
+  	name; project; sample; protocol; application; stranded;
+  	truseq_control; rnaseq_control;
+  	barcode_type; barcodes; custom_barcodes;
+        p5_adapter_length; p7_adapter_length; preparator; note;
+      } ->
+      Display_service.(Html5.(
+        let opt_item o name tos =
+          Option.map o (fun x -> (pcdata name, pcdata (tos x))) in
+        let sample_information =
+          of_option  sample (fun s ->
+            sample_info dbh s
+            >>= fun (sname, snote, oname, oinformal, onote) ->
+            return (
+              (pcdata "Sample info",
+               span [
+                 code [ksprintf pcdata "%S" sname];
+                 Option.value_map snote ~default:(pcdata "")
+                        ~f:(fun n -> ksprintf pcdata " (%s)" n);
+                 Option.value_map oname ~default:(em [pcdata " (no organism)"])
+                   ~f:(fun n -> ksprintf pcdata " from %S" n);
+                 Option.value_map oinformal ~default:(pcdata "")
+                        ~f:(fun n -> ksprintf pcdata " (%s)" n);
+                 Option.value_map onote ~default:(pcdata "")
+                   ~f:(fun n -> ksprintf pcdata " (%s)" n);
+               ]))) in
+        sample_information >>= fun sample_information ->
+        of_option preparator (person_link dbh) >>= fun preparator_link ->
+        return (
+          content_section 
+            (ksprintf pcdata "%s:" full_name)
+            (description_opt [
+              sample_information;
+              opt_item application "Application" (sprintf "%S");
+              Some (pcdata "Stranded", ksprintf pcdata "%b" stranded);
+              Some (pcdata "TruSeq Control", ksprintf pcdata "%b" truseq_control);
+              opt_item rnaseq_control "RNA-seq control" (sprintf "%s");
+              Option.map preparator_link (fun l ->
+                (pcdata "Prepared by", l));
+              opt_item note "Note" (sprintf "%s");
+            ]))))))
+  >>= fun lib_info ->
+  return Display_service.(Html5.(
+    content_section 
+      (ksprintf pcdata "Found %d librar%s:"
+         stock_nb (if stock_nb = 1 then "y" else "ies"))
+      (content_list lib_info)))
     
 
 
@@ -374,12 +405,15 @@ let () =
         flowcell_service hitscore_configuration serial);
       Eliom_output.Html5.register ~service:Services.library_name
         (fun (name) () ->
-          library_service hitscore_configuration ~name);
-      Eliom_output.Html5.register ~service:Services.person
-        (fun (email) () ->
-          person_service hitscore_configuration email);
+          Display_service.make ~hsc:hitscore_configuration
+            ~main_title:"Library" (library ~name hitscore_configuration));
       Eliom_output.Html5.register ~service:Services.library_project_name
         (fun (project, name) () ->
-          library_service hitscore_configuration ~name ~project);
+          Display_service.make ~hsc:hitscore_configuration
+            ~main_title:"Library" (library hitscore_configuration ~name ~project));
+      Eliom_output.Html5.register ~service:Services.person
+        (fun (email) () ->
+          Display_service.make ~hsc:hitscore_configuration
+            ~main_title:"Person" (person hitscore_configuration email));
     )
 
