@@ -25,6 +25,10 @@ module Services = struct
       ~path:["library"] 
       ~get_params:Eliom_parameters.(string "project" ** string "name") ()
 
+  let person =
+    Eliom_services.service
+      ~path:["person"] ~get_params:Eliom_parameters.(string "email") ()
+
 end
 
 
@@ -33,7 +37,7 @@ let error_page msg =
            (head (title (pcdata "ERROR; Hitscore Web")) [])
            (body [
              p [pcdata (sprintf "Histcore's error web page: %s"
-                          Time.Ofday.(now () |> to_string))];
+                          Time.(now () |> to_string))];
              p [ksprintf pcdata "Error: %s" msg];
            ]))
 
@@ -64,7 +68,32 @@ let person_link dbh person_t =
     cache_value ~dbh person_t >>| get_fields
     >>= fun { given_name; family_name; email; _ } ->
     return (ksprintf Html5.pcdata "%s %s" given_name family_name))
-    
+
+let person hsc email =
+  Hitscore_lwt.db_connect hsc
+  >>= fun dbh ->
+  Layout.Search.record_person_by_email ~dbh email
+  >>= function
+  | [ one ] ->
+    Layout.Record_person.(
+      cache_value ~dbh one >>| get_fields
+      >>= fun {
+  	print_name;
+  	given_name;
+  	middle_name;
+  	family_name;
+  	email;
+  	login;
+  	nickname;
+  	note;} ->
+      return Html5.(
+        ul [
+          li [pcdata "Email: "; pcdata email]
+        ]))
+  | more ->
+    error (`layout_inconsistency (`record_person, 
+                                  `more_than_one_person_with_that_email))
+
 
 let one_flowcell hsc serial_name =
   Hitscore_lwt.db_connect hsc
@@ -210,6 +239,29 @@ let flowcell_service hsc serial_name =
   )
 
 
+let person_service hsc email =
+  let html = 
+    person hsc email
+    >>= fun html_person ->
+    return Html5.(
+      html
+        (head (title (ksprintf pcdata "Hitscoreweb: Person %s" email)) [])
+        (body [
+          h1 [ksprintf pcdata "Hitscoreweb: Person %s" email];
+          html_person
+        ]))
+  in
+  Lwt.bind html (function
+  | Ok html ->
+    Lwt.return html
+  | Error (`pg_exn e) ->
+    Lwt.return (error_page (sprintf "PGOCaml: %s" (Exn.to_string e)))
+  | Error (`layout_inconsistency (_, _)) ->
+    Lwt.return (error_page 
+                  "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
+  )
+
+
 let library_service ~name ?project hsc =
   let full_name =
     match project with None -> name | Some p -> sprintf "%s.%s" p name in
@@ -323,6 +375,9 @@ let () =
       Eliom_output.Html5.register ~service:Services.library_name
         (fun (name) () ->
           library_service hitscore_configuration ~name);
+      Eliom_output.Html5.register ~service:Services.person
+        (fun (email) () ->
+          person_service hitscore_configuration email);
       Eliom_output.Html5.register ~service:Services.library_project_name
         (fun (project, name) () ->
           library_service hitscore_configuration ~name ~project);
