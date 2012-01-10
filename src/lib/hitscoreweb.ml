@@ -34,16 +34,22 @@ end
 module Display_service = struct
 
 
+  type table_cell_html5 = HTML5_types.flow5 Html5.elt list
+
   type content =
   | Description of
       (HTML5_types.phrasing Html5.elt * HTML5_types.flow5 Html5.elt) list 
   | Section of HTML5_types.phrasing Html5.elt * content 
   | List of content list
+  | Table of [`head of table_cell_html5
+             |`text of table_cell_html5
+             |`number of table_cell_html5 ] list list
 
   let description l = Description l
   let description_opt l = Description (List.filter_opt l)
   let content_section t c = Section (t, c)
   let content_list l = List l
+  let content_table l = Table l
 
   let error_page msg =
     Html5.(html
@@ -53,6 +59,7 @@ module Display_service = struct
                p [ksprintf pcdata "An error occurred on %s:"
                      Time.(now () |> to_string)];
                div msg;
+               p [pcdata "Please complain at bio.gencore@nyu.edu."];
              ]))
 
   let rec html_of_content ?(section_level=2) content =
@@ -73,6 +80,27 @@ module Display_service = struct
            html_of_content ~section_level:(section_level + 1) content]
     | List cl ->
       div (List.map cl (html_of_content ~section_level))
+    | Table [] -> div []
+    | Table (h :: t) ->
+      let make_cell = function
+        | `head c -> td ~a:[ a_style "border: 1px  solid black; color: red" ] c
+        | `text c ->
+          td  ~a:[ a_style "border: 1px  solid grey; padding: 2px; \
+                            max-width: 40em;" ] c
+        | `number c ->
+          td  ~a:[ a_style "border: 1px  solid grey; padding: 4px; \
+                            text-align: right;" ] c
+      in
+      div [
+        table
+          ~a:[ a_style "border: 3px  solid black; \
+                        border-collapse: collapse; " ]
+        (* ~caption:(caption [pcdata "bouh"]) *)
+        (* ~columns:[colgroup [col (); col ()]] *)
+          (tr (List.map h make_cell))
+          (List.map t (fun l -> 
+            tr (List.map l make_cell)))
+      ]
 
   let make ~hsc ~main_title content =
     let html_content = 
@@ -97,6 +125,11 @@ module Display_service = struct
         ksprintf pcdata "There is no person with that email: ";
         code [pcdata email];
         pcdata "."])
+    | Error (`no_flowcell_named name) ->
+      Lwt.return (error_page [
+        ksprintf pcdata "There is no flowcell with that serial name: ";
+        code [pcdata name];
+        pcdata "."])
     | Error (`layout_inconsistency (place, problem)) ->
       let place_presentation =
         let r = pcdata "the record " in
@@ -104,7 +137,11 @@ module Display_service = struct
         | `record_person ->        [ r; code [pcdata "person"        ]]  
         | `record_organism ->      [ r; code [pcdata "organism"      ]]  
         | `record_sample ->        [ r; code [pcdata "sample"        ]]  
-        | `record_stock_library -> [ r; code [pcdata "stock_library" ]] in
+        | `record_stock_library -> [ r; code [pcdata "stock_library" ]]
+        | `record_flowcell      -> [ r; code [pcdata "record_flowcell"      ]] 
+        | `record_input_library -> [ r; code [pcdata "record_input_library" ]] 
+        | `record_lane          -> [ r; code [pcdata "record_lane"          ]] 
+      in
       let error_message =
         match problem with
         | `select_did_not_return_one_cache (s, i) ->
@@ -112,12 +149,14 @@ module Display_service = struct
                     "(select_did_not_return_one_cache %s %d)" s i]]
         | `more_than_one_person_with_that_email ->
           [pcdata "There is (are?) more than one person with that email address."]
+        | `more_than_one_flowcell_called s ->
+          [ksprintf pcdata "There are more than one flowcells called %s" s]
       in
       Lwt.return (error_page (
         [ksprintf pcdata "Layout Inconsistency in "]
         @ place_presentation
         @ [pcdata ":"; br ()]
-                    @ error_message
+        @ error_message
       )))
 
 
@@ -200,7 +239,7 @@ let person hsc email =
                                   `more_than_one_person_with_that_email))
       
 
-let one_flowcell hsc serial_name =
+let one_flowcell hsc ~serial_name =
   Hitscore_lwt.db_connect hsc
   >>= fun dbh ->
   Layout.Search.record_flowcell_by_serial_name ~dbh serial_name
@@ -238,49 +277,40 @@ let one_flowcell hsc serial_name =
             >>= fun libs ->
             return Html5.(
               let na = pcdata "—" in
-              let cellt =
-                td  ~a:[ a_style "border: 1px  solid grey; padding: 2px; \
-                                  max-width: 40em;" ] in
-              let cellf =
-                td  ~a:[ a_style "border: 1px  solid grey; padding: 4px; \
-                                  text-align: right;" ] in
               let opt o f = Option.value_map ~default:na o ~f in
               let pcf = (ksprintf pcdata "%.0f") in
-              tr [
-                cellt [ksprintf pcdata "Lane %d" !lane];
-                cellf [opt seeding_concentration_pM pcf];
-		cellf [opt total_volume pcf];
-                cellt (List.map people (fun html5 -> [ html5; br () ])
-                                                     |! List.flatten);
-                cellt (List.map libs 
-                         (function
-                         | (l, None) ->
-                           [Eliom_output.Html5.a Services.library_name [pcdata l] l]
-                         | (l, Some p) -> 
-                           let name = sprintf "%s.%s" p l in
-                           [Eliom_output.Html5.a Services.library_project_name
-                               [pcdata name] (p, l)])
-                           |! interleave_list ~sep:[pcdata ", "] 
-                           |! List.flatten);
+              [
+                `text   [ksprintf pcdata "Lane %d" !lane];
+                `number [opt seeding_concentration_pM pcf];
+		`text   [opt total_volume pcf];
+		`text   (List.map people (fun html5 -> [ html5; br () ])
+                                                       |! List.flatten);
+                `text   (List.map libs 
+                           (function
+                           | (l, None) ->
+                             [Eliom_output.Html5.a Services.library_name
+                                 [pcdata l] l]
+                           | (l, Some p) -> 
+                             let name = sprintf "%s.%s" p l in
+                             [Eliom_output.Html5.a Services.library_project_name
+                                 [pcdata name] (p, l)])
+                             |! interleave_list ~sep:[pcdata ", "] 
+                             |! List.flatten);
               ]))))
     in
     lanes >>= fun lanes ->
-    return Html5.(div [
-      let head_cell =  th ~a:[ a_style "border: 1px  solid black" ] in
-      table
-        ~a:[ a_style "border: 3px  solid black; \
-                      border-collapse: collapse; " ]
-        (* ~caption:(caption [pcdata "bouh"]) *)
-        (* ~columns:[colgroup [col (); col ()]] *)
-        (tr [ head_cell [pcdata "Lane Nb"]; 
-              head_cell [pcdata "Seeding C."];
-              head_cell [pcdata "Vol."];
-              head_cell [pcdata "Contacts"];
-              head_cell [pcdata "Libraries"];
-            ])
-        lanes
-    ]
-    )
+    return Display_service.(Html5.(
+      content_section 
+        (ksprintf pcdata "Flowcell %s" serial_name)
+        (content_table 
+           ([ `head [pcdata "Lane Nb"]; 
+	      `head [pcdata "Seeding C."];
+	      `head [pcdata "Vol."];
+	      `head [pcdata "Contacts"];
+	      `head [pcdata "Libraries"];]
+            :: lanes))))
+  | [] ->
+    error (`no_flowcell_named serial_name)
   | more ->
     error (`layout_inconsistency (`record_flowcell, 
                                   `more_than_one_flowcell_called serial_name))
@@ -320,28 +350,6 @@ let default_service hsc =
         p [pcdata (sprintf "Histcore's default web page: %s"
                      Time.(now () |> to_string))];
       ]))
-
-let flowcell_service hsc serial_name =
-  let html =
-    one_flowcell hsc serial_name
-    >>= fun html_flowcell ->
-    return Html5.(
-      html
-        (head (title (ksprintf pcdata "Hitscoreweb: Flowcell %s" serial_name)) [])
-        (body [
-          h1 [ksprintf pcdata "Hitscoreweb: Flowcell %s" serial_name];
-          html_flowcell
-        ]))
-  in
-  Lwt.bind html (function
-  | Ok html ->
-    Lwt.return html
-  | Error (`pg_exn e) ->
-    Lwt.return (error_page (sprintf "PGOCaml: %s" (Exn.to_string e)))
-  | Error (`layout_inconsistency (_, _)) ->
-    Lwt.return (error_page 
-                  "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
-  )
 
 let library  ~name ?project hsc =
   let full_name =
@@ -427,18 +435,26 @@ let () =
     (fun () ->
       Eliom_output.Html5.register ~service:Services.default (fun () () ->
         default_service hitscore_configuration);
+
       Eliom_output.Html5.register ~service:Services.flowcells (fun () () ->
         flowcells_service hitscore_configuration);
-      Eliom_output.Html5.register ~service:Services.flowcell (fun (serial) () ->
-        flowcell_service hitscore_configuration serial);
+
+      Eliom_output.Html5.register ~service:Services.flowcell
+        (fun (serial_name) () ->
+          Display_service.make ~hsc:hitscore_configuration
+            ~main_title:"Flowcell"
+            (one_flowcell hitscore_configuration ~serial_name));
+
       Eliom_output.Html5.register ~service:Services.library_name
         (fun (name) () ->
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"Library" (library ~name hitscore_configuration));
+
       Eliom_output.Html5.register ~service:Services.library_project_name
         (fun (project, name) () ->
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"Library" (library hitscore_configuration ~name ~project));
+
       Eliom_output.Html5.register ~service:Services.person
         (fun (email) () ->
           Display_service.make ~hsc:hitscore_configuration
