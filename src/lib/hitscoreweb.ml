@@ -49,9 +49,10 @@ module Display_service = struct
     Html5.(html
              (head (title (pcdata "ERROR; Hitscore Web")) [])
              (body [
-               p [pcdata (sprintf "Histcore's error web page: %s"
-                            Time.(now () |> to_string))];
-               p [ksprintf pcdata "Error: %s" msg];
+               h1 [ksprintf pcdata "Histcore's Error Page"];
+               p [ksprintf pcdata "An error occurred on %s:"
+                     Time.(now () |> to_string)];
+               div msg;
              ]))
 
   let rec html_of_content ?(section_level=2) content =
@@ -74,7 +75,7 @@ module Display_service = struct
       div (List.map cl (html_of_content ~section_level))
 
   let make ~hsc ~main_title content =
-    let html = 
+    let html_content = 
       content
       >>= fun content ->
       return
@@ -84,15 +85,40 @@ module Display_service = struct
                    h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
                    html_of_content content           
                  ])) in
-    Lwt.bind html (function
+    let open Html5 in
+    Lwt.bind html_content (function
     | Ok html ->
       Lwt.return html
     | Error (`pg_exn e) ->
-      Lwt.return (error_page (sprintf "PGOCaml: %s" (Exn.to_string e)))
-    | Error (`layout_inconsistency (_, _)) ->
-      Lwt.return (error_page 
-                    "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
-    )
+      Lwt.return (error_page [
+        ksprintf pcdata "PGOCaml exception: %s" (Exn.to_string e)])
+    | Error (`no_person_with_that_email email)->
+      Lwt.return (error_page [
+        ksprintf pcdata "There is no person with that email: ";
+        code [pcdata email];
+        pcdata "."])
+    | Error (`layout_inconsistency (place, problem)) ->
+      let place_presentation =
+        let r = pcdata "the record " in
+        match place with
+        | `record_person ->        [ r; code [pcdata "person"        ]]  
+        | `record_organism ->      [ r; code [pcdata "organism"      ]]  
+        | `record_sample ->        [ r; code [pcdata "sample"        ]]  
+        | `record_stock_library -> [ r; code [pcdata "stock_library" ]] in
+      let error_message =
+        match problem with
+        | `select_did_not_return_one_cache (s, i) ->
+          [code [ksprintf pcdata
+                    "(select_did_not_return_one_cache %s %d)" s i]]
+        | `more_than_one_person_with_that_email ->
+          [pcdata "There is (are?) more than one person with that email address."]
+      in
+      Lwt.return (error_page (
+        [ksprintf pcdata "Layout Inconsistency in "]
+        @ place_presentation
+        @ [pcdata ":"; br ()]
+                    @ error_message
+      )))
 
 
 end
@@ -167,6 +193,8 @@ let person hsc email =
             Some (pcdata "Email", code [pcdata email]);
             Option.map login (fun l -> (pcdata "Login", pcdata l));
           ]))))
+  | [] ->
+    error (`no_person_with_that_email email)
   | more ->
     error (`layout_inconsistency (`record_person, 
                                   `more_than_one_person_with_that_email))
