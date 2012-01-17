@@ -181,9 +181,29 @@ let flowcells hsc =
     of_list_sequential flowcells ~f:(fun f ->
       cache_value ~dbh f >>| get_fields
       >>= fun {serial_name; lanes} ->
+      Layout.Search.record_hiseq_raw_by_flowcell_name ~dbh serial_name
+      >>= fun dirs ->
+      of_list_sequential dirs ~f:(fun d ->
+        Layout.Record_hiseq_raw.(
+          cache_value ~dbh d >>| get_fields
+          >>= fun {read_length_1; read_length_index; read_length_2; 
+                   run_date; host; hiseq_dir_name} ->
+          return Html5.(li [
+            ksprintf pcdata "Ran on %s." (run_date |! 
+                Time.to_local_date |! Date.to_string);
+            br ();
+            code [ksprintf pcdata "%s:%s" host hiseq_dir_name];
+            br ();
+            ksprintf pcdata "Run type : %ld%s%s"
+              read_length_1
+              (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_index)
+              (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_2)
+          ])))
+      >>= fun l ->
       return Html5.(li [
         Eliom_output.Html5.a Services.flowcell [pcdata serial_name] serial_name;
-        pcdata "."
+        (if List.length l = 0 then div [pcdata "Never run."] 
+         else div [ul l])
       ]))
     >>= fun ul ->
     return (List.length flowcells, ul)
@@ -428,7 +448,7 @@ let library  ~name ?project hsc =
 
 let () =
 
-  let hitscore_configuration = Hitscore_lwt.configure () in
+  let hitscore_configuration = Hitscore_lwt.Configuration.configure () in
 
   Eliom_services.register_eliom_module
     "hitscoreweb" 
