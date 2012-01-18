@@ -157,6 +157,7 @@ module Display_service = struct
         | `record_input_library -> [ r; code [pcdata "record_input_library" ]] 
         | `record_lane          -> [ r; code [pcdata "record_lane"          ]]
         | `record_hiseq_raw     -> [ r; code [pcdata "record_hiseq_raw"     ]]
+        | `record_custom_barcode -> [ r; code [pcdata "record_custom_barcode"]]
       in
       let error_message =
         match problem with
@@ -524,18 +525,45 @@ let libraries hsc =
           String.concat ~sep:"," 
             (List.map ~f:(sprintf "%ld") 
                (Array.to_list (Option.value ~default:[| |] barcodes))) in
-        Option.value_map bartype
-          ~default:(pcdata "NO BARCODE TYPE!") ~f:(fun t ->
-            match Layout.Enumeration_barcode_provider.of_string t with
-            | Ok `none -> pcdata ""
-            | Ok `bioo -> ksprintf pcdata "BIOO[%s]" barcodes_list
-            | Ok `bioo_96 -> ksprintf pcdata "BIOO-96[%s]" barcodes_list
-            | Ok `illumina -> ksprintf pcdata "ILLUMINA[%s]" barcodes_list
-            | Ok `nugen -> ksprintf pcdata "NUGEN[%s]" barcodes_list
-            | Ok `custom -> strong [pcdata "TODO!!"]
-            | Error _ -> strong [pcdata "PARSING ERROR !!!"]
-          )
+        let custom_barcodes =
+          match bartoms with
+          | None | Some [| |] -> return [pcdata ""]
+          | Some a -> 
+            let l = Array.to_list a in
+            Layout.Record_custom_barcode.(
+              of_list_sequential l (fun id ->
+                cache_value ~dbh {id} >>| get_fields
+                >>= fun {position_in_r1; position_in_r2; 
+                         position_in_index; sequence} ->
+                return [ br ();
+                         ksprintf pcdata "%s(%s)"
+                           sequence
+                           (["R1", position_in_r1; 
+                             "I", position_in_index; "R2", position_in_r2]
+                            |! List.filter_map ~f:(function
+                              | _, None -> None
+                              | t, Some i -> Some (sprintf "%s:%ld" t i))
+                            |! String.concat ~sep:",")]))
+            >>= fun pcdatas ->
+            return (List.flatten pcdatas)
+        in
+        custom_barcodes >>= fun custom ->
+        let non_custom =
+          Option.value_map bartype
+            ~default:(pcdata "NO BARCODE TYPE!") ~f:(fun t ->
+              match Layout.Enumeration_barcode_provider.of_string t with
+              | Ok `none -> pcdata ""
+              | Ok `bioo -> ksprintf pcdata "BIOO[%s]" barcodes_list
+              | Ok `bioo_96 -> ksprintf pcdata "BIOO-96[%s]" barcodes_list
+              | Ok `illumina -> ksprintf pcdata "ILLUMINA[%s]" barcodes_list
+              | Ok `nugen -> ksprintf pcdata "NUGEN[%s]" barcodes_list
+              | Ok `custom -> strong [pcdata "CUSTOM"]
+              | Error _ -> strong [pcdata "PARSING ERROR !!!"]
+            )
+        in
+        return (non_custom :: custom)
       in
+      barcodes_cell >>= fun barcoding ->
       return [
         `text [opt pcdata name]; `text [opt pcdata project];
         `text submissions_cell;
@@ -545,7 +573,7 @@ let libraries hsc =
         `text [opt (ksprintf pcdata "%b") stranded];
         `text [opt (ksprintf pcdata "%b") truseq];
         `text [opt pcdata rnaseq];
-        `text [barcodes_cell];
+        `text barcoding;
         `text [opt (ksprintf pcdata "%ld") p5];
         `text [opt (ksprintf pcdata "%ld") p7];
         `text [opt pcdata note];
