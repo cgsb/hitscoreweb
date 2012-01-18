@@ -351,22 +351,30 @@ let one_flowcell hsc ~serial_name =
                     span []
                 ]
               in
+              let libs_cell =
+                let qnames =
+                  List.map libs (function (l, None) -> l
+                  | (l, Some p) -> sprintf "%s.%s" p l) in
+                (List.map qnames (fun qn ->
+                  Eliom_output.Html5.a Services.libraries [pcdata qn] [qn])
+                  |! interleave_list ~sep:(pcdata ", "))
+                @ [
+                  if List.length qnames > 1 then
+                    small [
+                      pcdata " (";
+                      Eliom_output.Html5.a Services.libraries [pcdata "all"] qnames;
+                      pcdata ")"
+                    ]
+                  else
+                    span []
+                ]
+              in
               [
                 `text   [ksprintf pcdata "Lane %d" !lane];
                 `number [opt seeding_concentration_pM pcf];
 		`text   [opt total_volume pcf];
 		`text   people_cell;
-                `text   (List.map libs 
-                           (function
-                           | (l, None) ->
-                             [Eliom_output.Html5.a Services.library_name
-                                 [pcdata l] l]
-                           | (l, Some p) -> 
-                             let name = sprintf "%s.%s" p l in
-                             [Eliom_output.Html5.a Services.library_project_name
-                                 [pcdata name] (p, l)])
-                             |! interleave_list ~sep:[pcdata ", "] 
-                             |! List.flatten);
+                `text   libs_cell
               ]))))
     in
     lanes >>= fun lanes ->
