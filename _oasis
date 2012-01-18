@@ -13,6 +13,7 @@ Library hitscoreweb
   BuildDepends: threads, core, hitscore, lwt.syntax, pgocaml.syntax, eliom.server
   Install: true
   Modules: Hitscoreweb,
+           Hitscoreweb_queries,
            Hitscoreweb_std
 
 Executable hitscoreweb

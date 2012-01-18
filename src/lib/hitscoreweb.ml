@@ -1,6 +1,7 @@
 open Hitscoreweb_std
 
-
+module Queries = 
+  Hitscoreweb_queries.Make (Hitscore_lwt.Result_IO) (Hitscore_lwt.Layout.PGOCaml)
 
 module Services = struct
 
@@ -29,6 +30,12 @@ module Services = struct
     Eliom_services.service
       ~path:["persons"] 
       ~get_params:Eliom_parameters.(opt (bool "filter") ** set string "email") ()
+
+  let libraries =
+    Eliom_services.service
+      ~path:["libraries"] 
+      ~get_params:Eliom_parameters.(unit) ()
+
 
 end
 
@@ -221,8 +228,6 @@ let person_essentials dbh person_t =
   Layout.Record_person.(
     cache_value ~dbh person_t >>| get_fields
     >>= fun { given_name; family_name; email; _ } ->
-    Hitscore_lwt.db_disconnect hsc dbh
-    >>= fun _ ->
     return (given_name, family_name, email))
 
 let person_link dbh person_t =
@@ -405,6 +410,7 @@ let default_service hsc =
         ul [
           li [Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()];
           li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] (None, [])];
+          li [Eliom_output.Html5.a Services.libraries [pcdata "Libraries"] ()];
 
         ];
         p [pcdata (sprintf "Histcore's default web page: %s"
@@ -485,8 +491,42 @@ let library  ~name ?project hsc =
       (ksprintf pcdata "Found %d librar%s:"
          stock_nb (if stock_nb = 1 then "y" else "ies"))
       (content_list lib_info)))
-    
 
+let libraries hsc =
+  let open Html5 in
+  Hitscore_lwt.db_connect hsc
+  >>= fun dbh ->
+  Queries.full_libraries dbh
+  >>= fun lib_resulst ->
+  of_list_sequential lib_resulst 
+    ~f:(fun (name, project, sample_name, org_name, prep_email, protocol) ->
+      let opt f o = Option.value_map ~default:(f "") ~f o in
+      let person e =
+        (Eliom_output.Html5.a Services.persons
+           [ksprintf Html5.pcdata "%s" e] (Some true, [e])) in
+      return [
+        `text [opt pcdata name];
+        `text [opt pcdata project];
+        `text [opt pcdata sample_name];
+        `text [opt pcdata org_name];
+        `text [opt person prep_email];
+        `text [opt pcdata protocol];
+      ])
+  >>= fun rows ->
+  let nb_rows = List.length rows in
+  return Display_service.(
+    content_section
+      (ksprintf pcdata "Found %d librar%s:"
+         nb_rows (if nb_rows = 1 then "y" else "ies"))
+      (content_table 
+         ([ `head [pcdata "Name"]; 
+	    `head [pcdata "Project"];
+            `head [pcdata "Sample-name"];
+            `head [pcdata "Organism"];
+            `head [pcdata "Preparator"];
+            `head [pcdata "Protocol"];
+          ] :: rows)))
+    
 
 let () =
 
@@ -506,6 +546,12 @@ let () =
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"People"
             (persons ~highlight ?filter hitscore_configuration));
+
+      Eliom_output.Html5.register ~service:Services.libraries
+        (fun () () ->
+          Display_service.make ~hsc:hitscore_configuration
+            ~main_title:"Libraries"
+            (libraries hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.flowcell
         (fun (serial_name) () ->
