@@ -27,7 +27,8 @@ module Services = struct
 
   let persons =
     Eliom_services.service
-      ~path:["persons"] ~get_params:Eliom_parameters.any ()
+      ~path:["persons"] 
+      ~get_params:Eliom_parameters.(opt (bool "filter") ** set string "email") ()
 
 end
 
@@ -224,7 +225,7 @@ let person_link dbh person_t =
   person_essentials dbh person_t >>= fun (f, l, e) ->
   return (Eliom_output.Html5.a Services.persons
             [ksprintf Html5.pcdata "%s %s" f l]
-            ["filter", "true"; "email", e])
+            (Some true, [e]))
 
 
 let persons ?(filter=false) ?(highlight=[]) hsc =
@@ -317,16 +318,14 @@ let one_flowcell hsc ~serial_name =
                 (List.map people (fun (f, l, e) ->
                   [ 
                     Eliom_output.Html5.a Services.persons
-                      [ksprintf Html5.pcdata "%s %s" f l]
-                      ["filter", "true"; "email", e];
+                      [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
                     br () ]) |! List.flatten)
                 @ [
                   if List.length people > 1 then
                     small [
                       pcdata "(";
                       Eliom_output.Html5.a Services.persons [pcdata "all"]
-                        (("filter", "true") 
-                         :: (List.map people (fun (f, l, e) -> ("email", e))));
+                        (Some true, List.map people (fun (f, l, e) -> e));
                       pcdata ")"
                     ]
                   else
@@ -397,7 +396,7 @@ let default_service hsc =
         h1 [pcdata "Services:"];
         ul [
           li [Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()];
-          li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] []];
+          li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] (None, [])];
 
         ];
         p [pcdata (sprintf "Histcore's default web page: %s"
@@ -493,13 +492,10 @@ let () =
         flowcells_service hitscore_configuration);
 
       Eliom_output.Html5.register ~service:Services.persons
-        (fun plist () ->
-          let highlight =
-            List.filter_map plist (function "email", e -> Some e | _ -> None) in
-          let filter = List.exists plist ((=) ("filter","true")) in
+        (fun (filter, highlight) () ->
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"People"
-            (persons ~highlight ~filter hitscore_configuration));
+            (persons ~highlight ?filter hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.flowcell
         (fun (serial_name) () ->
