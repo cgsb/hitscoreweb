@@ -25,10 +25,6 @@ module Services = struct
       ~path:["library"] 
       ~get_params:Eliom_parameters.(string "project" ** string "name") ()
 
-  let person =
-    Eliom_services.service
-      ~path:["person"] ~get_params:Eliom_parameters.(string "email") ()
-
   let persons =
     Eliom_services.service
       ~path:["persons"] ~get_params:Eliom_parameters.any ()
@@ -226,42 +222,6 @@ let person_link dbh person_t =
       Eliom_output.Html5.a Services.persons
         [ksprintf Html5.pcdata "%s %s" given_name family_name]
         ["filter", "true"; "email", email]))
-
-let person hsc email =
-  Hitscore_lwt.db_connect hsc
-  >>= fun dbh ->
-  Layout.Search.record_person_by_email ~dbh email
-  >>= function
-  | [ one ] ->
-    Layout.Record_person.(
-      cache_value ~dbh one >>| get_fields
-      >>= fun {
-  	print_name;
-  	given_name;
-  	middle_name;
-  	family_name;
-  	email;
-  	login;
-  	nickname;
-  	note;} ->
-      return Html5.(Display_service.(
-        content_section 
-          (ksprintf pcdata "Person %S" email)
-          (description_opt [
-            Some (pcdata "Name", ksprintf pcdata "%s%s %s%s%s"
-              given_name
-              (Option.value_map ~default:"" middle_name ~f:(sprintf " %s"))
-              family_name
-              (Option.value_map ~default:"" print_name ~f:(sprintf " (%s)"))
-              (Option.value_map ~default:"" nickname ~f:(sprintf " (%s)"))); 
-            Some (pcdata "Email", code [pcdata email]);
-            Option.map login (fun l -> (pcdata "Login", pcdata l));
-          ]))))
-  | [] ->
-    error (`no_person_with_that_email email)
-  | more ->
-    error (`layout_inconsistency (`record_person, 
-                                  `more_than_one_person_with_that_email))
 
 let persons ?(filter=false) ?(highlight=[]) hsc =
   Hitscore_lwt.db_connect hsc
@@ -534,9 +494,5 @@ let () =
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"Library" (library hitscore_configuration ~name ~project));
 
-      Eliom_output.Html5.register ~service:Services.person
-        (fun (email) () ->
-          Display_service.make ~hsc:hitscore_configuration
-            ~main_title:"Person" (person hitscore_configuration email));
     )
 
