@@ -10,7 +10,10 @@ module Make
   let full_libraries dbh =
     let query () =
       PGSQL (dbh) "nullable-results"
-        "SELECT stock.g_id, stock.name, stock.project,
+        "SELECT stock.g_id, stock.name, stock.project, stock.application,
+                stock.stranded, stock.truseq_control, stock.rnaseq_control,
+                stock.barcode_type, stock.barcodes, stock.custom_barcodes,
+                stock.p5_adapter_length, stock.p7_adapter_length, stock.note,
                 sample.name, organism.name,
                 person.email, protocol.name FROM 
          ((stock_library stock LEFT OUTER JOIN 

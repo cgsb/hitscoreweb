@@ -486,12 +486,16 @@ let libraries hsc =
   Queries.full_libraries dbh
   >>= fun lib_resulst ->
   of_list_sequential lib_resulst 
-    ~f:(fun (idopt, name, project, sample_name, org_name,
+    ~f:(fun (idopt, name, project, app, 
+             stranded, truseq, rnaseq,
+             bartype, barcodes, bartoms,
+             p5, p7, note,
+             sample_name, org_name,
              prep_email, protocol) ->
       let lib_id = Option.value ~default:0l idopt in
       Queries.library_submissions ~lib_id dbh
       >>= fun submissions ->
-      let opt f o = Option.value_map ~default:(f "") ~f o in
+      let opt f o = Option.value_map ~default:(pcdata "") ~f o in
       let person e =
         (Eliom_output.Html5.a Services.persons
            [ksprintf Html5.pcdata "%s" e] (Some true, [e])) in
@@ -515,14 +519,36 @@ let libraries hsc =
             ]))
         @ [pcdata "."]
       in
+      let barcodes_cell =
+        let barcodes_list =
+          String.concat ~sep:"," 
+            (List.map ~f:(sprintf "%ld") 
+               (Array.to_list (Option.value ~default:[| |] barcodes))) in
+        Option.value_map bartype
+          ~default:(pcdata "NO BARCODE TYPE!") ~f:(fun t ->
+            match Layout.Enumeration_barcode_provider.of_string t with
+            | Ok `none -> pcdata ""
+            | Ok `bioo -> ksprintf pcdata "BIOO[%s]" barcodes_list
+            | Ok `bioo_96 -> ksprintf pcdata "BIOO-96[%s]" barcodes_list
+            | Ok `illumina -> ksprintf pcdata "ILLUMINA[%s]" barcodes_list
+            | Ok `nugen -> ksprintf pcdata "NUGEN[%s]" barcodes_list
+            | Ok `custom -> strong [pcdata "TODO!!"]
+            | Error _ -> strong [pcdata "PARSING ERROR !!!"]
+          )
+      in
       return [
-        `text [opt pcdata name];
-        `text [opt pcdata project];
-        `text [opt pcdata sample_name];
-        `text [opt pcdata org_name];
-        `text [opt person prep_email];
-        `text [opt pcdata protocol];
+        `text [opt pcdata name]; `text [opt pcdata project];
         `text submissions_cell;
+        `text [opt pcdata sample_name]; `text [opt pcdata org_name];
+        `text [opt person prep_email]; `text [opt pcdata protocol];
+        `text [opt pcdata app];
+        `text [opt (ksprintf pcdata "%b") stranded];
+        `text [opt (ksprintf pcdata "%b") truseq];
+        `text [opt pcdata rnaseq];
+        `text [barcodes_cell];
+        `text [opt (ksprintf pcdata "%ld") p5];
+        `text [opt (ksprintf pcdata "%ld") p7];
+        `text [opt pcdata note];
       ])
   >>= fun rows ->
   let nb_rows = List.length rows in
@@ -533,11 +559,19 @@ let libraries hsc =
       (content_table 
          ([ `head [pcdata "Name"]; 
 	    `head [pcdata "Project"];
+            `head [pcdata "Submitted"];
             `head [pcdata "Sample-name"];
             `head [pcdata "Organism"];
             `head [pcdata "Preparator"];
             `head [pcdata "Protocol"];
-            `head [pcdata "Submitted"];
+            `head [pcdata "Application"];
+            `head [pcdata "Stranded"];
+            `head [pcdata "Truseq-control"];
+            `head [pcdata "RNASeq-control"];
+            `head [pcdata "Barcoding"];
+            `head [pcdata "P5 Adapter Length"];
+            `head [pcdata "P7 Adapter Length"];
+            `head [pcdata "Note"];
           ] :: rows)))
     
 
