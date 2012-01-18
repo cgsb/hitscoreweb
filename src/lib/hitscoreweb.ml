@@ -17,15 +17,6 @@ module Services = struct
     Eliom_services.service
       ~path:["flowcell"] ~get_params:Eliom_parameters.(string "serial") ()
 
-  let library_name =
-    Eliom_services.service
-      ~path:["library"] ~get_params:Eliom_parameters.(string "name") ()
-
-  let library_project_name =
-    Eliom_services.service
-      ~path:["library"] 
-      ~get_params:Eliom_parameters.(string "project" ** string "name") ()
-
   let persons =
     Eliom_services.service
       ~path:["persons"] 
@@ -413,81 +404,6 @@ let default_service hsc =
                      Time.(now () |> to_string))];
       ]))
 
-let library  ~name ?project hsc =
-  let full_name =
-    match project with None -> name | Some p -> sprintf "%s.%s" p name in
-  let sample_info dbh s =
-    Layout.Record_sample.(
-      cache_value ~dbh s >>| get_fields
-      >>= fun { name; organism; note } ->
-      let sample_name = name in
-      let sample_note = note in
-      match organism with
-      | Some o ->
-        Layout.Record_organism.(
-          cache_value ~dbh o >>| get_fields
-          >>= fun {name; informal; note } ->
-          return (sample_name, sample_note, name, informal, note))
-      | None -> return (sample_name, sample_note, None, None, None)) in
-  Hitscore_lwt.db_connect hsc
-  >>= fun dbh ->
-  let stocks =
-    Layout.Search.record_stock_library_by_name_project ~dbh name project in
-  stocks >>= fun sl_list ->
-  let stock_nb = List.length sl_list in
-  of_list_sequential sl_list (fun slt ->
-    Layout.Record_stock_library.(
-      cache_value ~dbh slt >>| get_fields
-      >>= fun { 
-  	name; project; sample; protocol; application; stranded;
-  	truseq_control; rnaseq_control;
-  	barcode_type; barcodes; custom_barcodes;
-        p5_adapter_length; p7_adapter_length; preparator; note;
-      } ->
-      Display_service.(Html5.(
-        let opt_item o name tos =
-          Option.map o (fun x -> (pcdata name, pcdata (tos x))) in
-        let sample_information =
-          of_option  sample (fun s ->
-            sample_info dbh s
-            >>= fun (sname, snote, oname, oinformal, onote) ->
-            return (
-              (pcdata "Sample info",
-               span [
-                 code [ksprintf pcdata "%S" sname];
-                 Option.value_map snote ~default:(pcdata "")
-                        ~f:(fun n -> ksprintf pcdata " (%s)" n);
-                 Option.value_map oname ~default:(em [pcdata " (no organism)"])
-                   ~f:(fun n -> ksprintf pcdata " from %S" n);
-                 Option.value_map oinformal ~default:(pcdata "")
-                        ~f:(fun n -> ksprintf pcdata " (%s)" n);
-                 Option.value_map onote ~default:(pcdata "")
-                   ~f:(fun n -> ksprintf pcdata " (%s)" n);
-               ]))) in
-        sample_information >>= fun sample_information ->
-        of_option preparator (person_link dbh) >>= fun preparator_link ->
-        return (
-          content_section 
-            (ksprintf pcdata "%s:" full_name)
-            (description_opt [
-              sample_information;
-              opt_item application "Application" (sprintf "%S");
-              Some (pcdata "Stranded", ksprintf pcdata "%b" stranded);
-              Some (pcdata "TruSeq Control", ksprintf pcdata "%b" truseq_control);
-              opt_item rnaseq_control "RNA-seq control" (sprintf "%s");
-              Option.map preparator_link (fun l ->
-                (pcdata "Prepared by", l));
-              opt_item note "Note" (sprintf "%s");
-            ]))))))
-  >>= fun lib_info ->
-  Hitscore_lwt.db_disconnect hsc dbh
-  >>= fun _ ->
-  return Display_service.(Html5.(
-    content_section 
-      (ksprintf pcdata "Found %d librar%s:"
-         stock_nb (if stock_nb = 1 then "y" else "ies"))
-      (content_list lib_info)))
-
 let libraries ?(qualified_names=[]) hsc =
   let open Html5 in
   Hitscore_lwt.db_connect hsc
@@ -656,16 +572,6 @@ let () =
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"Flowcell"
             (one_flowcell hitscore_configuration ~serial_name));
-
-      Eliom_output.Html5.register ~service:Services.library_name
-        (fun (name) () ->
-          Display_service.make ~hsc:hitscore_configuration
-            ~main_title:"Library" (library ~name hitscore_configuration));
-
-      Eliom_output.Html5.register ~service:Services.library_project_name
-        (fun (project, name) () ->
-          Display_service.make ~hsc:hitscore_configuration
-            ~main_title:"Library" (library hitscore_configuration ~name ~project));
 
     )
 
