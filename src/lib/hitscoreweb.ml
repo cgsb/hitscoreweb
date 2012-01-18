@@ -52,12 +52,14 @@ module Display_service = struct
   | Table of [`head of table_cell_html5
              |`text of table_cell_html5
              |`number of table_cell_html5 ] list list
+  | Paragraph of HTML5_types.flow5 Html5.elt list
 
   let description l = Description l
   let description_opt l = Description (List.filter_opt l)
   let content_section t c = Section (t, c)
   let content_list l = List l
   let content_table l = Table l
+  let paragraph l = Paragraph l
 
   let error_page msg =
     Html5.(html
@@ -80,6 +82,7 @@ module Display_service = struct
       | 6 -> h6
       | _ -> span in
     match content with
+    | Paragraph l -> div l
     | Description desc ->
       ul (List.map desc (fun (l, r) ->
         li [strong [l]; pcdata ": "; r; pcdata "."]));
@@ -118,6 +121,10 @@ module Display_service = struct
         Html5.(html
                  (head (title (ksprintf pcdata "Hitscoreweb: %s" main_title)) [])
                  (body [
+                   div [
+                     Eliom_output.Html5.a Services.default [pcdata "Home"] ()
+                   ];
+                   hr ();
                    h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
                    html_of_content content           
                  ])) in
@@ -148,7 +155,8 @@ module Display_service = struct
         | `record_stock_library -> [ r; code [pcdata "stock_library" ]]
         | `record_flowcell      -> [ r; code [pcdata "record_flowcell"      ]] 
         | `record_input_library -> [ r; code [pcdata "record_input_library" ]] 
-        | `record_lane          -> [ r; code [pcdata "record_lane"          ]] 
+        | `record_lane          -> [ r; code [pcdata "record_lane"          ]]
+        | `record_hiseq_raw     -> [ r; code [pcdata "record_hiseq_raw"     ]]
       in
       let error_message =
         match problem with
@@ -181,6 +189,7 @@ let error_page msg =
            ]))
 
 let flowcells hsc =
+  let open Html5 in
   Hitscore_lwt.db_connect hsc
   >>= fun dbh ->
   Layout.Record_flowcell.(
@@ -196,34 +205,32 @@ let flowcells hsc =
           cache_value ~dbh d >>| get_fields
           >>= fun {read_length_1; read_length_index; read_length_2; 
                    run_date; host; hiseq_dir_name} ->
-          return Html5.(li [
-            ksprintf pcdata "Ran on %s." (run_date |! 
+          return (li [
+            ksprintf pcdata "Ran on %s, " (run_date |! 
                 Time.to_local_date |! Date.to_string);
-            br ();
-            code [ksprintf pcdata "%s:%s" host hiseq_dir_name];
-            br ();
-            ksprintf pcdata "Run type : %ld%s%s"
+            code [pcdata (Filename.basename hiseq_dir_name)];
+            ksprintf pcdata " (%ld%s%s)."
               read_length_1
               (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_index)
               (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_2)
           ])))
       >>= fun l ->
-      return Html5.(li [
-        Eliom_output.Html5.a Services.flowcell [pcdata serial_name] serial_name;
-        (if List.length l = 0 then div [pcdata "Never run."] 
-         else div [ul l])
-      ]))
+      return Display_service.(
+        paragraph [
+          strong [
+            (Eliom_output.Html5.a Services.flowcell [pcdata serial_name] serial_name);
+            pcdata ":"];
+          if List.length l = 0 then span [pcdata " Never run."] else ul l
+        ]))
     >>= fun ul ->
-    return (List.length flowcells, ul)
-  )
-  >>= fun (length, items) ->
-  Hitscore_lwt.db_disconnect hsc dbh
-  >>= fun _ ->
-  return Html5.(div [
-    h1 [ ksprintf pcdata "%d Flowcells" length];
-    ul items
-  ])
-
+    Hitscore_lwt.db_disconnect hsc dbh
+    >>= fun _ ->
+    return Display_service.(
+      content_section
+        (ksprintf pcdata "Found %d Flowcells" (List.length ul))
+        (content_list ul)
+    ))
+    
 let person_essentials dbh person_t =
   Layout.Record_person.(
     cache_value ~dbh person_t >>| get_fields
@@ -380,33 +387,13 @@ let one_flowcell hsc ~serial_name =
     error (`layout_inconsistency (`record_flowcell, 
                                   `more_than_one_flowcell_called serial_name))
 
-
-let flowcells_service hsc =
-  let html =
-    flowcells hsc
-    >>= fun html_flowcells ->
-    return
-      Html5.(html
-               (head (title (pcdata "Hitscore Web")) [])
-               (body [
-                 html_flowcells;
-               ])) in
-  Lwt.bind html (function
-  | Ok html ->
-    Lwt.return html
-  | Error (`pg_exn e) ->
-    Lwt.return (error_page (sprintf "PGOCaml: %s" (Exn.to_string e)))
-  | Error (`layout_inconsistency (_, _)) ->
-    Lwt.return (error_page 
-                  "Layout Inconsistency: Complain at bio.gencore@nyu.edu")
-  )
-
 let default_service hsc =
   Lwt.return Html5.(
     html
       (head (title (pcdata "Hitscoreweb: Default")) [])
       (body [
-        h1 [pcdata "Services:"];
+        h1 [pcdata "Hitscoreweb: Home"];
+        h2 [pcdata "Services"];
         ul [
           li [Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()];
           li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] (None, [])];
@@ -538,8 +525,11 @@ let () =
       Eliom_output.Html5.register ~service:Services.default (fun () () ->
         default_service hitscore_configuration);
 
-      Eliom_output.Html5.register ~service:Services.flowcells (fun () () ->
-        flowcells_service hitscore_configuration);
+      Eliom_output.Html5.register ~service:Services.flowcells
+        (fun () () ->
+          Display_service.make ~hsc:hitscore_configuration
+            ~main_title:"Flowcells"
+            (flowcells hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.persons
         (fun (filter, highlight) () ->
