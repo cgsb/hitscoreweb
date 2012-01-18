@@ -486,11 +486,35 @@ let libraries hsc =
   Queries.full_libraries dbh
   >>= fun lib_resulst ->
   of_list_sequential lib_resulst 
-    ~f:(fun (name, project, sample_name, org_name, prep_email, protocol) ->
+    ~f:(fun (idopt, name, project, sample_name, org_name,
+             prep_email, protocol) ->
+      let lib_id = Option.value ~default:0l idopt in
+      Queries.library_submissions ~lib_id dbh
+      >>= fun submissions ->
       let opt f o = Option.value_map ~default:(f "") ~f o in
       let person e =
         (Eliom_output.Html5.a Services.persons
            [ksprintf Html5.pcdata "%s" e] (Some true, [e])) in
+      let submissions_cell = 
+        let how_much =
+          match List.length submissions with
+          | 1 -> "Once" | 2 -> "Twice" | n -> sprintf "%d times" n in
+        let flowcells = 
+          List.map submissions fst |! List.dedup in
+        (ksprintf pcdata "%s: " how_much)
+        ::
+          interleave_list ~sep:(pcdata ", ")
+          (List.map flowcells (fun fcid ->
+            let lanes = 
+              List.filter submissions ~f:(fun (f,l) -> f = fcid) |! List.length in
+            span [
+              Eliom_output.Html5.a Services.flowcell
+                [ksprintf pcdata "%s" fcid] fcid;
+              ksprintf pcdata " (%d lane%s)"
+                lanes (if lanes > 1 then "s" else "");
+            ]))
+        @ [pcdata "."]
+      in
       return [
         `text [opt pcdata name];
         `text [opt pcdata project];
@@ -498,6 +522,7 @@ let libraries hsc =
         `text [opt pcdata org_name];
         `text [opt person prep_email];
         `text [opt pcdata protocol];
+        `text submissions_cell;
       ])
   >>= fun rows ->
   let nb_rows = List.length rows in
@@ -512,6 +537,7 @@ let libraries hsc =
             `head [pcdata "Organism"];
             `head [pcdata "Preparator"];
             `head [pcdata "Protocol"];
+            `head [pcdata "Submitted"];
           ] :: rows)))
     
 
