@@ -34,7 +34,7 @@ module Services = struct
   let libraries =
     Eliom_services.service
       ~path:["libraries"] 
-      ~get_params:Eliom_parameters.(unit) ()
+      ~get_params:Eliom_parameters.(set string "qualified_name") ()
 
 
 end
@@ -398,7 +398,7 @@ let default_service hsc =
         ul [
           li [Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()];
           li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] (None, [])];
-          li [Eliom_output.Html5.a Services.libraries [pcdata "Libraries"] ()];
+          li [Eliom_output.Html5.a Services.libraries [pcdata "Libraries"] []];
 
         ];
         p [pcdata (sprintf "Histcore's default web page: %s"
@@ -480,11 +480,23 @@ let library  ~name ?project hsc =
          stock_nb (if stock_nb = 1 then "y" else "ies"))
       (content_list lib_info)))
 
-let libraries hsc =
+let libraries ?(qualified_names=[]) hsc =
   let open Html5 in
   Hitscore_lwt.db_connect hsc
   >>= fun dbh ->
   Queries.full_libraries dbh
+  >>| List.filter ~f:(fun (idopt, name, project, app, 
+                           stranded, truseq, rnaseq,
+                           bartype, barcodes, bartoms,
+                           p5, p7, note,
+                           sample_name, org_name,
+                           prep_email, protocol) ->
+    let qualified_name =
+      let opt = Option.value ~default:"" in
+      sprintf "%s.%s" (opt project) (opt name) in
+    qualified_names = [] 
+    || List.exists qualified_names
+      ~f:(fun qn -> qualified_name = qn || Some qn = name))
   >>= fun lib_resulst ->
   of_list_sequential lib_resulst 
     ~f:(fun (idopt, name, project, app, 
@@ -515,7 +527,7 @@ let libraries hsc =
             span [
               Eliom_output.Html5.a Services.flowcell
                 [ksprintf pcdata "%s" fcid] fcid;
-              ksprintf pcdata " (%d lane%s)"
+              ksprintf pcdata " (%d lane%s)"
                 lanes (if lanes > 1 then "s" else "");
             ]))
         @ [pcdata "."]
@@ -626,10 +638,10 @@ let () =
             (persons ~highlight ?filter hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.libraries
-        (fun () () ->
+        (fun qualified_names () ->
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"Libraries"
-            (libraries hitscore_configuration));
+            (libraries ~qualified_names hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.flowcell
         (fun (serial_name) () ->
