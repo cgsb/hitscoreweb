@@ -214,14 +214,18 @@ let flowcells hsc =
     ul items
   ])
 
-let person_link dbh person_t =
+let person_essentials dbh person_t =
   Layout.Record_person.(
     cache_value ~dbh person_t >>| get_fields
     >>= fun { given_name; family_name; email; _ } ->
-    return (
-      Eliom_output.Html5.a Services.persons
-        [ksprintf Html5.pcdata "%s %s" given_name family_name]
-        ["filter", "true"; "email", email]))
+    return (given_name, family_name, email))
+
+let person_link dbh person_t =
+  person_essentials dbh person_t >>= fun (f, l, e) ->
+  return (Eliom_output.Html5.a Services.persons
+            [ksprintf Html5.pcdata "%s %s" f l]
+            ["filter", "true"; "email", e])
+
 
 let persons ?(filter=false) ?(highlight=[]) hsc =
   Hitscore_lwt.db_connect hsc
@@ -292,7 +296,7 @@ let one_flowcell hsc ~serial_name =
   	      requested_read_length_1 ;
   	      requested_read_length_2 ;
   	      contacts ; } ->
-            of_list_sequential (Array.to_list contacts) (person_link dbh)
+            of_list_sequential (Array.to_list contacts) (person_essentials dbh)
             >>= fun people ->
             of_list_sequential
               (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
@@ -309,12 +313,31 @@ let one_flowcell hsc ~serial_name =
               let na = pcdata "—" in
               let opt o f = Option.value_map ~default:na o ~f in
               let pcf = (ksprintf pcdata "%.0f") in
+              let people_cell = 
+                (List.map people (fun (f, l, e) ->
+                  [ 
+                    Eliom_output.Html5.a Services.persons
+                      [ksprintf Html5.pcdata "%s %s" f l]
+                      ["filter", "true"; "email", e];
+                    br () ]) |! List.flatten)
+                @ [
+                  if List.length people > 1 then
+                    small [
+                      pcdata "(";
+                      Eliom_output.Html5.a Services.persons [pcdata "all"]
+                        (("filter", "true") 
+                         :: (List.map people (fun (f, l, e) -> ("email", e))));
+                      pcdata ")"
+                    ]
+                  else
+                    span []
+                ]
+              in
               [
                 `text   [ksprintf pcdata "Lane %d" !lane];
                 `number [opt seeding_concentration_pM pcf];
 		`text   [opt total_volume pcf];
-		`text   (List.map people (fun html5 -> [ html5; br () ])
-                                                       |! List.flatten);
+		`text   people_cell;
                 `text   (List.map libs 
                            (function
                            | (l, None) ->
