@@ -29,6 +29,10 @@ module Services = struct
     Eliom_services.service
       ~path:["person"] ~get_params:Eliom_parameters.(string "email") ()
 
+  let persons =
+    Eliom_services.service
+      ~path:["persons"] ~get_params:Eliom_parameters.unit ()
+
 end
 
 module Display_service = struct
@@ -257,7 +261,40 @@ let person hsc email =
   | more ->
     error (`layout_inconsistency (`record_person, 
                                   `more_than_one_person_with_that_email))
-      
+
+let persons hsc =
+  Hitscore_lwt.db_connect hsc
+  >>= fun dbh ->
+  Layout.Record_person.(
+    get_all ~dbh >>= fun plist ->
+    let rows_m =
+      of_list_sequential plist (fun p ->
+        cache_value ~dbh p >>| get_fields
+        >>= fun {print_name; given_name; middle_name; family_name;
+  	         email; login; nickname; note;} ->
+        let opt f m = Option.value_map ~f ~default:(f "") m in
+        return Html5.([`text [opt pcdata print_name];
+                       `text [pcdata given_name];
+                       `text [opt pcdata middle_name];
+                       `text [pcdata family_name];
+                       `text [code [pcdata email]];
+                       `text [code [opt pcdata login]];
+                       `text [opt pcdata nickname];
+                       `text [opt pcdata note];])) in
+    rows_m >>= fun rows ->
+    return Display_service.(Html5.(
+      content_section 
+        (ksprintf pcdata "Persons")
+        (content_table 
+           ([`head [pcdata "Print name"];
+	     `head [pcdata "Given name"];
+	     `head [pcdata "Middle name"];
+	     `head [pcdata "Family name"];
+	     `head [pcdata "Email"];
+	     `head [pcdata "Login"];
+	     `head [pcdata "Nickname"];
+	     `head [pcdata "Note"];]
+            :: rows)))))
 
 let one_flowcell hsc ~serial_name =
   Hitscore_lwt.db_connect hsc
@@ -363,9 +400,9 @@ let default_service hsc =
       (body [
         h1 [pcdata "Services:"];
         ul [
-          li [
-            Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()
-          ];
+          li [Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()];
+          li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] ()];
+
         ];
         p [pcdata (sprintf "Histcore's default web page: %s"
                      Time.(now () |> to_string))];
@@ -458,6 +495,12 @@ let () =
 
       Eliom_output.Html5.register ~service:Services.flowcells (fun () () ->
         flowcells_service hitscore_configuration);
+
+      Eliom_output.Html5.register ~service:Services.persons
+        (fun () () ->
+          Display_service.make ~hsc:hitscore_configuration
+            ~main_title:"Persons"
+            (persons hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.flowcell
         (fun (serial_name) () ->
