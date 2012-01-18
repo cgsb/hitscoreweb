@@ -31,7 +31,7 @@ module Services = struct
 
   let persons =
     Eliom_services.service
-      ~path:["persons"] ~get_params:Eliom_parameters.unit ()
+      ~path:["persons"] ~get_params:Eliom_parameters.any ()
 
 end
 
@@ -223,8 +223,9 @@ let person_link dbh person_t =
     cache_value ~dbh person_t >>| get_fields
     >>= fun { given_name; family_name; email; _ } ->
     return (
-      Eliom_output.Html5.a Services.person
-        [ksprintf Html5.pcdata "%s %s" given_name family_name] email))
+      Eliom_output.Html5.a Services.persons
+        [ksprintf Html5.pcdata "%s %s" given_name family_name]
+        ["filter", "true"; "email", email]))
 
 let person hsc email =
   Hitscore_lwt.db_connect hsc
@@ -262,7 +263,7 @@ let person hsc email =
     error (`layout_inconsistency (`record_person, 
                                   `more_than_one_person_with_that_email))
 
-let persons hsc =
+let persons ?(filter=false) ?(highlight=[]) hsc =
   Hitscore_lwt.db_connect hsc
   >>= fun dbh ->
   Layout.Record_person.(
@@ -273,18 +274,30 @@ let persons hsc =
         >>= fun {print_name; given_name; middle_name; family_name;
   	         email; login; nickname; note;} ->
         let opt f m = Option.value_map ~f ~default:(f "") m in
-        return Html5.([`text [opt pcdata print_name];
-                       `text [pcdata given_name];
-                       `text [opt pcdata middle_name];
-                       `text [pcdata family_name];
-                       `text [code [pcdata email]];
-                       `text [code [opt pcdata login]];
-                       `text [opt pcdata nickname];
-                       `text [opt pcdata note];])) in
+        let is_vip = List.exists highlight ((=) email) in
+        if not is_vip && filter then
+          return None
+        else Html5.(
+          let email_field =
+            let style = if is_vip then "color: green" else "" in
+            `text [code ~a:[a_id email; a_style style] [pcdata email]]
+          in
+          return (Some [
+            `text [opt pcdata print_name];
+            `text [pcdata given_name];
+            `text [opt pcdata middle_name];
+            `text [pcdata family_name];
+            email_field;
+            `text [code [opt pcdata login]];
+            `text [opt pcdata nickname];
+            `text [opt pcdata note];]))) in
     rows_m >>= fun rows ->
+    let actual_rows = List.filter_opt rows in
+    let nrows = List.length actual_rows in
     return Display_service.(Html5.(
       content_section 
-        (ksprintf pcdata "Persons")
+        (ksprintf pcdata "Found %d Person%s" nrows
+           (if nrows > 1 then "s" else ""))
         (content_table 
            ([`head [pcdata "Print name"];
 	     `head [pcdata "Given name"];
@@ -294,7 +307,7 @@ let persons hsc =
 	     `head [pcdata "Login"];
 	     `head [pcdata "Nickname"];
 	     `head [pcdata "Note"];]
-            :: rows)))))
+            :: actual_rows)))))
 
 let one_flowcell hsc ~serial_name =
   Hitscore_lwt.db_connect hsc
@@ -401,7 +414,7 @@ let default_service hsc =
         h1 [pcdata "Services:"];
         ul [
           li [Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()];
-          li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] ()];
+          li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] []];
 
         ];
         p [pcdata (sprintf "Histcore's default web page: %s"
@@ -497,10 +510,13 @@ let () =
         flowcells_service hitscore_configuration);
 
       Eliom_output.Html5.register ~service:Services.persons
-        (fun () () ->
+        (fun plist () ->
+          let highlight =
+            List.filter_map plist (function "email", e -> Some e | _ -> None) in
+          let filter = List.exists plist ((=) ("filter","true")) in
           Display_service.make ~hsc:hitscore_configuration
-            ~main_title:"Persons"
-            (persons hitscore_configuration));
+            ~main_title:"People"
+            (persons ~highlight ~filter hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.flowcell
         (fun (serial_name) () ->
