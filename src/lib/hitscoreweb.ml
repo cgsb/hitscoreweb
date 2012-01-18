@@ -210,6 +210,8 @@ let flowcells hsc =
     return (List.length flowcells, ul)
   )
   >>= fun (length, items) ->
+  Hitscore_lwt.db_disconnect hsc dbh
+  >>= fun _ ->
   return Html5.(div [
     h1 [ ksprintf pcdata "%d Flowcells" length];
     ul items
@@ -219,6 +221,8 @@ let person_essentials dbh person_t =
   Layout.Record_person.(
     cache_value ~dbh person_t >>| get_fields
     >>= fun { given_name; family_name; email; _ } ->
+    Hitscore_lwt.db_disconnect hsc dbh
+    >>= fun _ ->
     return (given_name, family_name, email))
 
 let person_link dbh person_t =
@@ -257,6 +261,8 @@ let persons ?(filter=false) ?(highlight=[]) hsc =
             `text [opt pcdata nickname];
             `text [opt pcdata note];]))) in
     rows_m >>= fun rows ->
+    Hitscore_lwt.db_disconnect hsc dbh
+    >>= fun _ ->
     let actual_rows = List.filter_opt rows in
     let nrows = List.length actual_rows in
     return Display_service.(Html5.(
@@ -351,6 +357,8 @@ let one_flowcell hsc ~serial_name =
               ]))))
     in
     lanes >>= fun lanes ->
+    Hitscore_lwt.db_disconnect hsc dbh
+    >>= fun _ ->
     return Display_service.(Html5.(
       content_section 
         (ksprintf pcdata "Flowcell %s" serial_name)
@@ -470,6 +478,8 @@ let library  ~name ?project hsc =
               opt_item note "Note" (sprintf "%s");
             ]))))))
   >>= fun lib_info ->
+  Hitscore_lwt.db_disconnect hsc dbh
+  >>= fun _ ->
   return Display_service.(Html5.(
     content_section 
       (ksprintf pcdata "Found %d librar%s:"
