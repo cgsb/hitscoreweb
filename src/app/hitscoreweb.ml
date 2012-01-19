@@ -350,11 +350,11 @@ let rpm_build () =
     fprintf o "%%define _topdir %s\n" tmp_dir;
     fprintf o "%%define name hitscoreweb\n";
     fprintf o "%%define release 1\n";
-    fprintf o "%%define version 1.12\n";
+    fprintf o "%%define version %s\n" Hitscore_conf_values.version;
     output_string o "
 Name:   %{name}
 Version: %{version}
-Release:        1%{?dist}
+Release: %{release}
 Summary: Hitscoreweb web server and web app
 
 Group:  Web Server
