@@ -76,6 +76,9 @@ video/vnd.mpegurl		mxu m4u
 video/x-msvideo			avi
 "
 
+let global_hitscore_configuration = ref None
+
+
 let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
   let conf_dir = Option.value ~default:runtime_root conf_root in
   let log_dir = Option.value ~default:runtime_root log_root in
@@ -103,9 +106,9 @@ let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
   let hitscore_module =
     match kind with
     | `Ocsigen ->
-      sprintf " <eliom module=\"_build/src/lib/hitscoreweb.cma\"/> "
+      sprintf " <eliom module=\"_build/src/lib/hitscoreweb.cma\">\n"
     |`Static ->
-      sprintf " <eliom name=\"hitscoreweb\"/> "
+      sprintf " <eliom name=\"hitscoreweb\">\n"
   in
   sprintf "<ocsigen>\n  <server>\n    <port>%d</port>\n" port |> output_string;
   sprintf "    <user></user> <group></group>\n" |> output_string;
@@ -117,11 +120,25 @@ let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
     conf_dir |> output_string;
   output_string " <charset>utf-8</charset> <debugmode/>\n";
   output_string extensions;
-  sprintf "
-    <host hostfilter=\"*\">
-      <static dir=\"%s/\" />
-%s
-    </host>\n" runtime_root hitscore_module |> output_string;
+  ksprintf output_string "<host hostfilter=\"*\">\n <static dir=\"%s/\" /> %s\n"
+    runtime_root hitscore_module;
+  Hitscore_lwt.Configuration.(Option.(
+    !global_hitscore_configuration
+    >>= fun c ->
+    db_host c >>= fun host ->
+    db_port c >>= fun port ->
+    db_username c >>= fun user ->
+    db_password c >>= fun pswd ->
+    db_database c >>= fun dbnm ->
+    ksprintf output_string "  <pghost>%s</pghost>\n" host;
+    ksprintf output_string "  <pgport>%d</pgport>\n" port;
+    ksprintf output_string "  <pgdb>%s</pgdb>\n" dbnm;
+    ksprintf output_string "  <pguser>%s</pguser>\n" user;
+    ksprintf output_string "  <pgpass>%s</pgpass>\n" pswd;
+    return None)) |! Pervasives.ignore;
+  ksprintf output_string "</eliom>\n";
+  ksprintf output_string "</host>\n";
+
   output_string "  </server>\n</ocsigen>\n";
   ()
 
@@ -402,15 +419,39 @@ fi
 
 let () =
   match Array.to_list Sys.argv with
-  | [] | _ :: [] ->
-    eprintf "Usage: hitscoreweb <command>\n"
-  | exec :: "test" :: _ ->
-    testing `Ocsigen
-  | exec :: "static" :: _ ->
-    testing `Static
-  | exec :: "rpm" :: _ ->
-    rpm_build ()
-  | exec :: "sysv" :: _ ->
-    sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
-  | exec :: not_found :: _ ->
-    eprintf "Unknown command: %s.\n" not_found
+  | [] | _ :: [] | _ :: _ :: [] ->
+    eprintf "Usage: hitscoreweb <[config-file:]profile> <command>\n"
+  | exec :: profile :: cmd_args ->
+    let config_file, profile_name =
+      match String.split profile ~on:':' with
+      | [ one ] ->
+        (sprintf "%s/.config/hitscore/config.sexp"
+           (Option.value_exn_message "This environment has no $HOME !"
+              (Sys.getenv "HOME")), one)
+      | [ one; two ] ->
+        (one, two)
+      | _ -> failwithf "Can't understand: %s" profile ()
+    in
+    let config = In_channel.(with_file config_file ~f:input_all) in
+    let hitscore_config =
+      let open Result in
+      Hitscore_lwt.Configuration.(
+        parse_str config >>= fun c -> use_profile c profile_name)
+      |! function
+        | Ok o -> o
+        | Error (`configuration_parsing_error e) ->
+          eprintf "Error while parsing configuration: %s\n" (Exn.to_string e);
+          failwith "STOP"
+        | Error (`profile_not_found s) ->
+          eprintf "Profile %S not found in config-file\n" s;
+          failwith "STOP"
+    in      
+    global_hitscore_configuration := Some hitscore_config;
+    begin match cmd_args with
+    | [] -> printf "Nothing to do\n"
+    | "test" :: _ -> testing `Ocsigen
+    | "static" :: _ -> testing `Static
+    | "rpm" :: _ -> rpm_build ()
+    | "sysv" :: _ -> sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
+    | not_found :: _ -> eprintf "Unknown command: %s.\n" not_found
+    end

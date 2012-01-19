@@ -557,11 +557,42 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
 
 let () =
 
-  let hitscore_configuration = Hitscore_lwt.Configuration.configure () in
-
   Eliom_services.register_eliom_module
     "hitscoreweb" 
     (fun () ->
+      
+      let hitscore_configuration =
+
+        let pghost = ref None in
+        let pgport = ref None in
+        let pgdb = ref None in
+        let pguser = ref None in
+        let pgpass = ref None in
+
+        let open Simplexmlparser in
+        let rec go_through = function
+          | Element ("pghost", [], [PCData h]) -> pghost := Some h
+          | Element ("pgport", [], [PCData p]) -> pgport := Some (int_of_string p)
+          | Element ("pgdb", [], [PCData d]) -> pgdb := Some d
+          | Element ("pguser", [], [PCData u]) -> pguser := Some u
+          | Element ("pgpass", [], [PCData p]) -> pgpass := Some p
+          | Element (tag, atts, inside) ->
+            Ocsigen_messages.console (fun () ->
+              sprintf "Unknown Config XML Tag: %s\n" tag);
+            List.iter inside go_through
+          | PCData s -> ()
+        in
+        List.iter (Eliom_config.get_config ()) go_through;
+        let db_configuration =
+          match !pghost, !pgport, !pgdb, !pguser, !pgpass with
+          | Some host, Some port, Some database, Some username, Some password ->
+            Some (Hitscore_lwt.Configuration.db_configuration 
+                    ~host ~port ~database ~username ~password)
+          | _ -> None
+        in
+        Hitscore_lwt.Configuration.configure ?db_configuration () in
+
+
       Eliom_output.Html5.register ~service:Services.default (fun () () ->
         default_service hitscore_configuration);
 
