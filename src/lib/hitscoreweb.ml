@@ -20,12 +20,14 @@ module Services = struct
   let persons =
     Eliom_services.service
       ~path:["persons"] 
-      ~get_params:Eliom_parameters.(opt (bool "filter") ** set string "email") ()
+      ~get_params:Eliom_parameters.(opt (bool "transpose")
+                                    ** set string "email") ()
 
   let libraries =
     Eliom_services.service
       ~path:["libraries"] 
-      ~get_params:Eliom_parameters.(set string "qualified_name") ()
+      ~get_params:Eliom_parameters.(opt (bool "transpose")
+                                    ** set string "qualified_name") ()
 
 
 end
@@ -49,7 +51,17 @@ module Display_service = struct
   let description_opt l = Description (List.filter_opt l)
   let content_section t c = Section (t, c)
   let content_list l = List l
-  let content_table l = Table l
+  let content_table ?(transpose=false) l =
+    let t = function
+      | [] -> []
+      | hl :: tll ->
+        (* let lgth = List.length hl in *)
+        List.mapi hl (fun i h ->
+          h :: (List.map tll (fun tl ->
+            Option.value ~default:(`text []) (List.nth tl i))))
+    in
+    Table (if transpose then t l else l)
+        
   let paragraph l = Paragraph l
 
   let error_page msg =
@@ -85,7 +97,8 @@ module Display_service = struct
     | Table [] -> div []
     | Table (h :: t) ->
       let make_cell = function
-        | `head c -> td ~a:[ a_style "border: 1px  solid black; color: red" ] c
+        | `head c -> 
+          td ~a:[ a_style "border: 1px solid black; padding: 2px; color: red" ] c
         | `text c ->
           td  ~a:[ a_style "border: 1px  solid grey; padding: 2px; \
                             max-width: 40em;" ] c
@@ -236,7 +249,7 @@ let person_link dbh person_t =
             (Some true, [e]))
 
 
-let persons ?(filter=false) ?(highlight=[]) hsc =
+let persons ?(transpose=false) ?(highlight=[]) hsc =
   Hitscore_lwt.db_connect hsc
   >>= fun dbh ->
   Layout.Record_person.(
@@ -248,7 +261,7 @@ let persons ?(filter=false) ?(highlight=[]) hsc =
   	         email; login; nickname; note;} ->
         let opt f m = Option.value_map ~f ~default:(f "") m in
         let is_vip = List.exists highlight ((=) email) in
-        if not is_vip && filter then
+        if not is_vip && (highlight <> []) then
           return None
         else Html5.(
           let email_field =
@@ -273,7 +286,7 @@ let persons ?(filter=false) ?(highlight=[]) hsc =
       content_section 
         (ksprintf pcdata "Found %d Person%s" nrows
            (if nrows > 1 then "s" else ""))
-        (content_table 
+        (content_table ~transpose
            ([`head [pcdata "Print name"];
 	     `head [pcdata "Given name"];
 	     `head [pcdata "Middle name"];
@@ -335,7 +348,7 @@ let one_flowcell hsc ~serial_name =
                     small [
                       pcdata "(";
                       Eliom_output.Html5.a Services.persons [pcdata "all"]
-                        (Some true, List.map people (fun (f, l, e) -> e));
+                        (None, List.map people (fun (f, l, e) -> e));
                       pcdata ")"
                     ]
                   else
@@ -347,13 +360,15 @@ let one_flowcell hsc ~serial_name =
                   List.map libs (function (l, None) -> l
                   | (l, Some p) -> sprintf "%s.%s" p l) in
                 (List.map qnames (fun qn ->
-                  Eliom_output.Html5.a Services.libraries [pcdata qn] [qn])
+                  Eliom_output.Html5.a Services.libraries [pcdata qn] 
+                    (Some true, [qn]))
                   |! interleave_list ~sep:(pcdata ", "))
                 @ [
                   if List.length qnames > 1 then
                     small [
                       pcdata " (";
-                      Eliom_output.Html5.a Services.libraries [pcdata "all"] qnames;
+                      Eliom_output.Html5.a Services.libraries [pcdata "all"] 
+                        (None, qnames);
                       pcdata ")"
                     ]
                   else
@@ -397,14 +412,15 @@ let default_service hsc =
         ul [
           li [Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()];
           li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] (None, [])];
-          li [Eliom_output.Html5.a Services.libraries [pcdata "Libraries"] []];
+          li [Eliom_output.Html5.a Services.libraries [pcdata "Libraries"]
+                 (None, [])];
 
         ];
         p [pcdata (sprintf "Histcore's default web page: %s"
                      Time.(now () |> to_string))];
       ]))
 
-let libraries ?(qualified_names=[]) hsc =
+let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
   let open Html5 in
   Hitscore_lwt.db_connect hsc
   >>= fun dbh ->
@@ -520,7 +536,7 @@ let libraries ?(qualified_names=[]) hsc =
     content_section
       (ksprintf pcdata "Found %d librar%s:"
          nb_rows (if nb_rows = 1 then "y" else "ies"))
-      (content_table 
+      (content_table ~transpose
          ([ `head [pcdata "Name"]; 
 	    `head [pcdata "Project"];
             `head [pcdata "Submitted"];
@@ -556,16 +572,16 @@ let () =
             (flowcells hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.persons
-        (fun (filter, highlight) () ->
+        (fun (transpose, highlight) () ->
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"People"
-            (persons ~highlight ?filter hitscore_configuration));
+            (persons ~highlight ?transpose hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.libraries
-        (fun qualified_names () ->
+        (fun (transpose, qualified_names) () ->
           Display_service.make ~hsc:hitscore_configuration
             ~main_title:"Libraries"
-            (libraries ~qualified_names hitscore_configuration));
+            (libraries ~qualified_names ?transpose hitscore_configuration));
 
       Eliom_output.Html5.register ~service:Services.flowcell
         (fun (serial_name) () ->
