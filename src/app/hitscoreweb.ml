@@ -292,7 +292,7 @@ exit 0
   output_string esac
 
 
-let rpm_build () =
+let rpm_build ?(release=1) () =
   let () =
     match Unix.system 
       "test \"`ocamlfind list | grep batteries | grep 1.4 | wc -l`\" -eq 0"
@@ -349,7 +349,7 @@ let rpm_build () =
   with_file spec_file ~f:(fun o ->
     fprintf o "%%define _topdir %s\n" tmp_dir;
     fprintf o "%%define name hitscoreweb\n";
-    fprintf o "%%define release 1\n";
+    fprintf o "%%define release %d\n" release;
     fprintf o "%%define version %s\n" Hitscore_conf_values.version;
     output_string o "
 Name:   %{name}
@@ -451,7 +451,8 @@ let () =
     | [] -> printf "Nothing to do\n"
     | "test" :: _ -> testing `Ocsigen
     | "static" :: _ -> testing `Static
-    | "rpm" :: _ -> rpm_build ()
+    | "rpm" :: [] -> rpm_build ()
+    | "rpm" :: release :: [] -> rpm_build ~release:(Int.of_string release) ()
     | "sysv" :: _ -> sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
     | not_found :: _ -> eprintf "Unknown command: %s.\n" not_found
     end
