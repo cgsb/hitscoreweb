@@ -5,30 +5,48 @@ module Queries =
 
 module Services = struct
 
+  let make f = 
+    let content = ref None in
+    fun () ->
+      match !content with
+      | None -> 
+        let s = f () in          
+        content := Some s;
+        s
+      | Some s -> s
+
   let default =
-    Eliom_services.service
-      ~path:[""] ~get_params:Eliom_parameters.unit ()
+    make (Eliom_services.service ~path:[""] ~get_params:Eliom_parameters.unit)
 
   let flowcells =
-    Eliom_services.service
-      ~path:["flowcells"] ~get_params:Eliom_parameters.unit ()
+    make
+      (Eliom_services.service ~path:["flowcells"] ~get_params:Eliom_parameters.unit)
 
   let flowcell =
-    Eliom_services.service
-      ~path:["flowcell"] ~get_params:Eliom_parameters.(string "serial") ()
+    make
+      (Eliom_services.service ~path:["flowcell"]
+         ~get_params:Eliom_parameters.(string "serial"))
 
   let persons =
-    Eliom_services.service
-      ~path:["persons"] 
-      ~get_params:Eliom_parameters.(opt (bool "transpose")
-                                    ** set string "email") ()
+    make (
+      Eliom_services.service
+        ~path:["persons"] 
+        ~get_params:Eliom_parameters.(opt (bool "transpose")
+                                      ** set string "email"))
 
   let libraries =
-    Eliom_services.service
-      ~path:["libraries"] 
-      ~get_params:Eliom_parameters.(opt (bool "transpose")
-                                    ** set string "qualified_name") ()
+    make (
+      Eliom_services.service
+        ~path:["libraries"] 
+        ~get_params:Eliom_parameters.(opt (bool "transpose")
+                                      ** set string "qualified_name"))
 
+  let link service =
+    Eliom_output.Html5.a ~service:(service ())
+
+
+  let register f =
+    Eliom_output.Html5.register ~service:(f ())
 
 end
 
@@ -126,7 +144,7 @@ module Display_service = struct
                  (head (title (ksprintf pcdata "Hitscoreweb: %s" main_title)) [])
                  (body [
                    div [
-                     Eliom_output.Html5.a Services.default [pcdata "Home"] ()
+                     Services.(link default) [pcdata "Home"] ()
                    ];
                    hr ();
                    h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
@@ -223,7 +241,7 @@ let flowcells hsc =
       return Display_service.(
         paragraph [
           strong [
-            (Eliom_output.Html5.a Services.flowcell [pcdata serial_name] serial_name);
+            Services.(link flowcell) [pcdata serial_name] serial_name;
             pcdata ":"];
           if List.length l = 0 then span [pcdata " Never run."] else ul l
         ]))
@@ -244,7 +262,7 @@ let person_essentials dbh person_t =
 
 let person_link dbh person_t =
   person_essentials dbh person_t >>= fun (f, l, e) ->
-  return (Eliom_output.Html5.a Services.persons
+  return (Services.(link persons)
             [ksprintf Html5.pcdata "%s %s" f l]
             (Some true, [e]))
 
@@ -340,14 +358,14 @@ let one_flowcell hsc ~serial_name =
               let people_cell = 
                 (List.map people (fun (f, l, e) ->
                   [ 
-                    Eliom_output.Html5.a Services.persons
+                    Services.(link persons)
                       [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
                     br () ]) |! List.flatten)
                 @ [
                   if List.length people > 1 then
                     small [
                       pcdata "(";
-                      Eliom_output.Html5.a Services.persons [pcdata "all"]
+                      Services.(link persons) [pcdata "all"]
                         (None, List.map people (fun (f, l, e) -> e));
                       pcdata ")"
                     ]
@@ -360,15 +378,13 @@ let one_flowcell hsc ~serial_name =
                   List.map libs (function (l, None) -> l
                   | (l, Some p) -> sprintf "%s.%s" p l) in
                 (List.map qnames (fun qn ->
-                  Eliom_output.Html5.a Services.libraries [pcdata qn] 
-                    (Some true, [qn]))
+                  Services.(link libraries) [pcdata qn] (Some true, [qn]))
                   |! interleave_list ~sep:(pcdata ", "))
                 @ [
                   if List.length qnames > 1 then
                     small [
                       pcdata " (";
-                      Eliom_output.Html5.a Services.libraries [pcdata "all"] 
-                        (None, qnames);
+                      Services.(link libraries) [pcdata "all"] (None, qnames);
                       pcdata ")"
                     ]
                   else
@@ -410,11 +426,9 @@ let default_service hsc =
         h1 [pcdata "Hitscoreweb: Home"];
         h2 [pcdata "Services"];
         ul [
-          li [Eliom_output.Html5.a Services.flowcells [pcdata "Flowcells"] ()];
-          li [Eliom_output.Html5.a Services.persons [pcdata "Persons"] (None, [])];
-          li [Eliom_output.Html5.a Services.libraries [pcdata "Libraries"]
-                 (None, [])];
-
+          li [Services.(link flowcells) [pcdata "Flowcells"] ()];
+          li [Services.(link persons) [pcdata "Persons"] (None, [])];
+          li [Services.(link libraries) [pcdata "Libraries"] (None, [])];
         ];
         p [pcdata (sprintf "Histcore's default web page: %s"
                      Time.(now () |> to_string))];
@@ -450,8 +464,8 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
       >>= fun submissions ->
       let opt f o = Option.value_map ~default:(pcdata "") ~f o in
       let person e =
-        (Eliom_output.Html5.a Services.persons
-           [ksprintf Html5.pcdata "%s" e] (Some true, [e])) in
+        Services.(link persons) [ksprintf Html5.pcdata "%s" e] (Some true, [e])
+      in
       let submissions_cell = 
         let how_much =
           match List.length submissions with
@@ -465,8 +479,7 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
             let lanes = 
               List.filter submissions ~f:(fun (f,l) -> f = fcid) |! List.length in
             span [
-              Eliom_output.Html5.a Services.flowcell
-                [ksprintf pcdata "%s" fcid] fcid;
+              Services.(link flowcell) [ksprintf pcdata "%s" fcid] fcid;
               ksprintf pcdata " (%d lane%s)"
                 lanes (if lanes > 1 then "s" else "");
             ]))
@@ -592,33 +605,28 @@ let () =
         in
         Hitscore_lwt.Configuration.configure ?db_configuration () in
 
-
-      Eliom_output.Html5.register ~service:Services.default (fun () () ->
+      Services.(register default) (fun () () ->
         default_service hitscore_configuration);
+      
+      Services.(register flowcells) (fun () () ->
+        Display_service.make ~hsc:hitscore_configuration
+          ~main_title:"Flowcells"
+          (flowcells hitscore_configuration));
+      
+      Services.(register persons) (fun (transpose, highlight) () ->
+        Display_service.make ~hsc:hitscore_configuration
+          ~main_title:"People"
+          (persons ~highlight ?transpose hitscore_configuration));
+      
+      Services.(register libraries) (fun (transpose, qualified_names) () ->
+        Display_service.make ~hsc:hitscore_configuration
+          ~main_title:"Libraries"
+          (libraries ~qualified_names ?transpose hitscore_configuration));
 
-      Eliom_output.Html5.register ~service:Services.flowcells
-        (fun () () ->
-          Display_service.make ~hsc:hitscore_configuration
-            ~main_title:"Flowcells"
-            (flowcells hitscore_configuration));
-
-      Eliom_output.Html5.register ~service:Services.persons
-        (fun (transpose, highlight) () ->
-          Display_service.make ~hsc:hitscore_configuration
-            ~main_title:"People"
-            (persons ~highlight ?transpose hitscore_configuration));
-
-      Eliom_output.Html5.register ~service:Services.libraries
-        (fun (transpose, qualified_names) () ->
-          Display_service.make ~hsc:hitscore_configuration
-            ~main_title:"Libraries"
-            (libraries ~qualified_names ?transpose hitscore_configuration));
-
-      Eliom_output.Html5.register ~service:Services.flowcell
-        (fun (serial_name) () ->
-          Display_service.make ~hsc:hitscore_configuration
-            ~main_title:"Flowcell"
-            (one_flowcell hitscore_configuration ~serial_name));
+      Services.(register flowcell) (fun (serial_name) () ->
+        Display_service.make ~hsc:hitscore_configuration
+          ~main_title:"Flowcell"
+          (one_flowcell hitscore_configuration ~serial_name));
 
     )
 
