@@ -469,10 +469,11 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
       let submissions_cell = 
         let how_much =
           match List.length submissions with
-          | 1 -> "Once" | 2 -> "Twice" | n -> sprintf "%d times" n in
+          | 0 -> "Never" | 1 -> "Once: " | 2 -> "Twice: " 
+          | n -> sprintf "%d times: " n in
         let flowcells = 
           List.map submissions fst |! List.dedup in
-        (ksprintf pcdata "%s: " how_much)
+        (ksprintf pcdata "%s" how_much)
         ::
           interleave_list ~sep:(pcdata ", ")
           (List.map flowcells (fun fcid ->
