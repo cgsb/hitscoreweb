@@ -41,6 +41,12 @@ module Services = struct
         ~get_params:Eliom_parameters.(opt (bool "transpose")
                                       ** set string "qualified_name"))
 
+  let login =
+    make (Eliom_services.service
+            ~path:["login"]
+            ~get_params: Eliom_parameters.unit)
+            
+
   let link service =
     Eliom_output.Html5.a ~service:(service ())
 
@@ -49,6 +55,66 @@ module Services = struct
     Eliom_output.Html5.register ~service:(f ())
 
 end
+
+module Authentication = struct
+
+
+  let make () = 
+    let messages = Eliom_state.create_volatile_table 
+      ~scope:Eliom_common.(`Session (create_scope_name "bouhhh")) ()
+    in
+  (* Initialize the library, and getting the authenticate function *)
+    let authenticate =
+      Eliom_openid.init ~path:["__openid_return_service"]
+      ~f: (fun _ _ -> Eliom_output.Redirection.send (Services.login ()))
+    in
+  (* Create the handler for the form *)
+  (* We have to use Eliom_output.String_redirection as we
+     redirect the user to her provider *)
+    let form_handler = 
+      Eliom_output.String_redirection.register_post_coservice
+        ~fallback: (Services.login ())
+        ~post_params: (Eliom_parameters.string "url")
+        (fun _ url ->
+          authenticate
+            ~max_auth_age: 4
+            ~required: [Eliom_openid.Email]
+            url
+            Eliom_openid.(fun result ->
+              let string =
+                match result with
+                | Setup_needed -> "setup needed" | Canceled -> "canceled"
+                | Result result ->
+                  Option.value ~default:"NO EMAIL" (List.Assoc.find result.fields Email)
+              in
+              Eliom_state.set_volatile_data ~table:messages string;
+              Eliom_output.Redirection.send (Services.login ())))
+    in
+    let open Lwt in
+    let open Html5 in
+    (fun _ _ ->
+      (match Eliom_state.get_volatile_data ~table: messages () with
+      | Eliom_state.Data s ->
+        (* Eliom_state.discard  () >>= fun () -> *)
+        return [p [pcdata ("Authentication result: "^ s)]]
+      | _ -> return []) >>= fun message ->
+      let form =
+        Eliom_output.Html5.post_form ~service:form_handler
+          (fun url ->
+            [p [pcdata "Your OpenID identifier: ";
+                Eliom_output.Html5.string_input ~input_type:`Text ~name:url ();
+                Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
+               ]]) ()
+      in
+      Lwt.return
+        (html
+           (head (title (pcdata "A sample test")) [])
+           (body
+              (message @ [form]))))
+end
+
+(* Test of the references. *)
+let test_ref = Eliom_references.eref ~scope:Eliom_common.session ([]:string list)
 
 module Display_service = struct
 
@@ -139,12 +205,18 @@ module Display_service = struct
     let html_content = 
       content
       >>= fun content ->
+      wrap_io Eliom_references.get test_ref
+      >>= fun test_l ->
+      wrap_io (Eliom_references.set test_ref) (main_title :: test_l)
+      >>= fun () ->
       return
         Html5.(html
                  (head (title (ksprintf pcdata "Hitscoreweb: %s" main_title)) [])
                  (body [
                    div [
-                     Services.(link default) [pcdata "Home"] ()
+                     Services.(link default) [pcdata "Home"] ();
+                     ksprintf pcdata " Test: %s."
+                       (String.concat ~sep:", " test_l)
                    ];
                    hr ();
                    h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
@@ -154,6 +226,9 @@ module Display_service = struct
     Lwt.bind html_content (function
     | Ok html ->
       Lwt.return html
+    | Error (`io_exn e) ->
+      Lwt.return (error_page [
+        ksprintf pcdata "Generic I/O exception: %s" (Exn.to_string e)])
     | Error (`pg_exn e) ->
       Lwt.return (error_page [
         ksprintf pcdata "PGOCaml exception: %s" (Exn.to_string e)])
@@ -629,5 +704,7 @@ let () =
           ~main_title:"Flowcell"
           (one_flowcell hitscore_configuration ~serial_name));
 
+      Services.(register login) (Authentication.make ());
+      
     )
 
