@@ -55,21 +55,20 @@ module Services = struct
     Eliom_output.Html5.register 
       ~error_handler:(fun sel -> 
         List.iter sel ~f:(fun (s, e) -> 
-          eprintf "GNiii? %S %S\n%!" s (Exn.to_string e));
+          eprintf "Errors: %S %S\n%!" s (Exn.to_string e));
         Lwt.return 
           Html5.(html
                    (head (title (ksprintf pcdata "Hitscoreweb: ERROR")) [])
                    (body [
                      div [
-                       pcdata "ERROR";
+                       ksprintf pcdata "ERROR:";
+                       ul (List.map sel (fun (s, e) -> 
+                         li [ksprintf pcdata "%S: %S" s (Exn.to_string e)]));
                      ];
                     ])))
       ~service:(f ())
 
 end
-
-(* Test of the references. *)
-let test_ref = Eliom_references.eref ~scope:Eliom_common.session ([]:string list)
 
 let _ = Eliom_output.set_exn_handler
   (function
@@ -85,89 +84,153 @@ let _ = Eliom_output.set_exn_handler
 
 module Authentication = struct
 
+  type user_logged = {
+    id: string;
+  }
+
+  type user_session = [
+  | `No_user
+  | `User of user_logged 
+  ]
+  
+  (* The user. *)
+  let current_user =
+    Eliom_references.eref ~scope:Eliom_common.session (`No_user: user_session)
+
+  type authentication_state = [
+  | `Nothing
+  | `User_canceled
+  | `Setup_needed
+  | `User_logged of string
+  | `Error_no_email
+  | `Error_insufficient_credentials of string
+  ]
+
+  let authentication_history =
+    Eliom_references.eref 
+      ~scope:Eliom_common.session ([]: authentication_state list)
+     
+  let set_state s =
+    let open Lwt in
+    Eliom_references.get authentication_history
+    >>= fun ah ->
+    Eliom_references.set authentication_history (s :: ah)
+
+  let validate_user id = 
+    match id with
+    | "sm4431@nyu.edu"   -> Some { id }
+    | "aa144@nyu.edu"    -> Some { id }
+    | "ps103@nyu.edu"    -> Some { id }
+    | "carltj01@nyu.edu" -> Some { id }
+    | "jsd6@nyu.edu"     -> Some { id }
+    | _                  -> None
+
+  let display_state () =
+    let open Html5 in
+    wrap_io Eliom_references.get authentication_history
+    >>= fun ah ->
+    let state =
+      match ah with
+      | [] | `Nothing :: _ -> pcdata "No user"
+      | `User_canceled :: _ -> pcdata "User canceled"
+      | `Setup_needed :: _ -> pcdata "Setup needed"
+      | `User_logged e :: _ -> 
+        span [pcdata "User ";
+              Services.(link persons) [code [pcdata e]] (None, [e]);
+              pcdata " logged"]
+      | `Error_no_email :: _ -> pcdata "Authentication error: No email"
+      | `Error_insufficient_credentials s :: _ -> 
+        ksprintf pcdata "Authentication error: insufficient credentials for %s" s
+    in
+    return [state; pcdata "; "; Services.(link login) [pcdata "New login"] ()]
+
 
   let make () = 
     let open Lwt in
-    let messages = Eliom_state.create_volatile_table 
-      ~scope:Eliom_common.(`Session (create_scope_name "bouhhh")) ()
-    in
-  (* Initialize the library, and getting the authenticate function *)
+    (* Initialize the OpenID library *)
     let authenticate =
       Eliom_openid.init ~path:["__openid_return_service"]
-      ~f: (fun _ _ -> Eliom_output.Redirection.send (Services.login ()))
+        ~f: (fun _ _ -> Eliom_output.Redirection.send (Services.login ()))
     in
-  (* Create the handler for the form *)
-  (* We have to use Eliom_output.String_redirection as we
-     redirect the user to her provider *)
+    let authenticate_with_url url =
+      authenticate
+        ~immediate:false
+            (* ~max_auth_age: 4 *)
+        ~required: [Eliom_openid.Email]
+        url
+        Eliom_openid.(fun result ->
+          begin match result with
+          | Setup_needed -> set_state `Setup_needed
+          | Canceled -> set_state `User_canceled
+          | Result result ->
+            eprintf "openid result: %S\n%!"
+              (List.map result.fields snd |! String.concat ~sep:", ");
+            let email = List.Assoc.find result.fields Email in
+            begin match email with
+            | Some e ->
+              begin match validate_user e with
+              | Some u -> 
+                set_state (`User_logged e) >>= fun () ->
+                Eliom_references.set current_user (`User u)
+              | None ->
+                set_state (`Error_insufficient_credentials e)
+              end
+            | None -> set_state `Error_no_email
+            end
+          end >>= fun () ->
+          Eliom_output.Redirection.send (Services.default ()))
+    in
+    (* Create the handler for the form *)
+    (* We have to use Eliom_output.String_redirection as we
+       redirect the user to her provider *)
     let form_handler = 
       Eliom_output.String_redirection.register_post_coservice
         ~fallback:Services.(default ())
         ~error_handler:(fun sel -> 
           eprintf "form_handler's error_handler\n%!";
           List.iter sel ~f:(fun (s, e) -> 
-            eprintf "GNiii? %S %S\n%!" s (Exn.to_string e));
+            eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
           return (
             Eliom_output.Html5.make_string_uri
-              ~service:Services.(default ()) ())
-        )
-        ~post_params: (Eliom_parameters.string "url")
+              ~service:Services.(default ()) ()))
+        ~post_params:(Eliom_parameters.string "url")
         (fun _ url ->
-          Lwt.catch (fun () ->
-            authenticate
-              ~immediate:false
-            (* ~max_auth_age: 4 *)
-              ~required: [Eliom_openid.Email]
-              url
-              Eliom_openid.(fun result ->
-                let string =
-                  match result with
-                  | Setup_needed -> "setup needed" | Canceled -> "canceled"
-                  | Result result ->
-                    sprintf "Result: [%s]"
-                      (List.map result.fields snd |! String.concat ~sep:", ")
-                in
-                eprintf "openid result: %S\n%!" string;
-                Eliom_state.set_volatile_data ~table:messages string;
-                Eliom_output.Redirection.send (Services.login ())))
-            Eliom_openid.(function 
-            | Error e ->
-              Eliom_state.set_volatile_data ~table:messages (string_of_openid_error e);
-              Lwt.return "login"
-            | e -> 
-              Eliom_state.set_volatile_data ~table:messages (Exn.to_string e);
-              Lwt.return "login"
-            )
-          )
+          authenticate_with_url url)
+    in
+    let google_handler = 
+      Eliom_output.String_redirection.register_coservice
+        ~fallback:Services.(default ())
+        ~error_handler:(fun sel -> 
+          eprintf "google_handler's error_handler\n%!";
+          List.iter sel ~f:(fun (s, e) -> 
+            eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
+          return (
+            Eliom_output.Html5.make_string_uri
+              ~service:Services.(default ()) ()))
+        ~get_params:Eliom_parameters.unit
+        (fun () () ->
+          let url = "https://www.google.com/accounts/o8/id" in
+          authenticate_with_url url)
     in
     let open Html5 in
     (fun _ _ ->
-      (match Eliom_state.get_volatile_data ~table: messages () with
-      | Eliom_state.Data s ->
-          (* Eliom_state.discard  () >>= fun () -> *)
-        return [p [pcdata ("Authentication result: "^ s)]]
-      | _ -> return [])
-      >>= fun message ->
       let form =
-        (* Lwt.catch (fun () -> *)
-          Eliom_output.Html5.post_form ~service:form_handler
-            (fun url ->
-              [p [pcdata "Your OpenID identifier: ";
-                  Eliom_output.Html5.string_input ~input_type:`Text ~name:url ();
-                  Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
-                 ]]) () 
-(*          Eliom_openid.(function 
-          | Error e ->
-            Lwt.return [ p [ksprintf pcdata "OpenID.error: %s"
-                             (string_of_openid_error e)]]
-          | e -> 
-            Lwt.return [ p [ksprintf pcdata "any error: %s" (Exn.to_string e)]]
-          ) *)
+        Eliom_output.Html5.post_form ~service:form_handler
+          (fun url ->
+            [p [pcdata "Your OpenID identifier: ";
+                Eliom_output.Html5.string_input ~input_type:`Text ~name:url ();
+                Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
+               ];
+             p [pcdata "Login with ";
+                Eliom_output.Html5.a ~service:google_handler [pcdata "Google"] ();
+               ]
+            ]) () 
       in
       Lwt.return
         (html
            (head (title (pcdata "A sample test")) [])
            (body
-              (message @ [form]))))
+              ([form]))))
 end
 
 module Display_service = struct
@@ -257,20 +320,16 @@ module Display_service = struct
 
   let make ~hsc ~main_title content =
     let html_content = 
-      content
-      >>= fun content ->
-      wrap_io Eliom_references.get test_ref
-      >>= fun test_l ->
-      wrap_io (Eliom_references.set test_ref) (main_title :: test_l)
-      >>= fun () ->
+      content >>= fun content ->
+      Authentication.display_state ()
+      >>= fun auth_state ->
       return
         Html5.(html
                  (head (title (ksprintf pcdata "Hitscoreweb: %s" main_title)) [])
                  (body [
                    div [
                      Services.(link default) [pcdata "Home"] ();
-                     ksprintf pcdata " Test: %s."
-                       (String.concat ~sep:", " test_l)
+                     div auth_state;
                    ];
                    hr ();
                    h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
@@ -548,20 +607,17 @@ let one_flowcell hsc ~serial_name =
                                   `more_than_one_flowcell_called serial_name))
 
 let default_service hsc =
-  Lwt.return Html5.(
-    html
-      (head (title (pcdata "Hitscoreweb: Default")) [])
-      (body [
-        h1 [pcdata "Hitscoreweb: Home"];
-        h2 [pcdata "Services"];
-        ul [
-          li [Services.(link flowcells) [pcdata "Flowcells"] ()];
-          li [Services.(link persons) [pcdata "Persons"] (None, [])];
-          li [Services.(link libraries) [pcdata "Libraries"] (None, [])];
-        ];
-        p [pcdata (sprintf "Histcore's default web page: %s"
-                     Time.(now () |> to_string))];
-      ]))
+  (Authentication.display_state ()) >>= fun auth_state ->
+  return Display_service.(Html5.(
+    content_section
+      (pcdata "Hitscoreweb: Home")
+      (content_section
+         (pcdata "Services")
+         (content_list [
+           paragraph [Services.(link flowcells) [pcdata "Flowcells"] ()];
+           paragraph [Services.(link persons) [pcdata "Persons"] (None, [])];
+           paragraph [Services.(link libraries) [pcdata "Libraries"] (None, [])];
+         ]))))
 
 let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
   let open Html5 in
@@ -736,7 +792,9 @@ let () =
         Hitscore_lwt.Configuration.configure ?db_configuration () in
 
       Services.(register default) (fun () () ->
-        default_service hitscore_configuration);
+        Display_service.make ~hsc:hitscore_configuration
+          ~main_title:"Home"
+          (default_service hitscore_configuration));
       
       Services.(register flowcells) (fun () () ->
         Display_service.make ~hsc:hitscore_configuration
