@@ -52,14 +52,42 @@ module Services = struct
 
 
   let register f =
-    Eliom_output.Html5.register ~service:(f ())
+    Eliom_output.Html5.register 
+      ~error_handler:(fun sel -> 
+        List.iter sel ~f:(fun (s, e) -> 
+          eprintf "GNiii? %S %S\n%!" s (Exn.to_string e));
+        Lwt.return 
+          Html5.(html
+                   (head (title (ksprintf pcdata "Hitscoreweb: ERROR")) [])
+                   (body [
+                     div [
+                       pcdata "ERROR";
+                     ];
+                    ])))
+      ~service:(f ())
 
 end
+
+(* Test of the references. *)
+let test_ref = Eliom_references.eref ~scope:Eliom_common.session ([]:string list)
+
+let _ = Eliom_output.set_exn_handler
+  (function
+  | Eliom_openid.Error e ->
+    Eliom_output.Html5.send ~code:500
+      Html5.(html
+               (head (title (pcdata "Open ID Error")) [])
+               (body [h1 [pcdata "OpenID Error"];
+                      p [ksprintf pcdata
+                            "The OpenID process failed: %S"
+                      (Eliom_openid.string_of_openid_error e)]]))
+  | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
 
 module Authentication = struct
 
 
   let make () = 
+    let open Lwt in
     let messages = Eliom_state.create_volatile_table 
       ~scope:Eliom_common.(`Session (create_scope_name "bouhhh")) ()
     in
@@ -73,38 +101,67 @@ module Authentication = struct
      redirect the user to her provider *)
     let form_handler = 
       Eliom_output.String_redirection.register_post_coservice
-        ~fallback: (Services.login ())
+        ~fallback:Services.(default ())
+        ~error_handler:(fun sel -> 
+          eprintf "form_handler's error_handler\n%!";
+          List.iter sel ~f:(fun (s, e) -> 
+            eprintf "GNiii? %S %S\n%!" s (Exn.to_string e));
+          return (
+            Eliom_output.Html5.make_string_uri
+              ~service:Services.(default ()) ())
+        )
         ~post_params: (Eliom_parameters.string "url")
         (fun _ url ->
-          authenticate
-            ~max_auth_age: 4
-            ~required: [Eliom_openid.Email]
-            url
-            Eliom_openid.(fun result ->
-              let string =
-                match result with
-                | Setup_needed -> "setup needed" | Canceled -> "canceled"
-                | Result result ->
-                  Option.value ~default:"NO EMAIL" (List.Assoc.find result.fields Email)
-              in
-              Eliom_state.set_volatile_data ~table:messages string;
-              Eliom_output.Redirection.send (Services.login ())))
+          Lwt.catch (fun () ->
+            authenticate
+              ~immediate:false
+            (* ~max_auth_age: 4 *)
+              ~required: [Eliom_openid.Email]
+              url
+              Eliom_openid.(fun result ->
+                let string =
+                  match result with
+                  | Setup_needed -> "setup needed" | Canceled -> "canceled"
+                  | Result result ->
+                    sprintf "Result: [%s]"
+                      (List.map result.fields snd |! String.concat ~sep:", ")
+                in
+                eprintf "openid result: %S\n%!" string;
+                Eliom_state.set_volatile_data ~table:messages string;
+                Eliom_output.Redirection.send (Services.login ())))
+            Eliom_openid.(function 
+            | Error e ->
+              Eliom_state.set_volatile_data ~table:messages (string_of_openid_error e);
+              Lwt.return "login"
+            | e -> 
+              Eliom_state.set_volatile_data ~table:messages (Exn.to_string e);
+              Lwt.return "login"
+            )
+          )
     in
-    let open Lwt in
     let open Html5 in
     (fun _ _ ->
       (match Eliom_state.get_volatile_data ~table: messages () with
       | Eliom_state.Data s ->
-        (* Eliom_state.discard  () >>= fun () -> *)
+          (* Eliom_state.discard  () >>= fun () -> *)
         return [p [pcdata ("Authentication result: "^ s)]]
-      | _ -> return []) >>= fun message ->
+      | _ -> return [])
+      >>= fun message ->
       let form =
-        Eliom_output.Html5.post_form ~service:form_handler
-          (fun url ->
-            [p [pcdata "Your OpenID identifier: ";
-                Eliom_output.Html5.string_input ~input_type:`Text ~name:url ();
-                Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
-               ]]) ()
+        (* Lwt.catch (fun () -> *)
+          Eliom_output.Html5.post_form ~service:form_handler
+            (fun url ->
+              [p [pcdata "Your OpenID identifier: ";
+                  Eliom_output.Html5.string_input ~input_type:`Text ~name:url ();
+                  Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
+                 ]]) () 
+(*          Eliom_openid.(function 
+          | Error e ->
+            Lwt.return [ p [ksprintf pcdata "OpenID.error: %s"
+                             (string_of_openid_error e)]]
+          | e -> 
+            Lwt.return [ p [ksprintf pcdata "any error: %s" (Exn.to_string e)]]
+          ) *)
       in
       Lwt.return
         (html
@@ -112,9 +169,6 @@ module Authentication = struct
            (body
               (message @ [form]))))
 end
-
-(* Test of the references. *)
-let test_ref = Eliom_references.eref ~scope:Eliom_common.session ([]:string list)
 
 module Display_service = struct
 
