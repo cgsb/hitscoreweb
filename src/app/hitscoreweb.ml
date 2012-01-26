@@ -148,9 +148,8 @@ let syscmd s =
   | e -> Error (Failure (Unix.Process_status.to_string_hum e))
 let syscmd_exn s = syscmd s |> Result.raise_error
 
-let testing kind =
+let testing ?(port=8080) kind =
   let runtime_root = "/tmp/hitscoreweb" in
-  let port = 8080 in
   let exec =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
   let open Result in
@@ -449,8 +448,10 @@ let () =
     global_hitscore_configuration := Some hitscore_config;
     begin match cmd_args with
     | [] -> printf "Nothing to do\n"
-    | "test" :: _ -> testing `Ocsigen
-    | "static" :: _ -> testing `Static
+    | "test" :: [] -> testing ~port:8080 `Ocsigen
+    | "static" :: [] -> testing ~port:8080 `Static
+    | "test" :: p :: [] -> testing ~port:(Int.of_string p) `Ocsigen
+    | "static" :: p :: [] -> testing ~port:(Int.of_string p) `Static
     | "rpm" :: [] -> rpm_build ()
     | "rpm" :: release :: [] -> rpm_build ~release:(Int.of_string release) ()
     | "sysv" :: _ -> sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
