@@ -70,17 +70,6 @@ module Services = struct
 
 end
 
-let _ = Eliom_output.set_exn_handler
-  (function
-  | Eliom_openid.Error e ->
-    Eliom_output.Html5.send ~code:500
-      Html5.(html
-               (head (title (pcdata "Open ID Error")) [])
-               (body [h1 [pcdata "OpenID Error"];
-                      p [ksprintf pcdata
-                            "The OpenID process failed: %S"
-                      (Eliom_openid.string_of_openid_error e)]]))
-  | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
 
 module Authentication = struct
 
@@ -143,10 +132,101 @@ module Authentication = struct
         ksprintf pcdata "Authentication error: insufficient credentials for %s" s
     in
     return [state; pcdata "; "; Services.(link login) [pcdata "New login"] ()]
+end
 
+module Template = struct
+
+  let default ?(title) content =
+    let page page_title auth_state html_stuff =
+      Html5.(
+        html
+          (head (title (pcdata page_title)) [])
+          (body [
+            div [
+              Services.(link default) [pcdata "Home"] ();
+              div auth_state;
+            ];
+            hr ();
+            div html_stuff
+          ]))
+    in
+    let html_result =
+      let page_title = 
+        Option.value_map title ~default:"Hitscoreweb" ~f:(sprintf "HSW: %s")
+      in
+      Authentication.display_state ()
+      >>= fun auth_state ->
+      content
+      >>= fun good_content ->
+      return (page page_title auth_state good_content)
+    in
+    let open Html5 in
+    let error_page msg =
+      page "Error" [] [
+        h1 [ksprintf pcdata "Histcore's Error Page"];
+        p [ksprintf pcdata "An error occurred on %s:"
+              Time.(now () |> to_string)];
+        div msg;
+        p [pcdata "Please complain at bio.gencore@nyu.edu."];] in
+    Lwt.bind html_result (function
+    | Ok html ->
+      Lwt.return html
+    | Error (`io_exn e) ->
+      Lwt.return (error_page [
+        ksprintf pcdata "Generic I/O exception: %s" (Exn.to_string e)])
+    | Error (`pg_exn e) ->
+      Lwt.return (error_page [
+        ksprintf pcdata "PGOCaml exception: %s" (Exn.to_string e)])
+    | Error (`no_person_with_that_email email)->
+      Lwt.return (error_page [
+        ksprintf pcdata "There is no person with that email: ";
+        code [pcdata email];
+        pcdata "."])
+    | Error (`no_flowcell_named name) ->
+      Lwt.return (error_page [
+        ksprintf pcdata "There is no flowcell with that serial name: ";
+        code [pcdata name];
+        pcdata "."])
+    | Error (`layout_inconsistency (place, problem)) ->
+      let place_presentation =
+        let r = pcdata "the record " in
+        match place with
+        | `record_person ->        [ r; code [pcdata "person"        ]]  
+        | `record_organism ->      [ r; code [pcdata "organism"      ]]  
+        | `record_sample ->        [ r; code [pcdata "sample"        ]]  
+        | `record_stock_library -> [ r; code [pcdata "stock_library" ]]
+        | `record_flowcell      -> [ r; code [pcdata "record_flowcell"      ]] 
+        | `record_input_library -> [ r; code [pcdata "record_input_library" ]] 
+        | `record_lane          -> [ r; code [pcdata "record_lane"          ]]
+        | `record_hiseq_raw     -> [ r; code [pcdata "record_hiseq_raw"     ]]
+        | `record_custom_barcode -> [ r; code [pcdata "record_custom_barcode"]]
+      in
+      let error_message =
+        match problem with
+        | `select_did_not_return_one_cache (s, i) ->
+          [code [ksprintf pcdata
+                    "(select_did_not_return_one_cache %s %d)" s i]]
+        | `more_than_one_person_with_that_email ->
+          [pcdata "There is (are?) more than one person with that email address."]
+        | `more_than_one_flowcell_called s ->
+          [ksprintf pcdata "There are more than one flowcells called %s" s]
+      in
+      Lwt.return (error_page (
+        [ksprintf pcdata "Layout Inconsistency in "]
+        @ place_presentation
+        @ [pcdata ":"; br ()]
+        @ error_message
+      )))
+
+
+
+end
+
+module Login_service = struct
 
   let make () = 
     let open Lwt in
+    let open Authentication in
     (* Initialize the OpenID library *)
     let authenticate =
       Eliom_openid.init ~path:["__openid_return_service"]
@@ -226,11 +306,10 @@ module Authentication = struct
                ]
             ]) () 
       in
-      Lwt.return
-        (html
-           (head (title (pcdata "A sample test")) [])
-           (body
-              ([form]))))
+      let html_content = Hitscore_lwt.Result_IO.return  [
+        h1 [pcdata "Login"];
+        form] in
+      Template.default ~title:"Log-in" html_content)
 end
 
 module Display_service = struct
@@ -264,17 +343,6 @@ module Display_service = struct
     Table (if transpose then t l else l)
         
   let paragraph l = Paragraph l
-
-  let error_page msg =
-    Html5.(html
-             (head (title (pcdata "ERROR; Hitscore Web")) [])
-             (body [
-               h1 [ksprintf pcdata "Histcore's Error Page"];
-               p [ksprintf pcdata "An error occurred on %s:"
-                     Time.(now () |> to_string)];
-               div msg;
-               p [pcdata "Please complain at bio.gencore@nyu.edu."];
-             ]))
 
   let rec html_of_content ?(section_level=2) content =
     let open Html5 in
@@ -320,84 +388,17 @@ module Display_service = struct
 
   let make ~hsc ~main_title content =
     let html_content = 
+      let open Html5 in
       content >>= fun content ->
       Authentication.display_state ()
       >>= fun auth_state ->
-      return
-        Html5.(html
-                 (head (title (ksprintf pcdata "Hitscoreweb: %s" main_title)) [])
-                 (body [
-                   div [
-                     Services.(link default) [pcdata "Home"] ();
-                     div auth_state;
-                   ];
-                   hr ();
-                   h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
-                   html_of_content content           
-                 ])) in
-    let open Html5 in
-    Lwt.bind html_content (function
-    | Ok html ->
-      Lwt.return html
-    | Error (`io_exn e) ->
-      Lwt.return (error_page [
-        ksprintf pcdata "Generic I/O exception: %s" (Exn.to_string e)])
-    | Error (`pg_exn e) ->
-      Lwt.return (error_page [
-        ksprintf pcdata "PGOCaml exception: %s" (Exn.to_string e)])
-    | Error (`no_person_with_that_email email)->
-      Lwt.return (error_page [
-        ksprintf pcdata "There is no person with that email: ";
-        code [pcdata email];
-        pcdata "."])
-    | Error (`no_flowcell_named name) ->
-      Lwt.return (error_page [
-        ksprintf pcdata "There is no flowcell with that serial name: ";
-        code [pcdata name];
-        pcdata "."])
-    | Error (`layout_inconsistency (place, problem)) ->
-      let place_presentation =
-        let r = pcdata "the record " in
-        match place with
-        | `record_person ->        [ r; code [pcdata "person"        ]]  
-        | `record_organism ->      [ r; code [pcdata "organism"      ]]  
-        | `record_sample ->        [ r; code [pcdata "sample"        ]]  
-        | `record_stock_library -> [ r; code [pcdata "stock_library" ]]
-        | `record_flowcell      -> [ r; code [pcdata "record_flowcell"      ]] 
-        | `record_input_library -> [ r; code [pcdata "record_input_library" ]] 
-        | `record_lane          -> [ r; code [pcdata "record_lane"          ]]
-        | `record_hiseq_raw     -> [ r; code [pcdata "record_hiseq_raw"     ]]
-        | `record_custom_barcode -> [ r; code [pcdata "record_custom_barcode"]]
-      in
-      let error_message =
-        match problem with
-        | `select_did_not_return_one_cache (s, i) ->
-          [code [ksprintf pcdata
-                    "(select_did_not_return_one_cache %s %d)" s i]]
-        | `more_than_one_person_with_that_email ->
-          [pcdata "There is (are?) more than one person with that email address."]
-        | `more_than_one_flowcell_called s ->
-          [ksprintf pcdata "There are more than one flowcells called %s" s]
-      in
-      Lwt.return (error_page (
-        [ksprintf pcdata "Layout Inconsistency in "]
-        @ place_presentation
-        @ [pcdata ":"; br ()]
-        @ error_message
-      )))
-
+      return [
+        h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
+        html_of_content content] in
+    Template.default ~title:main_title html_content
 
 end
 
-
-let error_page msg =
-  Html5.(html
-           (head (title (pcdata "ERROR; Hitscore Web")) [])
-           (body [
-             p [pcdata (sprintf "Histcore's error web page: %s"
-                          Time.(now () |> to_string))];
-             p [ksprintf pcdata "Error: %s" msg];
-           ]))
 
 let flowcells hsc =
   let open Html5 in
@@ -607,17 +608,14 @@ let one_flowcell hsc ~serial_name =
                                   `more_than_one_flowcell_called serial_name))
 
 let default_service hsc =
-  (Authentication.display_state ()) >>= fun auth_state ->
-  return Display_service.(Html5.(
-    content_section
-      (pcdata "Hitscoreweb: Home")
-      (content_section
-         (pcdata "Services")
-         (content_list [
-           paragraph [Services.(link flowcells) [pcdata "Flowcells"] ()];
-           paragraph [Services.(link persons) [pcdata "Persons"] (None, [])];
-           paragraph [Services.(link libraries) [pcdata "Libraries"] (None, [])];
-         ]))))
+  Template.default ~title:"Home" Html5.(return [
+    h1 [pcdata "Gencore Home"];
+    h2 [pcdata "Services"];
+    ul [
+      li [Services.(link flowcells) [pcdata "Flowcells"] ()];
+      li [Services.(link persons) [pcdata "Persons"] (None, [])];
+      li [Services.(link libraries) [pcdata "Libraries"] (None, [])];
+    ]])
 
 let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
   let open Html5 in
@@ -755,6 +753,18 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
     
 
 let () =
+  let _ = Eliom_output.set_exn_handler
+    (function
+    | Eliom_openid.Error e ->
+      Eliom_output.Html5.send ~code:500
+        Html5.(html
+                 (head (title (pcdata "Open ID Error")) [])
+                 (body [h1 [pcdata "OpenID Error"];
+                        p [ksprintf pcdata
+                              "The OpenID process failed: %S"
+                              (Eliom_openid.string_of_openid_error e)]]))
+    | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
+  in
 
   Eliom_services.register_eliom_module
     "hitscoreweb" 
@@ -792,9 +802,7 @@ let () =
         Hitscore_lwt.Configuration.configure ?db_configuration () in
 
       Services.(register default) (fun () () ->
-        Display_service.make ~hsc:hitscore_configuration
-          ~main_title:"Home"
-          (default_service hitscore_configuration));
+        default_service hitscore_configuration);
       
       Services.(register flowcells) (fun () () ->
         Display_service.make ~hsc:hitscore_configuration
@@ -816,7 +824,7 @@ let () =
           ~main_title:"Flowcell"
           (one_flowcell hitscore_configuration ~serial_name));
 
-      Services.(register login) (Authentication.make ());
+      Services.(register login) (Login_service.make ());
       
     )
 
