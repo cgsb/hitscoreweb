@@ -12,6 +12,8 @@
 #include <caml/callback.h>
 #include <caml/custom.h>
 
+#include <stdio.h>
+
 #include "pam_stubs.h"
 
 static void raise(pam_error exception) Noreturn;
@@ -19,7 +21,7 @@ static void finalizer(value v);
 
 static struct custom_operations caml_pam_operations = 
 {
-	"net.nanavati.sharvil.pam.operations",
+	"hsopam.net.nanavati.sharvil.pam.operations",
 	finalizer,
 	custom_compare_default,
 	custom_hash_default,
@@ -30,9 +32,17 @@ static struct custom_operations caml_pam_operations =
 static void raise(pam_error exception)
 {
 	static value * e = 0;
+        perror("raise ...\n");
 
-	if(e == 0)
-		e = caml_named_value("net.nanavati.sharvil.pam.error");
+	if(e == 0) 
+          {
+                    perror("raise e==0...\n");
+
+		e = caml_named_value("hsopam.net.nanavati.sharvil.pam.error");
+          }
+        fprintf (stderr, "e = %x , err: %d\n", e, exception);
+        
+        perror("raise with arg??? ...\n");
 
 	caml_raise_with_arg(*e, Val_int(exception));
 }
@@ -123,15 +133,21 @@ CAMLprim value pam_start_stub(value serviceName, value user, value conversation)
 	struct pam_conv conv;
 	const char * user_str = 0;
 	caml_pam_handle * h;
-
-	ret = caml_alloc_custom(&caml_pam_operations, sizeof(caml_pam_handle), 1, 100);
+        perror("pam_start_stub...\n");
+        perror("pam_start_stub... alloc");
+        
+	ret = caml_alloc_custom(&caml_pam_operations,
+                                sizeof(caml_pam_handle), 1, 100);
 	h = Handle_val(ret);
+        perror("pam_start_stub...ssss\n");
 
 	caml_register_global_root(&h->callback);
 	h->callback = conversation;
+        perror("pam_start_stub...sd dd\n");
 
 	caml_register_global_root(&h->fail_delay);
 	h->fail_delay = Val_int(0);
+        perror("pam_start_stub... sdfa\n");
 
 	conv.conv = converse;
 	conv.appdata_ptr = h;
@@ -142,12 +158,13 @@ CAMLprim value pam_start_stub(value serviceName, value user, value conversation)
 	h->error_code = pam_start(String_val(serviceName), user_str, &conv, &h->handle);
 	switch(h->error_code)
 	{
-		case PAM_SUCCESS: break;
-		case PAM_ABORT:      raise(Pam_Abort);
-		case PAM_BUF_ERR:    raise(Pam_Buf_Err);
-		case PAM_SYSTEM_ERR: raise(Pam_System_Err);
+		case PAM_SUCCESS: break;          
+		case PAM_ABORT:      caml_failwith("Pam_Abort");
+		case PAM_BUF_ERR:    caml_failwith("Pam_Buf_Err");
+		case PAM_SYSTEM_ERR: caml_failwith("Pam_System_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
+        perror("pam_start_stub... end");
 
 	CAMLreturn(ret);
 }
@@ -189,9 +206,9 @@ CAMLprim value pam_remove_fail_delay(value handle)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_BAD_ITEM:   raise(Pam_Bad_Item);
-		case PAM_BUF_ERR:    raise(Pam_Buf_Err);
-		case PAM_SYSTEM_ERR: raise(Pam_System_Err);
+		case PAM_BAD_ITEM:   caml_failwith("Pam_Bad_Item");
+		case PAM_BUF_ERR:    caml_failwith("Pam_Buf_Err");
+		case PAM_SYSTEM_ERR: caml_failwith("Pam_System_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
 
@@ -219,7 +236,7 @@ CAMLprim value pam_set_item_stub(value handle, value item)
 		case Pam_Conv:        type = PAM_CONV;        break;
 		case Pam_Fail_Delay:  type = PAM_FAIL_DELAY;  break;
 		default: 
-			raise(Pam_Bad_Item);
+			caml_failwith("Pam_Bad_Item");
 	}
 
 	if(type == PAM_CONV)
@@ -239,9 +256,9 @@ CAMLprim value pam_set_item_stub(value handle, value item)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_BAD_ITEM:   raise(Pam_Bad_Item);
-		case PAM_BUF_ERR:    raise(Pam_Buf_Err);
-		case PAM_SYSTEM_ERR: raise(Pam_System_Err);
+		case PAM_BAD_ITEM:   caml_failwith("Pam_Bad_Item");
+		case PAM_BUF_ERR:    caml_failwith("Pam_Buf_Err");
+		case PAM_SYSTEM_ERR: caml_failwith("Pam_System_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
 
@@ -269,7 +286,7 @@ CAMLprim value pam_get_item_stub(value handle, value item)
 		case Pam_Conv:        type = PAM_CONV;        break;
 		case Pam_Fail_Delay:  type = PAM_FAIL_DELAY;  break;
 		default: 
-			raise(Pam_Bad_Item);
+			caml_failwith("Pam_Bad_Item");
 	}
 
 	/* Special-case PAM_CONV since we're storing the closure internally. */
@@ -291,10 +308,10 @@ CAMLprim value pam_get_item_stub(value handle, value item)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_BAD_ITEM:    raise(Pam_Bad_Item);
-		case PAM_BUF_ERR:     raise(Pam_Buf_Err);
-		case PAM_PERM_DENIED: raise(Pam_Perm_Denied);
-		case PAM_SYSTEM_ERR:  raise(Pam_System_Err);
+		case PAM_BAD_ITEM:    caml_failwith("Pam_Bad_Item");
+		case PAM_BUF_ERR:     caml_failwith("Pam_Buf_Err");
+		case PAM_PERM_DENIED: caml_failwith("Pam_Perm_Denied");
+		case PAM_SYSTEM_ERR:  caml_failwith("Pam_System_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
 
@@ -313,7 +330,7 @@ CAMLprim value pam_fail_delay_stub(value handle, value usec)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_SYSTEM_ERR: raise(Pam_System_Err);
+		case PAM_SYSTEM_ERR: caml_failwith("Pam_System_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
 
@@ -325,6 +342,9 @@ CAMLprim value pam_authenticate_stub(value handle, value flags, value silent)
 	int flagValue = 0;
 	CAMLparam3(handle, flags, silent);
 	caml_pam_handle * h = Handle_val(handle);
+        CAMLlocal1 (ret);
+        
+        perror("pam_authenticate_stub...\n");
 
 	while(flags != Val_int(0))
 	{
@@ -334,28 +354,45 @@ CAMLprim value pam_authenticate_stub(value handle, value flags, value silent)
 				flagValue |= PAM_DISALLOW_NULL_AUTHTOK;
 				break;
 
-			default: raise(Pam_Bad_Item);
+			default: caml_failwith("Pam_Bad_Item");
 		}
 		flags = Field(flags, 1);
 	}
+        perror("pam_authenticate_stub... aaa\n");
 
 	if(Is_block(silent) && Field(silent, 0) == Val_true)
 		flagValue |= PAM_SILENT;
 
+        perror("pam_authenticate_stub... gggg\n");
+
 	h->error_code = pam_authenticate(h->handle, flagValue);
+
+        perror("pam_authenticate_stub... ooo\n");
+
 	switch(h->error_code)
 	{
-		case PAM_SUCCESS: break;
-		case PAM_ABORT:             raise(Pam_Abort);
-		case PAM_AUTH_ERR:          raise(Pam_Auth_Err);
-		case PAM_CRED_INSUFFICIENT: raise(Pam_Cred_Insufficient);
-		case PAM_AUTHINFO_UNAVAIL:  raise(Pam_Authinfo_Unavail);
-		case PAM_MAXTRIES:          raise(Pam_Maxtries);
-		case PAM_USER_UNKNOWN:      raise(Pam_User_Unknown);
-		default: caml_failwith("Unknown PAM error");
+        case PAM_SUCCESS: ret = Val_true; break;
+        default:
+          /* case PAM_ABORT:             */
+          /* caml_failwith("Pam_Abort");break; */
+          ret = Val_false; break;
+          /*
+        case PAM_AUTH_ERR:
+          caml_failwith("Pam_Auth_Err");break;
+        case PAM_CRED_INSUFFICIENT: 
+          caml_failwith("Pam_Cred_Insufficient");break;
+        case PAM_AUTHINFO_UNAVAIL:  
+          caml_failwith("Pam_Authinfo_Unavail");break;
+        case PAM_MAXTRIES:          
+          caml_failwith("Pam_Maxtries");break;
+        case PAM_USER_UNKNOWN:      
+          caml_failwith("Pam_User_Unknown");break;
+          default: caml_failwith("Unknown PAM error"); */
 	}
 
-	CAMLreturn(Val_unit);
+        perror("pam_authenticate_stub... eeee\n");
+
+	CAMLreturn(ret);
 }
 
 CAMLprim value pam_setcred_stub(value handle, value credList, value silent)
@@ -371,7 +408,7 @@ CAMLprim value pam_setcred_stub(value handle, value credList, value silent)
 		case Pam_Delete_Cred:       flags |= PAM_DELETE_CRED;       break;
 		case Pam_Reinitialize_Cred: flags |= PAM_REINITIALIZE_CRED; break;
 		case Pam_Refresh_Cred:      flags |= PAM_REFRESH_CRED;      break;
-		default: raise(Pam_System_Err);
+		default: caml_failwith("Pam_System_Err");
 	}
 
 	if(Is_block(silent) && Field(silent, 0) == Val_true)
@@ -381,12 +418,12 @@ CAMLprim value pam_setcred_stub(value handle, value credList, value silent)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_BUF_ERR: raise(Pam_Buf_Err);
-		case PAM_CRED_ERR: raise(Pam_Cred_Err);
-		case PAM_CRED_EXPIRED: raise(Pam_Cred_Expired);
-		case PAM_CRED_UNAVAIL: raise(Pam_Cred_Unavail);
-		case PAM_SYSTEM_ERR: raise(Pam_System_Err);
-		case PAM_USER_UNKNOWN: raise(Pam_User_Unknown);
+		case PAM_BUF_ERR: caml_failwith("Pam_Buf_Err");
+		case PAM_CRED_ERR: caml_failwith("Pam_Cred_Err");
+		case PAM_CRED_EXPIRED: caml_failwith("Pam_Cred_Expired");
+		case PAM_CRED_UNAVAIL: caml_failwith("Pam_Cred_Unavail");
+		case PAM_SYSTEM_ERR: caml_failwith("Pam_System_Err");
+		case PAM_USER_UNKNOWN: caml_failwith("Pam_User_Unknown");
 		default: caml_failwith("Unknown PAM error");
 	}
 
@@ -404,7 +441,7 @@ CAMLprim value pam_acct_mgmt_stub(value handle, value authFlags, value silent)
 		switch(Field(authFlags, 0))
 		{
 			case Pam_Disallow_Null_Authtok: flags |= PAM_DISALLOW_NULL_AUTHTOK; break;
-			default: raise(Pam_System_Err);
+			default: caml_failwith("Pam_System_Err");
 		}
 		authFlags = Field(authFlags, 1);
 	}
@@ -416,11 +453,11 @@ CAMLprim value pam_acct_mgmt_stub(value handle, value authFlags, value silent)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_ACCT_EXPIRED: raise(Pam_Acct_Expired);
-		case PAM_AUTH_ERR: raise(Pam_Auth_Err);
-		case PAM_NEW_AUTHTOK_REQD: raise(Pam_New_Authtok_Reqd);
-		case PAM_PERM_DENIED: raise(Pam_Perm_Denied);
-		case PAM_USER_UNKNOWN: raise(Pam_User_Unknown);
+		case PAM_ACCT_EXPIRED: caml_failwith("Pam_Acct_Expired");
+		case PAM_AUTH_ERR: caml_failwith("Pam_Auth_Err");
+		case PAM_NEW_AUTHTOK_REQD: caml_failwith("Pam_New_Authtok_Reqd");
+		case PAM_PERM_DENIED: caml_failwith("Pam_Perm_Denied");
+		case PAM_USER_UNKNOWN: caml_failwith("Pam_User_Unknown");
 		default: caml_failwith("Unknown PAM error");
 	}
 
@@ -438,7 +475,7 @@ CAMLprim value pam_chauthtok_stub(value handle, value tokenFlags, value silent)
 		switch(Field(tokenFlags, 0))
 		{
 			case Pam_Change_Expired_Authtok: flags |= PAM_CHANGE_EXPIRED_AUTHTOK; break;
-			default: raise(Pam_System_Err);
+			default: caml_failwith("Pam_System_Err");
 		}
 		tokenFlags = Field(tokenFlags, 1);
 	}
@@ -450,13 +487,13 @@ CAMLprim value pam_chauthtok_stub(value handle, value tokenFlags, value silent)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_AUTHTOK_ERR: raise(Pam_Authtok_Err);
-		case PAM_AUTHTOK_RECOVER_ERR: raise(Pam_Authtok_Recover_Err);
-		case PAM_AUTHTOK_LOCK_BUSY: raise(Pam_Authtok_Lock_Busy);
-		case PAM_AUTHTOK_DISABLE_AGING: raise(Pam_Authtok_Disable_Aging);
-		case PAM_PERM_DENIED: raise(Pam_Perm_Denied);
-		case PAM_TRY_AGAIN: raise(Pam_Try_Again);
-		case PAM_USER_UNKNOWN: raise(Pam_User_Unknown);
+		case PAM_AUTHTOK_ERR: caml_failwith("Pam_Authtok_Err");
+		case PAM_AUTHTOK_RECOVER_ERR: caml_failwith("Pam_Authtok_Recover_Err");
+		case PAM_AUTHTOK_LOCK_BUSY: caml_failwith("Pam_Authtok_Lock_Busy");
+		case PAM_AUTHTOK_DISABLE_AGING: caml_failwith("Pam_Authtok_Disable_Aging");
+		case PAM_PERM_DENIED: caml_failwith("Pam_Perm_Denied");
+		case PAM_TRY_AGAIN: caml_failwith("Pam_Try_Again");
+		case PAM_USER_UNKNOWN: caml_failwith("Pam_User_Unknown");
 		default: caml_failwith("Unknown PAM error");
 	}
 
@@ -476,9 +513,9 @@ CAMLprim value pam_open_session_stub(value handle, value silent)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_ABORT: raise(Pam_Abort);
-		case PAM_BUF_ERR: raise(Pam_Buf_Err);
-		case PAM_SESSION_ERR: raise(Pam_Session_Err);
+		case PAM_ABORT: caml_failwith("Pam_Abort");
+		case PAM_BUF_ERR: caml_failwith("Pam_Buf_Err");
+		case PAM_SESSION_ERR: caml_failwith("Pam_Session_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
 
@@ -498,9 +535,9 @@ CAMLprim value pam_close_session_stub(value handle, value silent)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_ABORT: raise(Pam_Abort);
-		case PAM_BUF_ERR: raise(Pam_Buf_Err);
-		case PAM_SESSION_ERR: raise(Pam_Session_Err);
+		case PAM_ABORT: caml_failwith("Pam_Abort");
+		case PAM_BUF_ERR: caml_failwith("Pam_Buf_Err");
+		case PAM_SESSION_ERR: caml_failwith("Pam_Session_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
 	CAMLreturn(Val_unit);
@@ -515,10 +552,10 @@ CAMLprim value pam_putenv_stub(value handle, value nameValue)
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;
-		case PAM_PERM_DENIED: raise(Pam_Perm_Denied);
-		case PAM_BAD_ITEM: raise(Pam_Bad_Item);
-		case PAM_ABORT: raise(Pam_Abort);
-		case PAM_BUF_ERR: raise(Pam_Buf_Err);
+		case PAM_PERM_DENIED: caml_failwith("Pam_Perm_Denied");
+		case PAM_BAD_ITEM: caml_failwith("Pam_Bad_Item");
+		case PAM_ABORT: caml_failwith("Pam_Abort");
+		case PAM_BUF_ERR: caml_failwith("Pam_Buf_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
 	CAMLreturn(Val_unit);

@@ -67,7 +67,7 @@ let pam_item_oldauthtok = Pam_OldAuthTok "";;
 let pam_item_conv = Pam_Conv (fun x y -> "");;
 let pam_item_fail_delay = Pam_Fail_Delay (fun x y -> ());;
 
-let _ = Callback.register_exception "net.nanavati.sharvil.pam.error" (Pam_Error Pam_Abort);;
+let _ = Callback.register_exception "hsopam.net.nanavati.sharvil.pam.error" (Pam_Error Pam_Abort);;
 
 external pam_start : string -> ?user:string -> pam_conv -> pam_handle = "pam_start_stub";;
 external pam_end : pam_handle -> bool = "pam_end_stub";;
@@ -75,7 +75,8 @@ external i_pam_remove_fail_delay : pam_handle -> unit = "pam_remove_fail_delay";
 external i_pam_set_item : pam_handle -> pam_item -> unit = "pam_set_item_stub";;
 external pam_get_item : pam_handle -> pam_item -> pam_item = "pam_get_item_stub";;
 external pam_fail_delay : pam_handle -> int -> unit = "pam_fail_delay_stub";;
-external pam_authenticate : pam_handle -> pam_auth_flags list -> ?silent:bool -> unit = "pam_authenticate_stub";;
+external pam_authenticate : 
+  pam_handle -> pam_auth_flags list -> ?silent:bool -> bool = "pam_authenticate_stub";;
 external pam_setcred : pam_handle -> pam_credentials -> ?silent:bool -> unit = "pam_setcred_stub";;
 external pam_acct_mgmt : pam_handle -> pam_auth_flags list -> ?silent:bool -> unit = "pam_acct_mgmt_stub";;
 external pam_chauthtok : pam_handle -> pam_token_flags list -> ?silent:bool -> unit = "pam_chauthtok_stub";;
@@ -97,7 +98,7 @@ type pam_functions =
 	pam_set_item : pam_item -> unit;
 	pam_get_item : pam_item -> pam_item;
 	pam_fail_delay : int -> unit;
-	pam_authenticate : pam_auth_flags list -> ?silent:bool -> unit;
+	pam_authenticate : pam_auth_flags list -> ?silent:bool -> bool;
 	pam_setcred : pam_credentials -> ?silent:bool -> unit;
 	pam_acct_mgmt : pam_auth_flags list -> ?silent:bool -> unit;
 	pam_chauthtok : pam_token_flags list -> ?silent:bool -> unit;

@@ -73,7 +73,7 @@ type pam_functions =
 	pam_set_item : pam_item -> unit;
 	pam_get_item : pam_item -> pam_item;
 	pam_fail_delay : int -> unit;
-	pam_authenticate : pam_auth_flags list -> ?silent:bool -> unit;
+	pam_authenticate : pam_auth_flags list -> ?silent:bool -> bool;
 	pam_setcred : pam_credentials -> ?silent:bool -> unit;
 	pam_acct_mgmt : pam_auth_flags list -> ?silent:bool -> unit;
 	pam_chauthtok : pam_token_flags list -> ?silent:bool -> unit;
@@ -90,7 +90,7 @@ val pam_end : pam_handle -> bool;;
 val pam_set_item : pam_handle -> pam_item -> unit;;
 val pam_get_item : pam_handle -> pam_item -> pam_item;;
 val pam_fail_delay : pam_handle -> int -> unit;;
-val pam_authenticate : pam_handle -> pam_auth_flags list -> ?silent:bool -> unit;;
+val pam_authenticate : pam_handle -> pam_auth_flags list -> ?silent:bool -> bool;;
 val pam_setcred : pam_handle -> pam_credentials -> ?silent:bool -> unit;;
 val pam_acct_mgmt : pam_handle -> pam_auth_flags list -> ?silent:bool -> unit;;
 val pam_chauthtok : pam_handle -> pam_token_flags list -> ?silent:bool -> unit;;
