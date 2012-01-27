@@ -96,6 +96,7 @@ module Authentication = struct
   | `User_logged of string
   | `Error_no_email
   | `Error_insufficient_credentials of string
+  | `Error_wrong_login
   | `Error_pam_error of Pam.pam_error
   | `Error_pam_exn of exn
   ]
@@ -139,28 +140,47 @@ module Authentication = struct
         ksprintf pcdata "Authentication error: PAM (wrong pass or login?)"
       | `Error_pam_exn e :: _ ->
         ksprintf pcdata "PAM Error: %s" (Exn.to_string e)
+      | `Error_wrong_login :: _ ->
+        ksprintf pcdata "PAM wrong login or password"
 
     in
     return [state; pcdata "; "; Services.(link login) [pcdata "New login"] ()]
 
 
   let pam_auth ?(service = "") ~name ~pwd =
-    let open Lwt in
-    (* Lwt_preemptive.detach (fun () -> *)
-    let auth =
-      try
-        let pam = Pam.pam_start service ~user:name (fun _ _ -> pwd) in
-        (* Pam.pam_set_item pam Pam.pam_item_fail_delay; *)
-        Pam.pam_authenticate pam [] ~silent:true;
-        eprintf "pam end: %b\n%!" (Pam.pam_end pam);
-        Ok name
+    let wrap_pam f a =
+      try Ok (f a)
       with 
-      | Pam.Pam_Error e -> Error (`Error_pam_error e)
-      | e -> Error (`Error_pam_exn e)
-    (* ) () *)
-    (* >>= function *)
+      | Pam.Pam_Error e ->
+        Error (`Error_pam_error e)
+      | e ->
+        Error (`Error_pam_exn e)
     in
-    match auth with
+    let pam_end pam s =
+      (* pam_end does not raise anything *)
+      eprintf "pam end: %b (%s)\n%!" (Pam.pam_end pam) s in
+    let auth () =
+      let open Result in
+      eprintf "pam start!\n%!";
+      wrap_pam (Pam.pam_start service ~user:name) (fun _ _ -> pwd)
+      >>= fun pam ->
+      wrap_pam (Pam.pam_set_item pam) Pam.pam_item_fail_delay
+      >>= fun () ->
+      eprintf "pam auth!\n%!";
+      match wrap_pam (Pam.pam_authenticate pam ~silent:false) [] with
+      | Ok true ->
+        pam_end pam "OK"; 
+        Ok name
+      | Ok false ->
+        pam_end pam "KO"; 
+        Error `Error_wrong_login
+      | Error e ->
+        pam_end pam "KO"; 
+        Error e
+    in
+    let open Lwt in
+    Lwt_preemptive.detach auth ()
+    >>= function
     | Ok n ->
       set_state (`User_logged n)
     | Error e -> set_state e
@@ -294,7 +314,7 @@ module Login_service = struct
             | None -> set_state `Error_no_email
             end
           end >>= fun () ->
-          Eliom_output.Redirection.send (Services.default ()))
+          Eliom_output.Redirection.send (Services.home ()))
     in
     (* Create the handler for the form *)
     (* We have to use Eliom_output.String_redirection as we
