@@ -230,12 +230,10 @@ module Login_service = struct
     let open Lwt in
     let open Authentication in
     (* Initialize the OpenID library *)
-    let authenticate =
+    let authenticate_with_url url =
       Openid.init ~path:["__openid_return_service"]
         ~f: (fun _ _ -> Eliom_output.Redirection.send (Services.login ()))
-    in
-    let authenticate_with_url url =
-      authenticate
+
         ~realm:(Eliom_output.Xhtml.make_string_uri ~absolute:true 
                   ~service:(Services.default ()) ())
         ~immediate:false
