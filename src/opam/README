@@ -1,0 +1,129 @@
+OCamlPAM - an OCaml library for PAM
+
+http://sharvil.nanavati.net/projects/ocamlpam/
+
+Overview
+
+  OCamlPAM is a wrapper for the Pluggable Authentication Modules
+  (PAM) library. PAM provides a flexible mechanism for authenticating
+  users via administrator-defined policies. PAM has modules for
+  authenticating via Unix passwd files, Kerberos, LDAP, etc. Additional
+  modules for custom authentication mechanisms can be created and deployed
+  without recompiling existing services based on PAM. Moreover, policies
+  defining the authentication requirements can be changed at runtime
+  without restarting running services.
+
+Installation
+
+  To develop applications with OCamlPAM, you must install both the PAM
+  runtime and PAM development packages. Alternatively, you could install
+  PAM from sources which will contain both the runtime and development files.
+  The Linux version of PAM can be found at:
+    http://www.kernel.org/pub/linux/libs/pam/
+
+  1. Extract the archive:
+     $ tar zxvf ocamlpam-1.1.tgz
+     $ cd ocamlpam-1.1/
+
+  2. Compile OCamlPAM:
+     $ make
+
+  3. Install OCamlPAM:
+     # make install
+
+  Note: if 'ocamlc' and 'ocamlopt' are not in your PATH or if they have a
+  different name, edit 'Makefile' and specify the name/location of the
+  compilers.
+
+  Makefile Targets:
+    byte    - build the OCamlPAM library for use with bytecode projects
+    opt     - build the OCamlPAM library for use with native projects
+    all     - builds both the 'byte' and 'opt' versions of the library
+    install - installs the 'byte' and 'opt' versions of the library
+    clean   - removes all intermediate and target files
+
+Documentation
+
+  OCamlPAM provides a similar interface as Linux-PAM. The documentation for
+  Linux-PAM can be found at:
+    http://www.kernel.org/pub/linux/libs/pam/Linux-PAM-html/Linux-PAM_ADG.html
+
+  It deviates from the C library in a few ways as described below:
+
+  1. All-caps identifiers are camel-cased. For example, PAM_ESTABLISH_CRED in
+     the C library corresponds to Pam_Establish_Cred in OCamlPAM.
+
+  2. Exceptions are thrown instead of returning integer codes. Exceptions
+     have type:
+       exception Pam_Error of pam_error
+
+     pam_error is a variant type with values matching the names of return
+     codes. For example, the exception (Pam_Error Pam_Abort) corresponds to
+     the return code PAM_ABORT.
+
+  3. No exception is thrown on success.
+
+  4. No exception is thrown when ending a transaction. The 'pam_end' function
+     returns a boolean with the value 'true' indicating success.
+
+  5. PAM_SILENT must be specified with the named boolean argument ~silent.
+     e.g.:
+       pam_open_session handle ~silent:true
+
+  6. PAM items are variant types with default values of the form 'pam_item_*'.
+     e.g.:
+       pam_set_item handle (Pam_Service "my_service");
+       let service_name = pam_get_item handle pam_item_service in
+       (* ... *)
+
+  7. To remove the fail delay function, specify pam_item_fail_delay as the
+     argument to pam_set_item. Note that pam_get_item will return
+     pam_item_fail_delay if the fail delay function is queried and no fail
+     delay function has been set.
+
+  8. The PAM documentation contains a typo: PAM_AUTHTOK_RECOVERY_ERR should
+     not contain a 'Y'. Consequently, the corresponding pam_error value is:
+     Pam_Authtok_Recover_Err.
+
+  9. It is not necessary to explicitly call pam_end. Upon garbage collection,
+     pam_end will be called and any error arising from it will be ignored. If
+     you wish to control the lifetime of the PAM transaction or if you would
+     like to be notified of success/failure, you must call pam_end explicitly.
+
+  An additional function, pam_start_ex, provides a simpler interface to the
+  PAM functions. It takes the same arguments as pam_start but instead of
+  returning an opaque handle, it returns a record of functions that no longer
+  require the handle argument. For example, the code:
+
+    let handle = pam_start "my_service" my_conversation_fn in
+    pam_authenticate handle [] ~silent:true;
+    pam_end handle
+
+  could be rewritten:
+
+    let p = pam_start_ex "my_service" my_conversation_fn in
+    p.pam_authenticate [] ~silent:true;
+    p.pam_end ()
+
+Building an Application
+
+  To link against the bytecode library, use the following:
+    $ ocamlc -I /path/to/ocamlpam-1.1 pam.cma <your object files>
+
+  or, for the native version:
+    $ ocamlopt -I /path/to/ocamlpam-1.1 pam.cmxa <your object files>
+
+Acknowledgements
+
+  Stéphane Glondu
+
+References
+
+  [1] OCamlPAM Home
+      (http://sharvil.nanavati.net/projects/ocamlpam/)
+
+  [2] A Linux-PAM page
+      (http://www.kernel.org/pub/linux/libs/pam/)
+
+  [3] The Linux-PAM Application Developers' Guide
+      (http://www.kernel.org/pub/linux/libs/pam/Linux-PAM-html/Linux-PAM_ADG.html)

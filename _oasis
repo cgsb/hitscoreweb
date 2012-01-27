@@ -8,17 +8,24 @@ Plugins:     META (0.2)
 BuildTools:  ocamlbuild
 
 Library hitscoreweb
-  Path: ./src/lib/
+  Path: src/lib
   FindlibName: hitscoreweb
-  BuildDepends: threads, core, hitscore, lwt.syntax, pgocaml.syntax, eliom.server
+  BuildDepends: hitscorewebopam, threads, core, hitscore, lwt.syntax,
+                pgocaml.syntax, eliom.server
   Install: true
   Modules: Hitscoreweb,
            Hitscoreweb_queries,
            HSWE_eliom_openid,
            Hitscoreweb_std
 
+Library hitscorewebopam
+  Path: src/opam
+  Modules: Pam
+  CSources: pam_stubs.c, pam_stubs.h
+  CCLib: -lpam -lresolv
+
 Executable hitscoreweb
-  Path:   ./src/app/
+  Path:   src/app
   MainIs: hitscoreweb.ml
   BuildDepends: hitscoreweb
   CompiledObject: best

@@ -1,7 +1,16 @@
 # OASIS_START
-# DO NOT EDIT (digest: 266e26fe52b9a430d8cc098b4b37b103)
+# DO NOT EDIT (digest: cb00be1b1acab94fdd1aae67a629b9b3)
+# Library hitscorewebopam
+"src/opam": include
+<src/opam/hitscorewebopam.{cma,cmxa}>: oasis_library_hitscorewebopam_cclib
+"src/opam/libhitscorewebopam.lib": oasis_library_hitscorewebopam_cclib
+"src/opam/dllhitscorewebopam.dll": oasis_library_hitscorewebopam_cclib
+"src/opam/libhitscorewebopam.a": oasis_library_hitscorewebopam_cclib
+"src/opam/dllhitscorewebopam.so": oasis_library_hitscorewebopam_cclib
+<src/opam/hitscorewebopam.{cma,cmxa}>: use_libhitscorewebopam
 # Library hitscoreweb
 "src/lib": include
+<src/lib/*.ml{,i}>: use_hitscorewebopam
 <src/lib/*.ml{,i}>: pkg_threads
 <src/lib/*.ml{,i}>: pkg_pgocaml.syntax
 <src/lib/*.ml{,i}>: pkg_lwt.syntax
@@ -10,6 +19,7 @@
 <src/lib/*.ml{,i}>: pkg_core
 # Executable hitscoreweb
 <src/app/hitscoreweb.{native,byte}>: use_hitscoreweb
+<src/app/hitscoreweb.{native,byte}>: use_hitscorewebopam
 <src/app/hitscoreweb.{native,byte}>: pkg_threads
 <src/app/hitscoreweb.{native,byte}>: pkg_pgocaml.syntax
 <src/app/hitscoreweb.{native,byte}>: pkg_lwt.syntax
@@ -17,6 +27,7 @@
 <src/app/hitscoreweb.{native,byte}>: pkg_eliom.server
 <src/app/hitscoreweb.{native,byte}>: pkg_core
 <src/app/*.ml{,i}>: use_hitscoreweb
+<src/app/*.ml{,i}>: use_hitscorewebopam
 <src/app/*.ml{,i}>: pkg_threads
 <src/app/*.ml{,i}>: pkg_pgocaml.syntax
 <src/app/*.ml{,i}>: pkg_lwt.syntax
@@ -25,4 +36,4 @@
 <src/app/*.ml{,i}>: pkg_core
 # OASIS_STOP
 
-<src/*/*.ml>: syntax_camlp4o
+<src/lib/*.ml>: syntax_camlp4o

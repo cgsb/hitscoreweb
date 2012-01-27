@@ -17,6 +17,8 @@ module Services = struct
 
   let default =
     make (Eliom_services.service ~path:[""] ~get_params:Eliom_parameters.unit)
+  let home =
+    make (Eliom_services.service ~path:["home"] ~get_params:Eliom_parameters.unit)
 
   let flowcells =
     make
@@ -73,6 +75,7 @@ end
 
 module Authentication = struct
 
+
   type user_logged = {
     id: string;
   }
@@ -93,6 +96,8 @@ module Authentication = struct
   | `User_logged of string
   | `Error_no_email
   | `Error_insufficient_credentials of string
+  | `Error_pam_error of Pam.pam_error
+  | `Error_pam_exn of exn
   ]
 
   let authentication_history =
@@ -130,8 +135,37 @@ module Authentication = struct
       | `Error_no_email :: _ -> pcdata "Authentication error: No email"
       | `Error_insufficient_credentials s :: _ -> 
         ksprintf pcdata "Authentication error: insufficient credentials for %s" s
+      | `Error_pam_error e :: _ ->
+        ksprintf pcdata "Authentication error: PAM (wrong pass or login?)"
+      | `Error_pam_exn e :: _ ->
+        ksprintf pcdata "PAM Error: %s" (Exn.to_string e)
+
     in
     return [state; pcdata "; "; Services.(link login) [pcdata "New login"] ()]
+
+
+  let pam_auth ?(service = "") ~name ~pwd =
+    let open Lwt in
+    (* Lwt_preemptive.detach (fun () -> *)
+    let auth =
+      try
+        let pam = Pam.pam_start service ~user:name (fun _ _ -> pwd) in
+        (* Pam.pam_set_item pam Pam.pam_item_fail_delay; *)
+        Pam.pam_authenticate pam [] ~silent:true;
+        eprintf "pam end: %b\n%!" (Pam.pam_end pam);
+        Ok name
+      with 
+      | Pam.Pam_Error e -> Error (`Error_pam_error e)
+      | e -> Error (`Error_pam_exn e)
+    (* ) () *)
+    (* >>= function *)
+    in
+    match auth with
+    | Ok n ->
+      set_state (`User_logged n)
+    | Error e -> set_state e
+
+
 end
 
 module Template = struct
@@ -265,6 +299,9 @@ module Login_service = struct
     (* Create the handler for the form *)
     (* We have to use Eliom_output.String_redirection as we
        redirect the user to her provider *)
+    let redirection = 
+      Eliom_output.Html5.make_string_uri ~absolute:true 
+        ~service:(Services.home ()) () in
     let form_handler = 
       Eliom_output.String_redirection.register_post_coservice
         ~fallback:Services.(default ())
@@ -272,9 +309,7 @@ module Login_service = struct
           eprintf "form_handler's error_handler\n%!";
           List.iter sel ~f:(fun (s, e) -> 
             eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
-          return (
-            Eliom_output.Html5.make_string_uri
-              ~service:Services.(default ()) ()))
+          return (redirection))
         ~post_params:(Eliom_parameters.string "url")
         (fun _ url ->
           authenticate_with_url url)
@@ -286,31 +321,60 @@ module Login_service = struct
           eprintf "google_handler's error_handler\n%!";
           List.iter sel ~f:(fun (s, e) -> 
             eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
-          return (
-            Eliom_output.Html5.make_string_uri
-              ~service:Services.(default ()) ()))
+          return redirection)
         ~get_params:Eliom_parameters.unit
         (fun () () ->
           let url = "https://www.google.com/accounts/o8/id" in
           authenticate_with_url url)
     in
+    let pam_handler =
+      Eliom_output.String_redirection.register_post_coservice
+        ~fallback:Services.(default ())
+        ~error_handler:(fun sel -> 
+          eprintf "pam_handler's error_handler\n%!";
+          List.iter sel ~f:(fun (s, e) -> 
+            eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
+          return (redirection))
+        ~post_params:Eliom_parameters.(string "user" ** string "pwd")
+        (fun () (name, pwd) ->
+          Authentication.pam_auth ~service:"" ~name ~pwd
+          >>= fun () ->
+          let uri = redirection in
+eprintf "uri: %s\n%!" uri;
+          return uri)
+    in
+
     let open Html5 in
     (fun _ _ ->
-      let form =
+      let form_generic_openid =
         Eliom_output.Html5.post_form ~service:form_handler
           (fun url ->
             [p [pcdata "Your OpenID identifier: ";
                 Eliom_output.Html5.string_input ~input_type:`Text ~name:url ();
                 Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
                ];
-             p [pcdata "Login with ";
-                Eliom_output.Html5.a ~service:google_handler [pcdata "Google"] ();
-               ]
+            ]) () 
+      in
+      let google_openid_link =
+        p [pcdata "Login with ";
+           Eliom_output.Html5.a ~service:google_handler [pcdata "Google"] ();
+          ]
+      in
+      let pam_form =
+        Eliom_output.Html5.post_form ~service:pam_handler
+          (fun (name, pwd) ->
+            [p [pcdata "Try PAM identification: ";
+                Eliom_output.Html5.string_input ~input_type:`Text ~name ();
+                Eliom_output.Html5.string_input ~input_type:`Password ~name:pwd ();
+                Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
+               ];
             ]) () 
       in
       let html_content = Hitscore_lwt.Result_IO.return  [
         h1 [pcdata "Login"];
-        form] in
+        form_generic_openid;
+        google_openid_link;
+        pam_form] in
       Template.default ~title:"Log-in" html_content)
 end
 
@@ -804,6 +868,8 @@ let () =
         Hitscore_lwt.Configuration.configure ?db_configuration () in
 
       Services.(register default) (fun () () ->
+        default_service hitscore_configuration);
+      Services.(register home) (fun () () ->
         default_service hitscore_configuration);
       
       Services.(register flowcells) (fun () () ->

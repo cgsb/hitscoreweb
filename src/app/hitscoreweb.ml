@@ -90,6 +90,7 @@ let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
     <extension findlib-package=\"core\"/>
     <extension findlib-package=\"pgocaml\"/>
     <extension findlib-package=\"hitscore\"/>
+    <extension module=\"_build/src/opam/hitscorewebopam.cma\"/>
     <extension findlib-package=\"ocsigenserver.ext.ocsipersist-sqlite\">
       <database file=\"%s/ocsidb\"/>
     </extension>
@@ -106,7 +107,8 @@ let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
   let hitscore_module =
     match kind with
     | `Ocsigen ->
-      sprintf " <eliom module=\"_build/src/lib/hitscoreweb.cma\">\n"
+      sprintf " \
+        <eliom module=\"_build/src/lib/hitscoreweb.cma\">\n"
     |`Static ->
       sprintf " <eliom name=\"hitscoreweb\">\n"
   in

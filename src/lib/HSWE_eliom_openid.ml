@@ -15,7 +15,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
  *)
-
+open Printf
 open Eliom_pervasives
 open Eliom_s2s
 open Ocsigen_stream
@@ -231,12 +231,19 @@ let gen_signature ~key ~args =
     (List.map (fun a -> Printf.sprintf "%s:%s\n" a (get args a))
        (Netstring_pcre.split (Netstring_pcre.regexp ",") (get args "signed")))
   in
+eprintf "gen_signature key:%s kw:%s\n%!"
+(Base64.encode key) kw;
   hash_string (MAC.hmac_sha1 key) kw
 
 let check_signature ~key ~args = 
   let sig1 = Base64.encode (gen_signature ~key ~args) 
   and sig2 = get args "sig"
   in
+
+eprintf "sig1: %s\n" sig1;
+eprintf "sig2: %s\n" sig2;
+eprintf "get args signed: %s\n%!" (get args "signed");
+
   if sig1 <> sig2 then lwt_fail (Invalid_signature (sig1, sig2))
   else Lwt.return ()
 
