@@ -80,9 +80,19 @@ end
 
 module Authentication = struct
 
+  type capability = [
+  | `view of [`all | `all_flowcells]
+  ]
+
+  let capabilities_allow caps cap =
+    match cap with
+    | `view smth ->
+      List.exists caps (fun c -> c = `view `all || c = cap)
+
 
   type user_logged = {
     id: string;
+    capabilities: capability list;
   }
     
   type authentication_state = [
@@ -108,16 +118,23 @@ module Authentication = struct
     >>= function
     | [] | `nothing :: _ -> return `nothing
     | h :: t -> return h
-                              
+
+  let user_logged () =
+    wrap_io Eliom_references.get authentication_history
+    >>= function
+    | `user_logged u :: _ -> return (Some u)
+    | _ -> return None
+
   let validate_user u =  (* TODO *)
+    let make_viewer id = Some { id; capabilities = [`view `all] } in
     match u with
-    | `email id when id = "sm4431@nyu.edu"   -> Some { id }
-    | `email id when id = "aa144@nyu.edu"    -> Some { id }
-    | `email id when id = "ps103@nyu.edu"    -> Some { id }
-    | `email id when id = "carltj01@nyu.edu" -> Some { id }
-    | `email id when id = "jsd6@nyu.edu"     -> Some { id }
-    | `login id when id = "smondet"          -> Some { id }
-    | `login id when id = "sm4431"           -> Some { id }
+    | `email id when id = "sm4431@nyu.edu"   -> make_viewer id
+    | `email id when id = "aa144@nyu.edu"    -> make_viewer id
+    | `email id when id = "ps103@nyu.edu"    -> make_viewer id
+    | `email id when id = "carltj01@nyu.edu" -> make_viewer id
+    | `email id when id = "jsd6@nyu.edu"     -> make_viewer id
+    | `login id when id = "smondet"          -> make_viewer id
+    | `login id when id = "sm4431"           -> make_viewer id
     | _                  -> None
 
   let display_state () =
@@ -214,7 +231,12 @@ module Authentication = struct
   let logout () =
     set_state `nothing
 
-
+  let authorizes (cap:capability) =
+    user_logged () >>= 
+      begin function
+      | Some u -> return (capabilities_allow u.capabilities cap)
+      | _ -> return false
+      end
 end
 
 module Template = struct
@@ -489,63 +511,82 @@ module Display_service = struct
             tr (List.map l make_cell)))
       ]
 
+  let make_content ~main_title content =
+    let open Html5 in
+    content >>= fun content ->
+    return [
+      h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
+      html_of_content content]
+
   let make ~hsc ~main_title content =
-    let html_content = 
-      let open Html5 in
-      content >>= fun content ->
-      Authentication.display_state ()
-      >>= fun auth_state ->
-      return [
-        h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
-        html_of_content content] in
+    let html_content = make_content ~main_title content in
     Template.default ~title:main_title html_content
 
 end
 
-
-let flowcells hsc =
-  let open Html5 in
-  Hitscore_lwt.db_connect hsc
-  >>= fun dbh ->
-  Layout.Record_flowcell.(
-    get_all ~dbh
-    >>= fun flowcells ->
-    of_list_sequential flowcells ~f:(fun f ->
-      cache_value ~dbh f >>| get_fields
-      >>= fun {serial_name; lanes} ->
-      Layout.Search.record_hiseq_raw_by_flowcell_name ~dbh serial_name
-      >>= fun dirs ->
-      of_list_sequential dirs ~f:(fun d ->
-        Layout.Record_hiseq_raw.(
-          cache_value ~dbh d >>| get_fields
-          >>= fun {read_length_1; read_length_index; read_length_2; 
-                   run_date; host; hiseq_dir_name} ->
-          return (li [
-            ksprintf pcdata "Ran on %s, " (run_date |! 
-                Time.to_local_date |! Date.to_string);
-            code [pcdata (Filename.basename hiseq_dir_name)];
-            ksprintf pcdata " (%ld%s%s)."
-              read_length_1
-              (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_index)
-              (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_2)
-          ])))
-      >>= fun l ->
+module Flowcells_service = struct
+  let flowcells hsc =
+    let open Html5 in
+    Hitscore_lwt.db_connect hsc
+    >>= fun dbh ->
+    Layout.Record_flowcell.(
+      get_all ~dbh
+      >>= fun flowcells ->
+      of_list_sequential flowcells ~f:(fun f ->
+        cache_value ~dbh f >>| get_fields
+        >>= fun {serial_name; lanes} ->
+        Layout.Search.record_hiseq_raw_by_flowcell_name ~dbh serial_name
+        >>= fun dirs ->
+        of_list_sequential dirs ~f:(fun d ->
+          Layout.Record_hiseq_raw.(
+            cache_value ~dbh d >>| get_fields
+            >>= fun {read_length_1; read_length_index; read_length_2; 
+                     run_date; host; hiseq_dir_name} ->
+            return (li [
+              ksprintf pcdata "Ran on %s, " (run_date |! 
+                  Time.to_local_date |! Date.to_string);
+              code [pcdata (Filename.basename hiseq_dir_name)];
+              ksprintf pcdata " (%ld%s%s)."
+                read_length_1
+                (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_index)
+                (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_2)
+            ])))
+        >>= fun l ->
+        return Display_service.(
+          paragraph [
+            strong [
+              Services.(link flowcell) [pcdata serial_name] serial_name;
+              pcdata ":"];
+            if List.length l = 0 then span [pcdata " Never run."] else ul l
+          ]))
+      >>= fun ul ->
+      Hitscore_lwt.db_disconnect hsc dbh
+      >>= fun _ ->
       return Display_service.(
-        paragraph [
-          strong [
-            Services.(link flowcell) [pcdata serial_name] serial_name;
-            pcdata ":"];
-          if List.length l = 0 then span [pcdata " Never run."] else ul l
-        ]))
-    >>= fun ul ->
-    Hitscore_lwt.db_disconnect hsc dbh
-    >>= fun _ ->
-    return Display_service.(
-      content_section
-        (ksprintf pcdata "Found %d Flowcells" (List.length ul))
-        (content_list ul)
-    ))
-    
+        content_section
+          (ksprintf pcdata "Found %d Flowcells" (List.length ul))
+          (content_list ul)
+      ))
+
+  let make hitscore_configuration =
+    (fun () () ->
+      let content = 
+        Authentication.authorizes (`view `all_flowcells)
+        >>= function
+        | true ->
+          Display_service.make_content
+            ~main_title:"Flowcells" (flowcells hitscore_configuration)
+        | false ->
+          let open Html5 in
+          return [
+            h1 [pcdata "Authentication Error"];
+            p [pcdata "You should maybe login? or ask for the right of \
+                      viewing all flowcells?"];
+          ]
+      in
+      Template.default ~title:"All Flowcells" content)
+end
+
 let person_essentials dbh person_t =
   Layout.Record_person.(
     cache_value ~dbh person_t >>| get_fields
@@ -909,11 +950,9 @@ let () =
       Services.(register home) (fun () () ->
         default_service hitscore_configuration);
       
-      Services.(register flowcells) (fun () () ->
-        Display_service.make ~hsc:hitscore_configuration
-          ~main_title:"Flowcells"
-          (flowcells hitscore_configuration));
-      
+      Services.(register flowcells)
+        Flowcells_service.(make hitscore_configuration);
+
       Services.(register persons) (fun (transpose, highlight) () ->
         Display_service.make ~hsc:hitscore_configuration
           ~main_title:"People"
