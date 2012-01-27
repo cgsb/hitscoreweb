@@ -79,26 +79,13 @@ module Authentication = struct
   type user_logged = {
     id: string;
   }
-
-  type user_session = [
-  | `No_user
-  | `User of user_logged 
-  ]
-  
-  (* The user. *)
-  let current_user =
-    Eliom_references.eref ~scope:Eliom_common.session (`No_user: user_session)
-
+    
   type authentication_state = [
-  | `Nothing
-  | `User_canceled
-  | `Setup_needed
-  | `User_logged of string
-  | `Error_no_email
-  | `Error_insufficient_credentials of string
-  | `Error_wrong_login
-  | `Error_pam_error of Pam.pam_error
-  | `Error_pam_exn of exn
+  | `nothing
+  | `wrong_openid of [`user_canceled | `setup_needed | `no_email]
+  | `user_logged of user_logged
+  | `insufficient_credentials of string
+  | `wrong_pam of [`wrong_login| `pam_exn of exn]
   ]
 
   let authentication_history =
@@ -111,50 +98,51 @@ module Authentication = struct
     >>= fun ah ->
     Eliom_references.set authentication_history (s :: ah)
 
-  let validate_user id = 
-    match id with
-    | "sm4431@nyu.edu"   -> Some { id }
-    | "aa144@nyu.edu"    -> Some { id }
-    | "ps103@nyu.edu"    -> Some { id }
-    | "carltj01@nyu.edu" -> Some { id }
-    | "jsd6@nyu.edu"     -> Some { id }
+  let get_state () =
+    wrap_io Eliom_references.get authentication_history
+    >>= function
+    | [] | `nothing :: _ -> return `nothing
+    | h :: t -> return h
+                              
+  let validate_user u =  (* TODO *)
+    match u with
+    | `email id when id = "sm4431@nyu.edu"   -> Some { id }
+    | `email id when id = "aa144@nyu.edu"    -> Some { id }
+    | `email id when id = "ps103@nyu.edu"    -> Some { id }
+    | `email id when id = "carltj01@nyu.edu" -> Some { id }
+    | `email id when id = "jsd6@nyu.edu"     -> Some { id }
+    | `login id when id = "smondet"          -> Some { id }
+    | `login id when id = "sm4431"           -> Some { id }
     | _                  -> None
 
   let display_state () =
     let open Html5 in
-    wrap_io Eliom_references.get authentication_history
-    >>= fun ah ->
+    let pcdataf fmt = ksprintf pcdata fmt in
+    get_state ()
+    >>= fun s ->
     let state =
-      match ah with
-      | [] | `Nothing :: _ -> pcdata "No user"
-      | `User_canceled :: _ -> pcdata "User canceled"
-      | `Setup_needed :: _ -> pcdata "Setup needed"
-      | `User_logged e :: _ -> 
-        span [pcdata "User ";
-              Services.(link persons) [code [pcdata e]] (None, [e]);
-              pcdata " logged"]
-      | `Error_no_email :: _ -> pcdata "Authentication error: No email"
-      | `Error_insufficient_credentials s :: _ -> 
-        ksprintf pcdata "Authentication error: insufficient credentials for %s" s
-      | `Error_pam_error e :: _ ->
-        ksprintf pcdata "Authentication error: PAM (wrong pass or login?)"
-      | `Error_pam_exn e :: _ ->
-        ksprintf pcdata "PAM Error: %s" (Exn.to_string e)
-      | `Error_wrong_login :: _ ->
-        ksprintf pcdata "PAM wrong login or password"
-
+      match s with
+      | `nothing -> pcdataf "No user"
+      | `wrong_openid wo ->
+        pcdataf "Wrong OpenId: %s"
+          (match wo with
+          | `user_canceled -> "Canceled by user"
+          | `setup_needed -> "Setup needed"
+          | `no_email -> "No email returned")
+      | `user_logged u -> pcdataf "User: %s" u.id
+      | `insufficient_credentials s -> pcdataf "Wrong credentials for: %s" s
+      | `wrong_pam wp ->
+        pcdataf "PAM: %s"
+          (match wp with
+          | `wrong_login -> "wrong login or password"
+          | `pam_exn e -> sprintf "error: %s" (Exn.to_string e))
     in
     return [state; pcdata "; "; Services.(link login) [pcdata "New login"] ()]
 
 
-  let pam_auth ?(service = "") ~name ~pwd =
+  let pam_auth ?(service = "") ~user ~password () =
     let wrap_pam f a =
-      try Ok (f a)
-      with 
-      | Pam.Pam_Error e ->
-        Error (`Error_pam_error e)
-      | e ->
-        Error (`Error_pam_exn e)
+      try Ok (f a) with e -> Error (`pam_exn e)
     in
     let pam_end pam s =
       (* pam_end does not raise anything *)
@@ -162,7 +150,7 @@ module Authentication = struct
     let auth () =
       let open Result in
       eprintf "pam start!\n%!";
-      wrap_pam (Pam.pam_start service ~user:name) (fun _ _ -> pwd)
+      wrap_pam (Pam.pam_start service ~user) (fun _ _ -> password)
       >>= fun pam ->
       wrap_pam (Pam.pam_set_item pam) Pam.pam_item_fail_delay
       >>= fun () ->
@@ -170,10 +158,10 @@ module Authentication = struct
       match wrap_pam (Pam.pam_authenticate pam ~silent:false) [] with
       | Ok true ->
         pam_end pam "OK"; 
-        Ok name
+        Ok user
       | Ok false ->
         pam_end pam "KO"; 
-        Error `Error_wrong_login
+        Error `wrong_login
       | Error e ->
         pam_end pam "KO"; 
         Error e
@@ -182,9 +170,33 @@ module Authentication = struct
     Lwt_preemptive.detach auth ()
     >>= function
     | Ok n ->
-      set_state (`User_logged n)
-    | Error e -> set_state e
+      begin match validate_user (`login n) with
+      | Some u -> 
+        set_state (`user_logged u)
+      | None ->
+        set_state (`insufficient_credentials n)
+      end
+    | Error e -> set_state (`wrong_pam e)
 
+
+  let check = function
+    | `openid_setup_needed ->
+      set_state (`wrong_openid `setup_needed)
+    | `openid_user_canceled ->
+      set_state (`wrong_openid `user_canceled)
+    | `openid_result email ->
+      begin match email with
+      | Some e ->
+        begin match validate_user (`email e) with
+        | Some u -> 
+          set_state (`user_logged u)
+        | None ->
+          set_state (`insufficient_credentials e)
+        end
+      | None -> set_state (`wrong_openid `no_email)
+      end
+    | `pam (user, password) ->
+      pam_auth ~user ~password ()
 
 end
 
@@ -282,7 +294,6 @@ module Login_service = struct
 
   let make () = 
     let open Lwt in
-    let open Authentication in
     (* Initialize the OpenID library *)
     let authenticate_with_url url =
       Openid.init ~path:["__openid_return_service"]
@@ -296,24 +307,13 @@ module Login_service = struct
         url
         Openid.(fun result ->
           begin match result with
-          | Setup_needed -> set_state `Setup_needed
-          | Canceled -> set_state `User_canceled
-          | Result result ->
-            eprintf "openid result: %S\n%!"
-              (List.map result.fields snd |! String.concat ~sep:", ");
+          | Setup_needed -> Authentication.check `openid_setup_needed
+          | Canceled -> Authentication.check `openid_user_canceled
+          | Result result -> 
             let email = List.Assoc.find result.fields Email in
-            begin match email with
-            | Some e ->
-              begin match validate_user e with
-              | Some u -> 
-                set_state (`User_logged e) >>= fun () ->
-                Eliom_references.set current_user (`User u)
-              | None ->
-                set_state (`Error_insufficient_credentials e)
-              end
-            | None -> set_state `Error_no_email
-            end
-          end >>= fun () ->
+            Authentication.check (`openid_result email)
+          end 
+          >>= fun () ->
           Eliom_output.Redirection.send (Services.home ()))
     in
     (* Create the handler for the form *)
@@ -356,8 +356,8 @@ module Login_service = struct
             eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
           return (redirection))
         ~post_params:Eliom_parameters.(string "user" ** string "pwd")
-        (fun () (name, pwd) ->
-          Authentication.pam_auth ~service:"" ~name ~pwd
+        (fun () (user, pwd) ->
+          Authentication.check (`pam (user,pwd))
           >>= fun () ->
           let uri = redirection in
 eprintf "uri: %s\n%!" uri;
