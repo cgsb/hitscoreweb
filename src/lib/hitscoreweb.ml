@@ -108,13 +108,14 @@ module Authentication = struct
       ~scope:Eliom_common.session ([]: authentication_state list)
      
   let set_state s =
-    let open Lwt in
-    Eliom_references.get authentication_history
+    let on_exn e = `auth_state_exn e in
+    wrap_io ~on_exn Eliom_references.get authentication_history
     >>= fun ah ->
-    Eliom_references.set authentication_history (s :: ah)
+    wrap_io ~on_exn (Eliom_references.set authentication_history) (s :: ah)
 
   let get_state () =
-    wrap_io Eliom_references.get authentication_history
+    let on_exn e = `auth_state_exn e in
+    wrap_io ~on_exn Eliom_references.get authentication_history
     >>= function
     | [] | `nothing :: _ -> return `nothing
     | h :: t -> return h
@@ -179,12 +180,10 @@ module Authentication = struct
       eprintf "pam end: %b (%s)\n%!" (Pam.pam_end pam) s in
     let auth () =
       let open Result in
-      eprintf "pam start!\n%!";
       wrap_pam (Pam.pam_start service ~user) (fun _ _ -> password)
       >>= fun pam ->
       wrap_pam (Pam.pam_set_item pam) Pam.pam_item_fail_delay
       >>= fun () ->
-      eprintf "pam auth!\n%!";
       match wrap_pam (Pam.pam_authenticate pam ~silent:false) [] with
       | Ok true ->
         pam_end pam "OK"; 
@@ -279,6 +278,9 @@ module Template = struct
     | Error (`io_exn e) ->
       Lwt.return (error_page [
         ksprintf pcdata "Generic I/O exception: %s" (Exn.to_string e)])
+    | Error (`auth_state_exn e) ->
+      Lwt.return (error_page [
+        ksprintf pcdata "Authentication-state exception: %s" (Exn.to_string e)])
     | Error (`pg_exn e) ->
       Lwt.return (error_page [
         ksprintf pcdata "PGOCaml exception: %s" (Exn.to_string e)])
@@ -344,16 +346,19 @@ module Login_service = struct
             (* ~max_auth_age: 4 *)
         ~required: [Openid.Email]
         url
-        Openid.(fun result ->
+        (fun result ->
           begin match result with
-          | Setup_needed -> Authentication.check `openid_setup_needed
-          | Canceled -> Authentication.check `openid_user_canceled
-          | Result result -> 
-            let email = List.Assoc.find result.fields Email in
+          | Openid.Setup_needed -> Authentication.check `openid_setup_needed
+          | Openid.Canceled -> Authentication.check `openid_user_canceled
+          | Openid.Result result -> 
+            let email = List.Assoc.find result.Openid.fields Openid.Email in
             Authentication.check (`openid_result email)
           end 
-          >>= fun () ->
-          Eliom_output.Redirection.send (Services.home ()))
+          >>= function
+          | Ok () ->
+            Eliom_output.Redirection.send (Services.home ())
+          | Error (`auth_state_exn e) | Error (`io_exn e) ->
+            Lwt.fail e)
     in
     (* Create the handler for the form *)
     (* We have to use Eliom_output.String_redirection as we
@@ -397,10 +402,13 @@ module Login_service = struct
         ~post_params:Eliom_parameters.(string "user" ** string "pwd")
         (fun () (user, pwd) ->
           Authentication.check (`pam (user,pwd))
-          >>= fun () ->
-          let uri = redirection in
-eprintf "uri: %s\n%!" uri;
-          return uri)
+          >>= function
+          | Ok () ->
+            let uri = redirection in
+            eprintf "uri: %s\n%!" uri;
+            return uri
+          | Error (`auth_state_exn e) | Error (`io_exn e) ->
+            Lwt.fail e)
     in
 
     let open Html5 in
@@ -970,11 +978,11 @@ let () =
 
       Services.(register login) (Login_service.make ());
       
-      Services.(register logout) (fun () () ->
-        Lwt.bind (Authentication.logout ())
-          Html5.(fun () ->
-            Template.default ~title:"Logout" (return [
-              h1 [pcdata "Log Out"]])));
+      Services.(register logout) 
+        (fun () () ->
+          Lwt.bind (Authentication.logout ()) 
+            Html5.(fun _ ->
+              Template.default ~title:"Logout" (return [h1 [pcdata "Log Out"]])));
 
     )
 
