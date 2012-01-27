@@ -47,7 +47,12 @@ module Services = struct
     make (Eliom_services.service
             ~path:["login"]
             ~get_params: Eliom_parameters.unit)
-            
+  
+  let logout =
+    make (Eliom_services.service
+            ~path:["logout"]
+            ~get_params:Eliom_parameters.unit)
+          
 
   let link service =
     Eliom_output.Html5.a ~service:(service ())
@@ -137,7 +142,15 @@ module Authentication = struct
           | `wrong_login -> "wrong login or password"
           | `pam_exn e -> sprintf "error: %s" (Exn.to_string e))
     in
-    return [state; pcdata "; "; Services.(link login) [pcdata "New login"] ()]
+    return (state
+            :: (match s with
+            | `user_logged _ -> 
+              [pcdata "; ";
+               Services.(link logout) [pcdata "Logout"] ();]
+            | _ -> 
+              [pcdata "; ";
+               Services.(link login) [pcdata "Login"] ();]
+            ))
 
 
   let pam_auth ?(service = "") ~user ~password () =
@@ -197,6 +210,10 @@ module Authentication = struct
       end
     | `pam (user, password) ->
       pam_auth ~user ~password ()
+
+  let logout () =
+    set_state `nothing
+
 
 end
 
@@ -914,5 +931,11 @@ let () =
 
       Services.(register login) (Login_service.make ());
       
+      Services.(register logout) (fun () () ->
+        Lwt.bind (Authentication.logout ())
+          Html5.(fun () ->
+            Template.default ~title:"Logout" (return [
+              h1 [pcdata "Log Out"]])));
+
     )
 
