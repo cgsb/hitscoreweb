@@ -32,17 +32,10 @@ static struct custom_operations caml_pam_operations =
 static void raise(pam_error exception)
 {
 	static value * e = 0;
-        perror("raise ...\n");
-
 	if(e == 0) 
           {
-                    perror("raise e==0...\n");
-
 		e = caml_named_value("hsopam.net.nanavati.sharvil.pam.error");
           }
-        fprintf (stderr, "e = %x , err: %d\n", e, exception);
-        
-        perror("raise with arg??? ...\n");
 
 	caml_raise_with_arg(*e, Val_int(exception));
 }
@@ -133,21 +126,16 @@ CAMLprim value pam_start_stub(value serviceName, value user, value conversation)
 	struct pam_conv conv;
 	const char * user_str = 0;
 	caml_pam_handle * h;
-        perror("pam_start_stub...\n");
-        perror("pam_start_stub... alloc");
         
 	ret = caml_alloc_custom(&caml_pam_operations,
                                 sizeof(caml_pam_handle), 1, 100);
 	h = Handle_val(ret);
-        perror("pam_start_stub...ssss\n");
 
 	caml_register_global_root(&h->callback);
 	h->callback = conversation;
-        perror("pam_start_stub...sd dd\n");
 
 	caml_register_global_root(&h->fail_delay);
 	h->fail_delay = Val_int(0);
-        perror("pam_start_stub... sdfa\n");
 
 	conv.conv = converse;
 	conv.appdata_ptr = h;
@@ -155,7 +143,8 @@ CAMLprim value pam_start_stub(value serviceName, value user, value conversation)
 	if(Is_block(user))
 		user_str = String_val(Field(user, 0));
 
-	h->error_code = pam_start(String_val(serviceName), user_str, &conv, &h->handle);
+	h->error_code =
+          pam_start(String_val(serviceName), user_str, &conv, &h->handle);
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;          
@@ -164,7 +153,6 @@ CAMLprim value pam_start_stub(value serviceName, value user, value conversation)
 		case PAM_SYSTEM_ERR: caml_failwith("Pam_System_Err");
 		default: caml_failwith("Unknown PAM error");
 	}
-        perror("pam_start_stub... end");
 
 	CAMLreturn(ret);
 }
@@ -344,8 +332,6 @@ CAMLprim value pam_authenticate_stub(value handle, value flags, value silent)
 	caml_pam_handle * h = Handle_val(handle);
         CAMLlocal1 (ret);
         
-        perror("pam_authenticate_stub...\n");
-
 	while(flags != Val_int(0))
 	{
 		switch(Int_val(Field(flags, 0)))
@@ -358,16 +344,11 @@ CAMLprim value pam_authenticate_stub(value handle, value flags, value silent)
 		}
 		flags = Field(flags, 1);
 	}
-        perror("pam_authenticate_stub... aaa\n");
 
 	if(Is_block(silent) && Field(silent, 0) == Val_true)
 		flagValue |= PAM_SILENT;
 
-        perror("pam_authenticate_stub... gggg\n");
-
 	h->error_code = pam_authenticate(h->handle, flagValue);
-
-        perror("pam_authenticate_stub... ooo\n");
 
 	switch(h->error_code)
 	{
@@ -389,8 +370,6 @@ CAMLprim value pam_authenticate_stub(value handle, value flags, value silent)
           caml_failwith("Pam_User_Unknown");break;
           default: caml_failwith("Unknown PAM error"); */
 	}
-
-        perror("pam_authenticate_stub... eeee\n");
 
 	CAMLreturn(ret);
 }
