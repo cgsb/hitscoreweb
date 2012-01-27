@@ -224,21 +224,25 @@ end
 
 module Login_service = struct
 
+  module Openid = HSWE_eliom_openid
+
   let make () = 
     let open Lwt in
     let open Authentication in
     (* Initialize the OpenID library *)
     let authenticate =
-      Eliom_openid.init ~path:["__openid_return_service"]
+      Openid.init ~path:["__openid_return_service"]
         ~f: (fun _ _ -> Eliom_output.Redirection.send (Services.login ()))
     in
     let authenticate_with_url url =
       authenticate
+        ~realm:(Eliom_output.Xhtml.make_string_uri ~absolute:true 
+                  ~service:(Services.default ()) ())
         ~immediate:false
             (* ~max_auth_age: 4 *)
-        ~required: [Eliom_openid.Email]
+        ~required: [Openid.Email]
         url
-        Eliom_openid.(fun result ->
+        Openid.(fun result ->
           begin match result with
           | Setup_needed -> set_state `Setup_needed
           | Canceled -> set_state `User_canceled
@@ -753,23 +757,23 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
     
 
 let () =
-  let _ = Eliom_output.set_exn_handler
-    (function
-    | Eliom_openid.Error e ->
-      Eliom_output.Html5.send ~code:500
-        Html5.(html
-                 (head (title (pcdata "Open ID Error")) [])
-                 (body [h1 [pcdata "OpenID Error"];
-                        p [ksprintf pcdata
-                              "The OpenID process failed: %S"
-                              (Eliom_openid.string_of_openid_error e)]]))
-    | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
-  in
-
   Eliom_services.register_eliom_module
     "hitscoreweb" 
     (fun () ->
       
+      let _ = Eliom_output.set_exn_handler
+        (function
+        | HSWE_eliom_openid.Error e ->
+          Eliom_output.Html5.send ~code:500
+            Html5.(html
+                     (head (title (pcdata "Open ID Error")) [])
+                     (body [h1 [pcdata "OpenID Error"];
+                            p [ksprintf pcdata
+                                  "The OpenID process failed: %S"
+                                  (HSWE_eliom_openid.string_of_openid_error e)]]))
+        | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
+      in
+
       let hitscore_configuration =
 
         let pghost = ref None in
