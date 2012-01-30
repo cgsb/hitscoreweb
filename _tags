@@ -1,5 +1,22 @@
 # OASIS_START
-# DO NOT EDIT (digest: cb00be1b1acab94fdd1aae67a629b9b3)
+# DO NOT EDIT (digest: ca19ab3a53459be02caba12db1020e66)
+# Library hitscorewebpam
+"src/simple_pam": include
+<src/simple_pam/hitscorewebpam.{cma,cmxa}>: oasis_library_hitscorewebpam_cclib
+"src/simple_pam/libhitscorewebpam.lib": oasis_library_hitscorewebpam_cclib
+"src/simple_pam/dllhitscorewebpam.dll": oasis_library_hitscorewebpam_cclib
+"src/simple_pam/libhitscorewebpam.a": oasis_library_hitscorewebpam_cclib
+"src/simple_pam/dllhitscorewebpam.so": oasis_library_hitscorewebpam_cclib
+<src/simple_pam/hitscorewebpam.{cma,cmxa}>: use_libhitscorewebpam
+# Library hitscoreweb
+"src/lib": include
+<src/lib/*.ml{,i}>: use_hitscorewebpam
+<src/lib/*.ml{,i}>: pkg_threads
+<src/lib/*.ml{,i}>: pkg_pgocaml.syntax
+<src/lib/*.ml{,i}>: pkg_lwt.syntax
+<src/lib/*.ml{,i}>: pkg_hitscore
+<src/lib/*.ml{,i}>: pkg_eliom.server
+<src/lib/*.ml{,i}>: pkg_core
 # Library hitscorewebopam
 "src/opam": include
 <src/opam/hitscorewebopam.{cma,cmxa}>: oasis_library_hitscorewebopam_cclib
@@ -8,18 +25,11 @@
 "src/opam/libhitscorewebopam.a": oasis_library_hitscorewebopam_cclib
 "src/opam/dllhitscorewebopam.so": oasis_library_hitscorewebopam_cclib
 <src/opam/hitscorewebopam.{cma,cmxa}>: use_libhitscorewebopam
-# Library hitscoreweb
-"src/lib": include
-<src/lib/*.ml{,i}>: use_hitscorewebopam
-<src/lib/*.ml{,i}>: pkg_threads
-<src/lib/*.ml{,i}>: pkg_pgocaml.syntax
-<src/lib/*.ml{,i}>: pkg_lwt.syntax
-<src/lib/*.ml{,i}>: pkg_hitscore
-<src/lib/*.ml{,i}>: pkg_eliom.server
-<src/lib/*.ml{,i}>: pkg_core
+<src/opam/*.ml{,i}>: pkg_threads
+"src/opam/pam_stubs.c": pkg_threads
 # Executable hitscoreweb
 <src/app/hitscoreweb.{native,byte}>: use_hitscoreweb
-<src/app/hitscoreweb.{native,byte}>: use_hitscorewebopam
+<src/app/hitscoreweb.{native,byte}>: use_hitscorewebpam
 <src/app/hitscoreweb.{native,byte}>: pkg_threads
 <src/app/hitscoreweb.{native,byte}>: pkg_pgocaml.syntax
 <src/app/hitscoreweb.{native,byte}>: pkg_lwt.syntax
@@ -27,7 +37,7 @@
 <src/app/hitscoreweb.{native,byte}>: pkg_eliom.server
 <src/app/hitscoreweb.{native,byte}>: pkg_core
 <src/app/*.ml{,i}>: use_hitscoreweb
-<src/app/*.ml{,i}>: use_hitscorewebopam
+<src/app/*.ml{,i}>: use_hitscorewebpam
 <src/app/*.ml{,i}>: pkg_threads
 <src/app/*.ml{,i}>: pkg_pgocaml.syntax
 <src/app/*.ml{,i}>: pkg_lwt.syntax

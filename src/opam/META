@@ -1,7 +1,8 @@
 # OASIS_START
-# DO NOT EDIT (digest: 22ad8b1609ea91c081cfa6de9b9ffad4)
+# DO NOT EDIT (digest: 6b1b37a092e94ebc78935936928d0b2d)
 version = "0.0"
 description = "Website for the Core Facility"
+requires = "threads"
 archive(byte) = "hitscorewebopam.cma"
 archive(native) = "hitscorewebopam.cmxa"
 exists_if = "hitscorewebopam.cma"

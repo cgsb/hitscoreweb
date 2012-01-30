@@ -1,0 +1,9 @@
+# OASIS_START
+# DO NOT EDIT (digest: 171dc478ae700f1c2cd81188c0035205)
+version = "0.0"
+description = "Website for the Core Facility"
+archive(byte) = "hitscorewebpam.cma"
+archive(native) = "hitscorewebpam.cmxa"
+exists_if = "hitscorewebpam.cma"
+# OASIS_STOP
+

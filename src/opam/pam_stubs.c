@@ -11,23 +11,12 @@
 #include <caml/memory.h>
 #include <caml/callback.h>
 #include <caml/custom.h>
-
+#include <caml/threads.h>
 #include <stdio.h>
 
 #include "pam_stubs.h"
 
 static void raise(pam_error exception) Noreturn;
-static void finalizer(value v);
-
-static struct custom_operations caml_pam_operations = 
-{
-	"hsopam.net.nanavati.sharvil.pam.operations",
-	finalizer,
-	custom_compare_default,
-	custom_hash_default,
-	custom_serialize_default,
-	custom_deserialize_default	
-};
 
 static void raise(pam_error exception)
 {
@@ -42,17 +31,39 @@ static void raise(pam_error exception)
 
 static void finalizer(value v)
 {
-	caml_pam_handle * h = Handle_val(v);
+  perror("Finalizer");
+    caml_pam_handle * h = Handle_val(v);
 
-	if(h->handle != 0)
-		pam_end(h->handle, h->error_code);
+    printf("Fin: h: %d cb : %d  fd: %d\n", h->handle, h->callback, h->fail_delay);
+        
+    if(h->handle != 0)
+      pam_end(h->handle, h->error_code);
+    
+    if(h->callback != Val_int(0))
+      caml_remove_global_root(&h->callback);
+    
+    if(h->fail_delay != Val_int(0))
+      caml_remove_global_root(&h->fail_delay);
 
-	if(h->callback != Val_int(0))
-		caml_remove_global_root(&h->callback);
-
-	if(h->fail_delay != Val_int(0))
-		caml_remove_global_root(&h->fail_delay);
+    printf("Nif: h: %d cb : %d  fd: %d\n", h->handle, h->callback, h->fail_delay);
+  	h->handle = 0;
+	h->callback = Val_int(0);
+	h->fail_delay = Val_int(0);
+    printf("Nif-nif: h: %d cb : %d  fd: %d\n", h->handle, h->callback, h->fail_delay);
+      
 }
+
+static struct custom_operations caml_pam_operations = 
+{
+	"hsopam.net.nanavati.sharvil.pam.operations",
+	finalizer,
+	custom_compare_default,
+	custom_hash_default,
+	custom_serialize_default,
+	custom_deserialize_default	
+};
+
+
 
 static int converse(int nMsg, const struct pam_message ** messages, struct pam_response ** responses, void * data)
 {
@@ -61,6 +72,7 @@ static int converse(int nMsg, const struct pam_message ** messages, struct pam_r
 	caml_pam_handle * h;
 
 	CAMLlocal1(ret);
+  perror("conversation ...");
 
 	h = (caml_pam_handle *)data;
 	local_responses = (struct pam_response *)calloc(nMsg, sizeof(struct pam_response));
@@ -75,24 +87,32 @@ static int converse(int nMsg, const struct pam_message ** messages, struct pam_r
 		{
 			case PAM_PROMPT_ECHO_OFF:
 			{
+  caml_acquire_runtime_system();
 				ret = caml_callback2(h->callback, Val_int(Pam_Prompt_Echo_Off), caml_copy_string(messages[i]->msg));
+  caml_release_runtime_system();
 				local_responses[i].resp = strdup(String_val(ret));
 				break;
 			}
 			case PAM_PROMPT_ECHO_ON:
 			{
+  caml_acquire_runtime_system();
 				ret = caml_callback2(h->callback, Val_int(Pam_Prompt_Echo_On), caml_copy_string(messages[i]->msg));
+  caml_release_runtime_system();
 				local_responses[i].resp = strdup(String_val(ret));
 				break;
 			}
 			case PAM_ERROR_MSG:
 			{
+  caml_acquire_runtime_system();
 				caml_callback2(h->callback, Val_int(Pam_Error_Msg), caml_copy_string(messages[i]->msg));
+  caml_release_runtime_system();
 				break;
 			}
 			case PAM_TEXT_INFO:
 			{
+  caml_acquire_runtime_system();
 				caml_callback2(h->callback, Val_int(Pam_Text_Info), caml_copy_string(messages[i]->msg));
+  caml_release_runtime_system();
 				break;
 			}
 			default:
@@ -104,7 +124,7 @@ static int converse(int nMsg, const struct pam_message ** messages, struct pam_r
 				return PAM_CONV_ERR;
 			}
 		}
-
+        perror ("end conversation");
 	*responses = local_responses;
 	return PAM_SUCCESS;
 }
@@ -142,9 +162,11 @@ CAMLprim value pam_start_stub(value serviceName, value user, value conversation)
 
 	if(Is_block(user))
 		user_str = String_val(Field(user, 0));
-
+        
+  caml_release_runtime_system();
 	h->error_code =
           pam_start(String_val(serviceName), user_str, &conv, &h->handle);
+  caml_acquire_runtime_system();
 	switch(h->error_code)
 	{
 		case PAM_SUCCESS: break;          
@@ -167,7 +189,9 @@ CAMLprim value pam_end_stub(value handle)
 
 	if(h->handle != 0)
 	{
+  caml_release_runtime_system();
 		h->error_code = pam_end(h->handle, h->error_code);
+  caml_acquire_runtime_system();
 		if(h->error_code != PAM_SUCCESS)
 			ret = Val_false;
 	}
@@ -347,8 +371,9 @@ CAMLprim value pam_authenticate_stub(value handle, value flags, value silent)
 
 	if(Is_block(silent) && Field(silent, 0) == Val_true)
 		flagValue |= PAM_SILENT;
-
+  caml_release_runtime_system();
 	h->error_code = pam_authenticate(h->handle, flagValue);
+  caml_acquire_runtime_system();
 
 	switch(h->error_code)
 	{

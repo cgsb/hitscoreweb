@@ -1,10 +1,10 @@
 # OASIS_START
-# DO NOT EDIT (digest: 749360867e8df35392c505cf47ec402d)
+# DO NOT EDIT (digest: 7f5a06eeab66c0283c56d3e7fb51789c)
 version = "0.0"
 description = "Website for the Core Facility"
 requires
  =
- "hitscorewebopam threads core hitscore lwt.syntax pgocaml.syntax eliom.server"
+ "hitscorewebpam threads core hitscore lwt.syntax pgocaml.syntax eliom.server"
 archive(byte) = "hitscoreweb.cma"
 archive(native) = "hitscoreweb.cmxa"
 exists_if = "hitscoreweb.cma"

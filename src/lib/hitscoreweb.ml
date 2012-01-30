@@ -175,28 +175,32 @@ module Authentication = struct
     let wrap_pam f a =
       try Ok (f a) with e -> Error (`pam_exn e)
     in
-    let pam_end pam s =
+    (* let pam_end pam s = *)
       (* pam_end does not raise anything *)
-      eprintf "pam end: %b (%s)\n%!" (Pam.pam_end pam) s in
+      (* eprintf "pam end: %b (%s)\n%!" (Pam.pam_end pam) s in *)
     let auth () =
       let open Result in
-      wrap_pam (Pam.pam_start service ~user) (fun _ _ -> password)
-      >>= fun pam ->
-      wrap_pam (Pam.pam_set_item pam) Pam.pam_item_fail_delay
-      >>= fun () ->
-      match wrap_pam (Pam.pam_authenticate pam ~silent:false) [] with
-      | Ok true ->
-        pam_end pam "OK"; 
+      match wrap_pam (Simple_pam.authenticate service user) (password) with
+      (* >>= fun pam -> *)
+      (* wrap_pam (Pam.pam_set_item pam) Pam.pam_item_fail_delay >>= fun () -> *)
+      (* match wrap_pam (Pam.pam_authenticate pam ~silent:false) [] with *)
+      (* >>= function *)
+      | Ok () ->
+        (* pam_end pam "OK";  *)
         Ok user
-      | Ok false ->
-        pam_end pam "KO"; 
-        Error `wrong_login
+      (* | Ok false -> *)
+        (* pam_end pam "KO";  *)
+        (* Error `wrong_login *)
       | Error e ->
-        pam_end pam "KO"; 
+        (* pam_end pam "KO";  *)
         Error e
     in
     let open Lwt in
-    Lwt_preemptive.detach auth ()
+    Lwt_preemptive.detach (fun () ->
+      let res = ref (Error `wrong_login) in
+      let t = Thread.create (fun () -> res := auth ()) () in
+      Thread.join t;
+      !res) ()
     >>= function
     | Ok n ->
       begin match validate_user (`login n) with
@@ -207,6 +211,7 @@ module Authentication = struct
       end
     | Error e -> set_state (`wrong_pam e)
 
+  (* let pam_auth ?(service="") ~user ~password () = return () *)
 
   let check = function
     | `openid_setup_needed ->
@@ -880,6 +885,8 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
         `text [opt pcdata note];
       ])
   >>= fun rows ->
+  Hitscore_lwt.db_disconnect hsc dbh
+  >>= fun _ ->
   let nb_rows = List.length rows in
   return Display_service.(
     content_section
@@ -909,6 +916,8 @@ let () =
     "hitscoreweb" 
     (fun () ->
       
+      Lwt_preemptive.init 1 500 (eprintf "LwtP:%s\n%!");
+
       let _ = Eliom_output.set_exn_handler
         (function
         | HSWE_eliom_openid.Error e ->
