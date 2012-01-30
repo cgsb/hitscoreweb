@@ -1,5 +1,5 @@
 (* OASIS_START *)
-(* DO NOT EDIT (digest: dad5643150bc53bb497471ee17e630f4) *)
+(* DO NOT EDIT (digest: 3fec654305fca287c5a1f1af5f23d4d6) *)
 module OASISGettext = struct
 # 21 "/build/buildd/oasis-0.2.0/src/oasis/OASISGettext.ml"
   
@@ -454,14 +454,9 @@ let package_default =
      MyOCamlbuildBase.lib_ocaml =
        [
           ("src/simple_pam/hitscorewebpam", ["src/simple_pam"]);
-          ("src/lib/hitscoreweb", ["src/lib"]);
-          ("src/opam/hitscorewebopam", ["src/opam"])
+          ("src/lib/hitscoreweb", ["src/lib"])
        ];
-     lib_c =
-       [
-          ("hitscorewebpam", "src/simple_pam", []);
-          ("hitscorewebopam", "src/opam", ["src/opam/pam_stubs.h"])
-       ];
+     lib_c = [("hitscorewebpam", "src/simple_pam", [])];
      flags =
        [
           (["oasis_library_hitscorewebpam_cclib"; "link"],
@@ -470,25 +465,7 @@ let package_default =
                  S [A "-cclib"; A "-lpam"; A "-cclib"; A "-lresolv"])
             ]);
           (["oasis_library_hitscorewebpam_cclib"; "ocamlmklib"; "c"],
-            [(OASISExpr.EBool true, S [A "-lpam"; A "-lresolv"])]);
-          (["oasis_library_hitscorewebopam_cclib"; "link"],
-            [
-               (OASISExpr.EBool true,
-                 S
-                   [
-                      A "-cclib";
-                      A "-lpam";
-                      A "-cclib";
-                      A "-lresolv";
-                      A "-cclib";
-                      A "-lpthread"
-                   ])
-            ]);
-          (["oasis_library_hitscorewebopam_cclib"; "ocamlmklib"; "c"],
-            [
-               (OASISExpr.EBool true,
-                 S [A "-lpam"; A "-lresolv"; A "-lpthread"])
-            ])
+            [(OASISExpr.EBool true, S [A "-lpam"; A "-lresolv"])])
        ];
      }
   ;;

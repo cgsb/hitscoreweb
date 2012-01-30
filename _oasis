@@ -18,13 +18,6 @@ Library hitscoreweb
            HSWE_eliom_openid,
            Hitscoreweb_std
 
-Library hitscorewebopam
-  Path: src/opam
-  Modules: Pam
-  BuildDepends: threads
-  CSources: pam_stubs.c, pam_stubs.h
-  CCLib: -lpam -lresolv -lpthread
-
 Library hitscorewebpam
   Path: src/simple_pam
   Modules: Simple_pam

@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: ca19ab3a53459be02caba12db1020e66)
+# DO NOT EDIT (digest: d46e7f3853c876deaa68c3e914722cba)
 # Library hitscorewebpam
 "src/simple_pam": include
 <src/simple_pam/hitscorewebpam.{cma,cmxa}>: oasis_library_hitscorewebpam_cclib
@@ -17,16 +17,6 @@
 <src/lib/*.ml{,i}>: pkg_hitscore
 <src/lib/*.ml{,i}>: pkg_eliom.server
 <src/lib/*.ml{,i}>: pkg_core
-# Library hitscorewebopam
-"src/opam": include
-<src/opam/hitscorewebopam.{cma,cmxa}>: oasis_library_hitscorewebopam_cclib
-"src/opam/libhitscorewebopam.lib": oasis_library_hitscorewebopam_cclib
-"src/opam/dllhitscorewebopam.dll": oasis_library_hitscorewebopam_cclib
-"src/opam/libhitscorewebopam.a": oasis_library_hitscorewebopam_cclib
-"src/opam/dllhitscorewebopam.so": oasis_library_hitscorewebopam_cclib
-<src/opam/hitscorewebopam.{cma,cmxa}>: use_libhitscorewebopam
-<src/opam/*.ml{,i}>: pkg_threads
-"src/opam/pam_stubs.c": pkg_threads
 # Executable hitscoreweb
 <src/app/hitscoreweb.{native,byte}>: use_hitscoreweb
 <src/app/hitscoreweb.{native,byte}>: use_hitscorewebpam
