@@ -15,25 +15,15 @@
 
 #include <security/pam_appl.h>
 
-
-/*
-int pam_start(const char *service_name, 
-const char *user,
- const struct pam_conv *pam_conversation,
- pam_handle_t **pamh);
-*/
-
-
-/* Adapted from xenagentd.hg:src/xa_auth.c */
-struct xa_auth_info {
+struct simple_pam_auth_info {
     const char *username;
     const char *password;
 };
 
-static int xa_auth_conv(int num_msg, const struct pam_message **msg,
+static int simple_pam_auth_conv(int num_msg, const struct pam_message **msg,
                         struct pam_response **resp, void *app_data)
 {
-    struct xa_auth_info *auth_info = app_data;
+    struct simple_pam_auth_info *auth_info = app_data;
     struct pam_response *response;
     int i, j;
 
@@ -80,12 +70,12 @@ do_pam_authorize(const char *service,
                  const char *username,
                  const char *password,
                  const char **error) {
-  struct xa_auth_info auth_info = {username, password};
-  struct pam_conv xa_conv = {xa_auth_conv, &auth_info};
+  struct simple_pam_auth_info auth_info = {username, password};
+  struct pam_conv simple_pam_conv = {simple_pam_auth_conv, &auth_info};
   pam_handle_t *pamh;
   int rc = AUTH_SUCCESS;
 
-    if ((rc = pam_start(service, username, &xa_conv, &pamh))
+    if ((rc = pam_start(service, username, &simple_pam_conv, &pamh))
         != PAM_SUCCESS) {
       goto exit;
     }

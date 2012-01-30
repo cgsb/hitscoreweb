@@ -172,35 +172,15 @@ module Authentication = struct
 
 
   let pam_auth ?(service = "") ~user ~password () =
-    let wrap_pam f a =
-      try Ok (f a) with e -> Error (`pam_exn e)
-    in
-    (* let pam_end pam s = *)
-      (* pam_end does not raise anything *)
-      (* eprintf "pam end: %b (%s)\n%!" (Pam.pam_end pam) s in *)
+    let wrap_pam f a = try Ok (f a) with e -> Error (`pam_exn e) in
     let auth () =
       let open Result in
       match wrap_pam (Simple_pam.authenticate service user) (password) with
-      (* >>= fun pam -> *)
-      (* wrap_pam (Pam.pam_set_item pam) Pam.pam_item_fail_delay >>= fun () -> *)
-      (* match wrap_pam (Pam.pam_authenticate pam ~silent:false) [] with *)
-      (* >>= function *)
-      | Ok () ->
-        (* pam_end pam "OK";  *)
-        Ok user
-      (* | Ok false -> *)
-        (* pam_end pam "KO";  *)
-        (* Error `wrong_login *)
-      | Error e ->
-        (* pam_end pam "KO";  *)
-        Error e
+      | Ok () -> Ok user
+      | Error e -> Error e
     in
     let open Lwt in
-    Lwt_preemptive.detach (fun () ->
-      let res = ref (Error `wrong_login) in
-      let t = Thread.create (fun () -> res := auth ()) () in
-      Thread.join t;
-      !res) ()
+    Lwt_preemptive.detach auth ()
     >>= function
     | Ok n ->
       begin match validate_user (`login n) with
@@ -211,7 +191,6 @@ module Authentication = struct
       end
     | Error e -> set_state (`wrong_pam e)
 
-  (* let pam_auth ?(service="") ~user ~password () = return () *)
 
   let check = function
     | `openid_setup_needed ->
