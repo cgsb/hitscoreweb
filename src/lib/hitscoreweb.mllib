@@ -1,6 +1,9 @@
 # OASIS_START
-# DO NOT EDIT (digest: 248512a2e3b6b357532db97d3c74a2e9)
+# DO NOT EDIT (digest: 667bfeb9190f112613df9873a81a7cf8)
 Hitscoreweb
 Hitscoreweb_queries
+Hitscoreweb_services
+Hitscoreweb_authentication
+Hitscoreweb_template
 Hitscoreweb_std
 # OASIS_STOP

@@ -15,6 +15,9 @@ Library hitscoreweb
   Install: true
   Modules: Hitscoreweb,
            Hitscoreweb_queries,
+           Hitscoreweb_services,
+           Hitscoreweb_authentication,
+           Hitscoreweb_template,
            Hitscoreweb_std
 
 Library hitscorewebpam
