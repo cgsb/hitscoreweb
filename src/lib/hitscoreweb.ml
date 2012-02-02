@@ -84,15 +84,15 @@ module Authentication = struct
   | `view of [`all | `all_flowcells]
   ]
 
-  let capabilities_allow caps cap =
+  let roles_allow roles cap =
     match cap with
     | `view smth ->
-      List.exists caps (fun c -> c = `view `all || c = cap)
+      List.exists roles (fun c -> c = `auditor || c = `administrator)
 
 
   type user_logged = {
     id: string;
-    capabilities: capability list;
+    roles: Layout.Enumeration_role.t list;
   }
     
   type authentication_state = [
@@ -101,6 +101,11 @@ module Authentication = struct
   | `user_logged of user_logged
   | `insufficient_credentials of string
   | `wrong_pam of [`wrong_login| `pam_exn of exn]
+  | `error of [ 
+    | `layout_inconsistency of
+        [ `record_person ] * [ `select_did_not_return_one_cache of string * int ]
+    | `pg_exn of exn
+    | `too_many_persons_with_same_login of Layout.Record_person.t Core.Std.List.t ]
   ]
 
   let authentication_history =
@@ -126,21 +131,37 @@ module Authentication = struct
     | `user_logged u :: _ -> return (Some u)
     | _ -> return None
 
-  let validate_user u =  (* TODO *)
-    let make_viewer id = Some { id; capabilities = [`view `all] } in
+  let validate_user  ~configuration u =  (* TODO *)
+    let make_viewer id = return { id; roles = [`auditor] } in
+    let normal_validation login =
+      Hitscore_lwt.db_connect configuration >>= fun dbh ->
+      Layout.Search.record_person_by_login ~dbh (Some login)
+      >>= (function
+      | [] -> error (`login_not_found login)
+      | [one] -> return one
+      | more -> error (`too_many_persons_with_same_login more))
+      >>= fun found ->
+        Layout.Record_person.(
+          cache_value ~dbh found >>| get_fields
+          >>= fun {email; roles; _ } ->
+          Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
+          return (email, Array.to_list roles))
+      >>= fun (id, roles) ->
+      return { id; roles}
+    in
     match u with
     | `email id when id = "sm4431@nyu.edu"   -> make_viewer id
     | `email id when id = "aa144@nyu.edu"    -> make_viewer id
     | `email id when id = "ps103@nyu.edu"    -> make_viewer id
     | `email id when id = "carltj01@nyu.edu" -> make_viewer id
     | `email id when id = "jsd6@nyu.edu"     -> make_viewer id
-    | `login id when id = "smondet"          -> make_viewer id
-    | `login id when id = "sm4431"           -> make_viewer id
-    | _                  -> None
+    | `email other -> error (`email_no_allowed other)
+    | `login id when id = "smondet" -> make_viewer "smondet@localhost"
+    | `login id -> normal_validation id
+
 
   let display_state () =
     let open Html5 in
-    let pcdataf fmt = ksprintf pcdata fmt in
     get_state ()
     >>= fun s ->
     let state =
@@ -152,13 +173,26 @@ module Authentication = struct
           | `user_canceled -> "Canceled by user"
           | `setup_needed -> "Setup needed"
           | `no_email -> "No email returned")
-      | `user_logged u -> pcdataf "User: %s" u.id
+      | `user_logged u -> 
+        pcdataf "User: %s (%s)" u.id
+          (String.concat ~sep:", " (List.map u.roles 
+                                      Layout.Enumeration_role.to_string))
       | `insufficient_credentials s -> pcdataf "Wrong credentials for: %s" s
       | `wrong_pam wp ->
         pcdataf "PAM: %s"
           (match wp with
           | `wrong_login -> "wrong login or password"
           | `pam_exn e -> sprintf "error: %s" (Exn.to_string e))
+      | `error e -> 
+        begin match e with
+        | `layout_inconsistency (`record_person, 
+                                 `select_did_not_return_one_cache (s, i)) ->
+          pcdataf "ERROR: LI: More than one cache: %s, %d" s i
+        | `pg_exn e ->
+          pcdataf "ERROR: PG: %s" (Exn.to_string e)
+        | `too_many_persons_with_same_login tl ->
+          pcdataf "ERROR: Found %d persons with same login" (List.length tl)
+        end
     in
     return (state
             :: (match s with
@@ -171,7 +205,7 @@ module Authentication = struct
             ))
 
 
-  let pam_auth ?(service = "") ~user ~password () =
+  let pam_auth ~configuration ?(service = "login") ~user ~password () =
     let wrap_pam f a = try Ok (f a) with e -> Error (`pam_exn e) in
     let auth () =
       let open Result in
@@ -179,20 +213,25 @@ module Authentication = struct
       | Ok () -> Ok user
       | Error e -> Error e
     in
-    let open Lwt in
-    Lwt_preemptive.detach auth ()
-    >>= function
-    | Ok n ->
-      begin match validate_user (`login n) with
-      | Some u -> 
-        set_state (`user_logged u)
-      | None ->
-        set_state (`insufficient_credentials n)
-      end
-    | Error e -> set_state (`wrong_pam e)
+    let m =
+      Lwt_preemptive.detach auth () 
+      >>= fun name ->
+      validate_user ~configuration (`login name)
+    in
+    double_bind m
+      ~ok:(fun user -> set_state (`user_logged user))
+      ~error:(function
+      | `pam_exn _ as e -> set_state (`wrong_pam e)
+      | `email_no_allowed s
+      | `login_not_found s -> set_state (`insufficient_credentials s)
+      | `layout_inconsistency (`record_person,
+                               `select_did_not_return_one_cache (_, _)) 
+      | `pg_exn _ 
+      | `too_many_persons_with_same_login _ as e -> set_state (`error e)
+      )
 
 
-  let check = function
+  let check ~configuration = function
     | `openid_setup_needed ->
       set_state (`wrong_openid `setup_needed)
     | `openid_user_canceled ->
@@ -200,16 +239,22 @@ module Authentication = struct
     | `openid_result email ->
       begin match email with
       | Some e ->
-        begin match validate_user (`email e) with
-        | Some u -> 
-          set_state (`user_logged u)
-        | None ->
-          set_state (`insufficient_credentials e)
-        end
+        let m = validate_user ~configuration (`email e) in
+        double_bind m
+          ~ok:(fun user -> set_state (`user_logged user))
+          ~error:(function
+          (* | `pam_exn _ as e -> set_state (`wrong_openid e) *)
+          | `email_no_allowed s
+          | `login_not_found s -> set_state (`insufficient_credentials s)
+          | `layout_inconsistency (`record_person,
+                                   `select_did_not_return_one_cache (_, _)) 
+          | `pg_exn _ 
+          | `too_many_persons_with_same_login _ as e -> error e
+          )
       | None -> set_state (`wrong_openid `no_email)
       end
     | `pam (user, password) ->
-      pam_auth ~user ~password ()
+      pam_auth ~configuration ~user ~password ()
 
   let logout () =
     set_state `nothing
@@ -217,7 +262,7 @@ module Authentication = struct
   let authorizes (cap:capability) =
     user_logged () >>= 
       begin function
-      | Some u -> return (capabilities_allow u.capabilities cap)
+      | Some u -> return (roles_allow u.roles cap)
       | _ -> return false
       end
 end
@@ -317,7 +362,7 @@ module Login_service = struct
 
   module Openid = HSWE_eliom_openid
 
-  let make () = 
+  let make ~configuration () = 
     let open Lwt in
     (* Initialize the OpenID library *)
     let authenticate_with_url url =
@@ -332,17 +377,19 @@ module Login_service = struct
         url
         (fun result ->
           begin match result with
-          | Openid.Setup_needed -> Authentication.check `openid_setup_needed
-          | Openid.Canceled -> Authentication.check `openid_user_canceled
+          | Openid.Setup_needed -> 
+            Authentication.check ~configuration `openid_setup_needed
+          | Openid.Canceled -> 
+            Authentication.check ~configuration `openid_user_canceled
           | Openid.Result result -> 
             let email = List.Assoc.find result.Openid.fields Openid.Email in
-            Authentication.check (`openid_result email)
+            Authentication.check ~configuration (`openid_result email)
           end 
           >>= function
           | Ok () ->
             Eliom_output.Redirection.send (Services.home ())
-          | Error (`auth_state_exn e) | Error (`io_exn e) ->
-            Lwt.fail e)
+          | Error _ ->
+            Lwt.fail (Failure "Error during authentication: TODO"))
     in
     (* Create the handler for the form *)
     (* We have to use Eliom_output.String_redirection as we
@@ -385,14 +432,14 @@ module Login_service = struct
           return (redirection))
         ~post_params:Eliom_parameters.(string "user" ** string "pwd")
         (fun () (user, pwd) ->
-          Authentication.check (`pam (user,pwd))
+          Authentication.check ~configuration (`pam (user,pwd))
           >>= function
           | Ok () ->
             let uri = redirection in
             eprintf "uri: %s\n%!" uri;
             return uri
-          | Error (`auth_state_exn e) | Error (`io_exn e) ->
-            Lwt.fail e)
+          | Error _ ->
+            Lwt.fail (Failure "Error during authentication: TODO"))
     in
 
     let open Html5 in
@@ -971,7 +1018,8 @@ let () =
           ~main_title:"Flowcell"
           (one_flowcell hitscore_configuration ~serial_name));
 
-      Services.(register login) (Login_service.make ());
+      Services.(register login) (Login_service.make
+                                   ~configuration:hitscore_configuration ());
       
       Services.(register logout) 
         (fun () () ->
