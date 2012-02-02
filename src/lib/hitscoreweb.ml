@@ -92,6 +92,7 @@ module Authentication = struct
 
   type user_logged = {
     id: string;
+    person: Layout.Record_person.t option;
     roles: Layout.Enumeration_role.t list;
   }
     
@@ -131,7 +132,7 @@ module Authentication = struct
     | _ -> return None
 
   let validate_user  ~configuration u =  (* TODO *)
-    let make_viewer id = return { id; roles = [`auditor] } in
+    let make_viewer id = return { id; roles = [`auditor]; person = None } in
     let normal_validation login =
       Hitscore_lwt.db_connect configuration >>= fun dbh ->
       Layout.Search.record_person_by_login ~dbh (Some login)
@@ -146,15 +147,9 @@ module Authentication = struct
           Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
           return (email, Array.to_list roles))
       >>= fun (id, roles) ->
-      return { id; roles}
+      return { id; roles; person = Some found}
     in
     match u with
-    | `email id when id = "sm4431@nyu.edu"   -> make_viewer id
-    | `email id when id = "aa144@nyu.edu"    -> make_viewer id
-    | `email id when id = "ps103@nyu.edu"    -> make_viewer id
-    | `email id when id = "carltj01@nyu.edu" -> make_viewer id
-    | `email id when id = "jsd6@nyu.edu"     -> make_viewer id
-    | `email other -> error (`email_no_allowed other)
     | `login id when id = "smondet" -> make_viewer "smondet@localhost"
     | `login id -> normal_validation id
 
@@ -167,9 +162,17 @@ module Authentication = struct
       match s with
       | `nothing -> pcdataf "No user"
       | `user_logged u -> 
-        pcdataf "User: %s (%s)" u.id
-          (String.concat ~sep:", " (List.map u.roles 
-                                      Layout.Enumeration_role.to_string))
+        span [
+          pcdata "User: ";
+          begin match u.person with
+          | Some t -> 
+            Services.(link persons) [codef "%s" u.id] (Some true, [u.id])
+          | None -> codef "[%s]" u.id
+          end;
+          pcdataf " (%s)"
+            (String.concat ~sep:", " (List.map u.roles 
+                                        Layout.Enumeration_role.to_string));
+        ]
       | `insufficient_credentials s -> pcdataf "Wrong credentials for: %s" s
       | `wrong_pam wp ->
         pcdataf "PAM: %s"
