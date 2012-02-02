@@ -332,161 +332,190 @@ module Flowcell_service = struct
 
 end
 
+module Libraries_service = struct
 
-let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
-  let open Html5 in
-  Hitscore_lwt.db_connect hsc
-  >>= fun dbh ->
-  Queries.full_libraries dbh
-  >>| List.filter ~f:(fun (idopt, name, project, app, 
-                           stranded, truseq, rnaseq,
-                           bartype, barcodes, bartoms,
-                           p5, p7, note,
-                           sample_name, org_name,
-                           prep_email, protocol) ->
-    let qualified_name =
-      let opt = Option.value ~default:"" in
-      sprintf "%s.%s" (opt project) (opt name) in
-    qualified_names = [] 
-    || List.exists qualified_names
-      ~f:(fun qn -> qualified_name = qn || Some qn = name))
-  >>= fun lib_resulst ->
-  of_list_sequential lib_resulst 
-    ~f:(fun (idopt, name, project, app, 
-             stranded, truseq, rnaseq,
-             bartype, barcodes, bartoms,
-             p5, p7, note,
-             sample_name, org_name,
-             prep_email, protocol) ->
-      let lib_id = Option.value ~default:0l idopt in
-      Queries.library_submissions ~lib_id dbh
-      >>= fun submissions ->
-      let opt f o = Option.value_map ~default:(pcdata "") ~f o in
-      let person e =
-        Services.(link persons) [ksprintf Html5.pcdata "%s" e] (Some true, [e])
+  let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
+    let open Html5 in
+    Hitscore_lwt.db_connect hsc
+    >>= fun dbh ->
+    Queries.full_libraries dbh >>= fun library_list ->
+    of_list_sequential library_list ~f:(fun result_item ->
+      let  (idopt, name, project, app, stranded, truseq, rnaseq,
+            bartype, barcodes, bartoms, p5, p7, note,
+            sample_name, org_name, prep_email, protocol) = result_item in
+      let qualified_name_passes =
+        let qualified_name =
+          let opt = Option.value ~default:"" in
+          sprintf "%s.%s" (opt project) (opt name) in
+        (qualified_names = [] || List.exists qualified_names
+            ~f:(fun qn -> qualified_name = qn || Some qn = name))
       in
-      let submissions_cell = 
-        let how_much =
-          match List.length submissions with
-          | 0 -> "Never" | 1 -> "Once: " | 2 -> "Twice: " 
-          | n -> sprintf "%d times: " n in
-        let flowcells = 
-          List.map submissions fst |! List.dedup in
-        (ksprintf pcdata "%s" how_much)
-        ::
-          interleave_list ~sep:(pcdata ", ")
-          (List.map flowcells (fun fcid ->
-            let lanes = 
-              List.filter submissions ~f:(fun (f,l) -> f = fcid) |! List.length in
-            span [
-              Services.(link flowcell) [ksprintf pcdata "%s" fcid] fcid;
-              ksprintf pcdata " (%d lane%s)"
-                lanes (if lanes > 1 then "s" else "");
-            ]))
-        @ [pcdata "."]
-      in
-      let barcodes_cell =
-        let barcodes_list =
-          String.concat ~sep:"," 
-            (List.map ~f:(sprintf "%ld") 
-               (Array.to_list (Option.value ~default:[| |] barcodes))) in
-        let custom_barcodes =
-          match bartoms with
-          | None | Some [| |] -> return [pcdata ""]
-          | Some a -> 
-            let l = Array.to_list a in
-            Layout.Record_custom_barcode.(
-              of_list_sequential l (fun id ->
-                cache_value ~dbh {id} >>| get_fields
-                >>= fun {position_in_r1; position_in_r2; 
-                         position_in_index; sequence} ->
-                return [ br ();
-                         ksprintf pcdata "%s(%s)"
-                           sequence
-                           (["R1", position_in_r1; 
-                             "I", position_in_index; "R2", position_in_r2]
-                            |! List.filter_map ~f:(function
-                              | _, None -> None
-                              | t, Some i -> Some (sprintf "%s:%ld" t i))
-                            |! String.concat ~sep:",")]))
-            >>= fun pcdatas ->
-            return (List.flatten pcdatas)
+      if not qualified_name_passes then return None
+      else (
+        let lib_id = Option.value ~default:0l idopt in
+        Queries.library_submissions ~lib_id dbh
+        >>= fun submissions ->
+        let people = 
+          submissions |! List.map ~f:(fun (_,_,ids) -> Array.to_list ids)
+          |! List.flatten
+          |! List.map ~f:(fun id -> {Layout.Record_person.id})
         in
-        custom_barcodes >>= fun custom ->
-        let non_custom =
-          Option.value_map bartype
-            ~default:(pcdata "NO BARCODE TYPE!") ~f:(fun t ->
-              match Layout.Enumeration_barcode_provider.of_string t with
-              | Ok `none -> pcdata ""
-              | Ok `bioo -> ksprintf pcdata "BIOO[%s]" barcodes_list
-              | Ok `bioo_96 -> ksprintf pcdata "BIOO-96[%s]" barcodes_list
-              | Ok `illumina -> ksprintf pcdata "ILLUMINA[%s]" barcodes_list
-              | Ok `nugen -> ksprintf pcdata "NUGEN[%s]" barcodes_list
-              | Ok `custom -> strong [pcdata "CUSTOM"]
-              | Error _ -> strong [pcdata "PARSING ERROR !!!"]
-            )
+        Authentication.authorizes (`view (`libraries_of people))
+        >>= function
+        | true -> return (Some (result_item, submissions))
+        | false -> return None))
+    >>= fun libs_filtered ->
+    of_list_sequential (List.filter_opt libs_filtered)
+      ~f:(fun ((idopt, name, project, app, 
+                stranded, truseq, rnaseq,
+                bartype, barcodes, bartoms,
+                p5, p7, note,
+                sample_name, org_name,
+                prep_email, protocol), submissions) ->
+        let opt f o = Option.value_map ~default:(pcdata "") ~f o in
+        let person e =
+          Services.(link persons) [ksprintf Html5.pcdata "%s" e] (Some true, [e])
         in
-        return (non_custom :: custom)
-      in
-      barcodes_cell >>= fun barcoding ->
-      return [
-        `text [opt pcdata name]; `text [opt pcdata project];
-        `text submissions_cell;
-        `text [opt pcdata sample_name]; `text [opt pcdata org_name];
-        `text [opt person prep_email]; `text [opt pcdata protocol];
-        `text [opt pcdata app];
-        `text [opt (ksprintf pcdata "%b") stranded];
-        `text [opt (ksprintf pcdata "%b") truseq];
-        `text [opt pcdata rnaseq];
-        `text barcoding;
-        `text [opt (ksprintf pcdata "%ld") p5];
-        `text [opt (ksprintf pcdata "%ld") p7];
-        `text [opt pcdata note];
-      ])
-  >>= fun rows ->
-  Hitscore_lwt.db_disconnect hsc dbh
-  >>= fun _ ->
-  let nb_rows = List.length rows in
-  return Template.Display_service.(
-    content_section
-      (ksprintf pcdata "Found %d librar%s:"
-         nb_rows (if nb_rows = 1 then "y" else "ies"))
-      (content_table ~transpose
-         ([ `head [pcdata "Name"]; 
-	    `head [pcdata "Project"];
-            `head [pcdata "Submitted"];
-            `head [pcdata "Sample-name"];
-            `head [pcdata "Organism"];
-            `head [pcdata "Preparator"];
-            `head [pcdata "Protocol"];
-            `head [pcdata "Application"];
-            `head [pcdata "Stranded"];
-            `head [pcdata "Truseq-control"];
-            `head [pcdata "RNASeq-control"];
-            `head [pcdata "Barcoding"];
-            `head [pcdata "P5 Adapter Length"];
-            `head [pcdata "P7 Adapter Length"];
-            `head [pcdata "Note"];
-          ] :: rows)))
+        let submissions_cell = 
+          let how_much =
+            match List.length submissions with
+            | 0 -> "Never" | 1 -> "Once: " | 2 -> "Twice: " 
+            | n -> sprintf "%d times: " n in
+          let flowcells = 
+            List.map submissions fst3 |! List.dedup in
+          (ksprintf pcdata "%s" how_much)
+          ::
+            interleave_list ~sep:(pcdata ", ")
+            (List.map flowcells (fun fcid ->
+              let lanes = 
+                List.filter submissions ~f:(fun (f,_,_) -> f = fcid)
+                |! List.length in
+              span [
+                Services.(link flowcell) [ksprintf pcdata "%s" fcid] fcid;
+                ksprintf pcdata " (%d lane%s)"
+                  lanes (if lanes > 1 then "s" else "");
+              ]))
+          @ [pcdata "."]
+        in
+        let barcodes_cell =
+          let barcodes_list =
+            String.concat ~sep:"," 
+              (List.map ~f:(sprintf "%ld") 
+                 (Array.to_list (Option.value ~default:[| |] barcodes))) in
+          let custom_barcodes =
+            match bartoms with
+            | None | Some [| |] -> return [pcdata ""]
+            | Some a -> 
+              let l = Array.to_list a in
+              Layout.Record_custom_barcode.(
+                of_list_sequential l (fun id ->
+                  cache_value ~dbh {id} >>| get_fields
+                  >>= fun {position_in_r1; position_in_r2; 
+                           position_in_index; sequence} ->
+                  return [ br ();
+                           ksprintf pcdata "%s(%s)"
+                             sequence
+                             (["R1", position_in_r1; 
+                               "I", position_in_index; "R2", position_in_r2]
+                              |! List.filter_map ~f:(function
+                                | _, None -> None
+                                | t, Some i -> Some (sprintf "%s:%ld" t i))
+                                             |! String.concat ~sep:",")]))
+              >>= fun pcdatas ->
+              return (List.flatten pcdatas)
+          in
+          custom_barcodes >>= fun custom ->
+          let non_custom =
+            Option.value_map bartype
+              ~default:(pcdata "NO BARCODE TYPE!") ~f:(fun t ->
+                match Layout.Enumeration_barcode_provider.of_string t with
+                | Ok `none -> pcdata ""
+                | Ok `bioo -> ksprintf pcdata "BIOO[%s]" barcodes_list
+                | Ok `bioo_96 -> ksprintf pcdata "BIOO-96[%s]" barcodes_list
+                | Ok `illumina -> ksprintf pcdata "ILLUMINA[%s]" barcodes_list
+                | Ok `nugen -> ksprintf pcdata "NUGEN[%s]" barcodes_list
+                | Ok `custom -> strong [pcdata "CUSTOM"]
+                | Error _ -> strong [pcdata "PARSING ERROR !!!"]
+              )
+          in
+          return (non_custom :: custom)
+        in
+        barcodes_cell >>= fun barcoding ->
+        return [
+          `text [opt pcdata name]; `text [opt pcdata project];
+          `text submissions_cell;
+          `text [opt pcdata sample_name]; `text [opt pcdata org_name];
+          `text [opt person prep_email]; `text [opt pcdata protocol];
+          `text [opt pcdata app];
+          `text [opt (ksprintf pcdata "%b") stranded];
+          `text [opt (ksprintf pcdata "%b") truseq];
+          `text [opt pcdata rnaseq];
+          `text barcoding;
+          `text [opt (ksprintf pcdata "%ld") p5];
+          `text [opt (ksprintf pcdata "%ld") p7];
+          `text [opt pcdata note];
+        ])
+    >>= fun rows ->
+    Hitscore_lwt.db_disconnect hsc dbh
+    >>= fun _ ->
+    let nb_rows = List.length rows in
+    return Template.Display_service.(
+      content_section
+        (ksprintf pcdata "Found %d librar%s:"
+           nb_rows (if nb_rows = 1 then "y" else "ies"))
+        (content_table ~transpose
+           ([ `head [pcdata "Name"]; 
+	      `head [pcdata "Project"];
+              `head [pcdata "Submitted"];
+              `head [pcdata "Sample-name"];
+              `head [pcdata "Organism"];
+              `head [pcdata "Preparator"];
+              `head [pcdata "Protocol"];
+              `head [pcdata "Application"];
+              `head [pcdata "Stranded"];
+              `head [pcdata "Truseq-control"];
+              `head [pcdata "RNASeq-control"];
+              `head [pcdata "Barcoding"];
+              `head [pcdata "P5 Adapter Length"];
+              `head [pcdata "P7 Adapter Length"];
+              `head [pcdata "Note"];
+            ] :: rows)))
+
+  let make hsc =
+    (fun (transpose, qualified_names) () ->
+      let main_title = "Libraries" in
+      Template.default ~title:main_title
+        (Authentication.authorizes (`view `libraries)
+         >>= function
+         | true ->
+           Template.Display_service.make_content ~hsc ~main_title    
+             (libraries ~qualified_names ?transpose hsc);
+         | false ->
+           Template.Authentication_error.make_content ~hsc ~main_title
+             (return [Html5.pcdataf "You may not view the libraries."])))
+
     
+end
+
 module Default_service = struct
   let make hsc =
     (fun () () ->
       let open Html5 in
+      let real_li s = return (Some (li s)) in
       let potential_li cap s = 
         Authentication.authorizes cap
         >>= function
-        | true ->  return (Some (li s)) 
+        | true ->  real_li s
         | false -> return None
       in
-      let real_li s = return (Some (li s)) in
       let content = 
         map_sequential ~f:return [
           potential_li (`view `all_flowcells) 
             [Services.(link flowcells) [pcdata "Flowcells"] ()];
           potential_li (`view `persons)
             [Services.(link persons) [pcdata "Persons"] (None, [])];
-          real_li [Services.(link libraries) [pcdata "Libraries"] (None, [])];
+          potential_li (`view `libraries)
+            [Services.(link libraries) [pcdata "Libraries"] (None, [])];
         ] >>= fun ul_opt ->
         return [
           h1 [pcdata "Gencore Home"];
@@ -549,10 +578,8 @@ let () =
 
       Services.(register persons) Persons_service.(make hitscore_configuration);
       
-      Services.(register libraries) (fun (transpose, qualified_names) () ->
-        Template.Display_service.make ~hsc:hitscore_configuration
-          ~main_title:"Libraries"
-          (libraries ~qualified_names ?transpose hitscore_configuration));
+      Services.(register libraries) 
+        Libraries_service.(make hitscore_configuration);
 
       Services.(register flowcell)
         Flowcell_service.(make hitscore_configuration);

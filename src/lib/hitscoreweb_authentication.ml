@@ -4,15 +4,34 @@ module Services = Hitscoreweb_services
 
 
 type capability = [
-| `view of [`all | `all_flowcells | `persons 
-           | `full_persons | `full_flowcell]
+| `view of [`all 
+           | `all_flowcells
+           | `persons
+           | `libraries
+           | `libraries_of of Layout.Record_person.t list
+           | `full_persons
+           | `full_flowcell]
 ]
 
-let roles_allow roles cap =
+let roles_allow ?person roles cap =
   match cap with
-  | `view smth ->
-    List.exists roles (fun c -> c = `auditor || c = `administrator)
-    || (List.exists roles ((=) `user) && smth = `persons)
+  | `view something ->
+    if List.exists roles (fun c -> c = `auditor || c = `administrator) then
+      true
+    else
+      let is_user = List.exists roles ((=) `user)  in
+      if is_user then
+        match something with
+        | `persons | `libraries -> true
+        | `libraries_of [] -> false
+        | `libraries_of people ->
+          begin match person with
+          | Some p -> List.exists people ((=) p)
+          | None -> false
+          end
+        | _ -> false
+      else
+        false
 
 type user_logged = {
   id: string;
@@ -161,6 +180,6 @@ let logout () =
 let authorizes (cap:capability) =
   user_logged () >>= 
     begin function
-    | Some u -> return (roles_allow u.roles cap)
+    | Some u -> return (roles_allow ?person:u.person u.roles cap)
     | _ -> return false
     end

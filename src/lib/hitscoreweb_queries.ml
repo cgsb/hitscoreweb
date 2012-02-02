@@ -25,7 +25,7 @@ let full_libraries dbh =
 let library_submissions ~lib_id dbh =
   let query () =
     PGSQL (dbh)
-      "SELECT flowcell.serial_name, lane.g_id FROM
+      "SELECT flowcell.serial_name, lane.g_id, lane.contacts FROM
         input_library input, lane, flowcell
         WHERE lane.libraries @> array_append ('{}', input.g_id)
         AND flowcell.lanes @> array_append ('{}', lane.g_id)
