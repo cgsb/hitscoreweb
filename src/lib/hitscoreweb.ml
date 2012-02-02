@@ -53,92 +53,6 @@ module Login_service = struct
       Template.default ~title:"Log-in" html_content)
 end
 
-module Display_service = struct
-
-
-  type table_cell_html5 = HTML5_types.flow5 Html5.elt list
-
-  type content =
-  | Description of
-      (HTML5_types.phrasing Html5.elt * HTML5_types.flow5 Html5.elt) list 
-  | Section of HTML5_types.phrasing Html5.elt * content 
-  | List of content list
-  | Table of [`head of table_cell_html5
-             |`text of table_cell_html5
-             |`number of table_cell_html5 ] list list
-  | Paragraph of HTML5_types.flow5 Html5.elt list
-
-  let description l = Description l
-  let description_opt l = Description (List.filter_opt l)
-  let content_section t c = Section (t, c)
-  let content_list l = List l
-  let content_table ?(transpose=false) l =
-    let t = function
-      | [] -> []
-      | hl :: tll ->
-        (* let lgth = List.length hl in *)
-        List.mapi hl (fun i h ->
-          h :: (List.map tll (fun tl ->
-            Option.value ~default:(`text []) (List.nth tl i))))
-    in
-    Table (if transpose then t l else l)
-        
-  let paragraph l = Paragraph l
-
-  let rec html_of_content ?(section_level=2) content =
-    let open Html5 in
-    let h = function
-      | 2 -> h2
-      | 3 -> h3
-      | 4 -> h4
-      | 5 -> h5
-      | 6 -> h6
-      | _ -> span in
-    match content with
-    | Paragraph l -> div l
-    | Description desc ->
-      ul (List.map desc (fun (l, r) ->
-        li [strong [l]; pcdata ": "; r; pcdata "."]));
-    | Section (title, content) ->
-      div [h section_level [title];
-           html_of_content ~section_level:(section_level + 1) content]
-    | List cl ->
-      div (List.map cl (html_of_content ~section_level))
-    | Table [] -> div []
-    | Table (h :: t) ->
-      let make_cell = function
-        | `head c -> 
-          td ~a:[ a_style "border: 1px solid black; padding: 2px; color: red" ] c
-        | `text c ->
-          td  ~a:[ a_style "border: 1px  solid grey; padding: 2px; \
-                            max-width: 40em;" ] c
-        | `number c ->
-          td  ~a:[ a_style "border: 1px  solid grey; padding: 4px; \
-                            text-align: right;" ] c
-      in
-      div [
-        table
-          ~a:[ a_style "border: 3px  solid black; \
-                        border-collapse: collapse; " ]
-        (* ~caption:(caption [pcdata "bouh"]) *)
-        (* ~columns:[colgroup [col (); col ()]] *)
-          (tr (List.map h make_cell))
-          (List.map t (fun l -> 
-            tr (List.map l make_cell)))
-      ]
-
-  let make_content ~main_title content =
-    let open Html5 in
-    content >>= fun content ->
-    return [
-      h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
-      html_of_content content]
-
-  let make ~hsc ~main_title content =
-    let html_content = make_content ~main_title content in
-    Template.default ~title:main_title html_content
-
-end
 
 module Flowcells_service = struct
   let flowcells hsc =
@@ -168,7 +82,7 @@ module Flowcells_service = struct
                 (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_2)
             ])))
         >>= fun l ->
-        return Display_service.(
+        return Template.Display_service.(
           paragraph [
             strong [
               Services.(link flowcell) [pcdata serial_name] serial_name;
@@ -178,7 +92,7 @@ module Flowcells_service = struct
       >>= fun ul ->
       Hitscore_lwt.db_disconnect hsc dbh
       >>= fun _ ->
-      return Display_service.(
+      return Template.Display_service.(
         content_section
           (ksprintf pcdata "Found %d Flowcells" (List.length ul))
           (content_list ul)
@@ -190,7 +104,7 @@ module Flowcells_service = struct
         Authentication.authorizes (`view `all_flowcells)
         >>= function
         | true ->
-          Display_service.make_content
+          Template.Display_service.make_content
             ~main_title:"Flowcells" (flowcells hitscore_configuration)
         | false ->
           let open Html5 in
@@ -254,7 +168,7 @@ let persons ?(transpose=false) ?(highlight=[]) hsc =
     >>= fun _ ->
     let actual_rows = List.filter_opt rows in
     let nrows = List.length actual_rows in
-    return Display_service.(Html5.(
+    return Template.Display_service.(Html5.(
       content_section 
         (ksprintf pcdata "Found %d Person%s" nrows
            (if nrows > 1 then "s" else ""))
@@ -358,7 +272,7 @@ let one_flowcell hsc ~serial_name =
     lanes >>= fun lanes ->
     Hitscore_lwt.db_disconnect hsc dbh
     >>= fun _ ->
-    return Display_service.(Html5.(
+    return Template.Display_service.(Html5.(
       content_section 
         (ksprintf pcdata "Flowcell %s" serial_name)
         (content_table 
@@ -498,7 +412,7 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
   Hitscore_lwt.db_disconnect hsc dbh
   >>= fun _ ->
   let nb_rows = List.length rows in
-  return Display_service.(
+  return Template.Display_service.(
     content_section
       (ksprintf pcdata "Found %d librar%s:"
          nb_rows (if nb_rows = 1 then "y" else "ies"))
@@ -573,17 +487,17 @@ let () =
         Flowcells_service.(make hitscore_configuration);
 
       Services.(register persons) (fun (transpose, highlight) () ->
-        Display_service.make ~hsc:hitscore_configuration
+        Template.Display_service.make ~hsc:hitscore_configuration
           ~main_title:"People"
           (persons ~highlight ?transpose hitscore_configuration));
       
       Services.(register libraries) (fun (transpose, qualified_names) () ->
-        Display_service.make ~hsc:hitscore_configuration
+        Template.Display_service.make ~hsc:hitscore_configuration
           ~main_title:"Libraries"
           (libraries ~qualified_names ?transpose hitscore_configuration));
 
       Services.(register flowcell) (fun (serial_name) () ->
-        Display_service.make ~hsc:hitscore_configuration
+        Template.Display_service.make ~hsc:hitscore_configuration
           ~main_title:"Flowcell"
           (one_flowcell hitscore_configuration ~serial_name));
 
