@@ -332,15 +332,6 @@ module Flowcell_service = struct
 
 end
 
-let default_service hsc =
-  Template.default ~title:"Home" Html5.(return [
-    h1 [pcdata "Gencore Home"];
-    h2 [pcdata "Services"];
-    ul [
-      li [Services.(link flowcells) [pcdata "Flowcells"] ()];
-      li [Services.(link persons) [pcdata "Persons"] (None, [])];
-      li [Services.(link libraries) [pcdata "Libraries"] (None, [])];
-    ]])
 
 let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
   let open Html5 in
@@ -478,6 +469,34 @@ let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
             `head [pcdata "Note"];
           ] :: rows)))
     
+module Default_service = struct
+  let make hsc =
+    (fun () () ->
+      let open Html5 in
+      let potential_li cap s = 
+        Authentication.authorizes cap
+        >>= function
+        | true ->  return (Some (li s)) 
+        | false -> return None
+      in
+      let real_li s = return (Some (li s)) in
+      let content = 
+        map_sequential ~f:return [
+          potential_li (`view `all_flowcells) 
+            [Services.(link flowcells) [pcdata "Flowcells"] ()];
+          potential_li (`view `persons)
+            [Services.(link persons) [pcdata "Persons"] (None, [])];
+          real_li [Services.(link libraries) [pcdata "Libraries"] (None, [])];
+        ] >>= fun ul_opt ->
+        return [
+          h1 [pcdata "Gencore Home"];
+          h2 [pcdata "Services"];
+          ul (List.filter_opt ul_opt);
+        ]
+      in
+      Template.default ~title:"Home" content)
+
+end
 
 let () =
   Eliom_services.register_eliom_module
@@ -522,10 +541,8 @@ let () =
         in
         Hitscore_lwt.Configuration.configure ?db_configuration () in
 
-      Services.(register default) (fun () () ->
-        default_service hitscore_configuration);
-      Services.(register home) (fun () () ->
-        default_service hitscore_configuration);
+      Services.(register default) (Default_service.make hitscore_configuration);
+      Services.(register home) (Default_service.make hitscore_configuration);
       
       Services.(register flowcells)
         Flowcells_service.(make hitscore_configuration);
