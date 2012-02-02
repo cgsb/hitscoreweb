@@ -97,7 +97,6 @@ module Authentication = struct
     
   type authentication_state = [
   | `nothing
-  | `wrong_openid of [`user_canceled | `setup_needed | `no_email]
   | `user_logged of user_logged
   | `insufficient_credentials of string
   | `wrong_pam of [`wrong_login| `pam_exn of exn]
@@ -167,12 +166,6 @@ module Authentication = struct
     let state =
       match s with
       | `nothing -> pcdataf "No user"
-      | `wrong_openid wo ->
-        pcdataf "Wrong OpenId: %s"
-          (match wo with
-          | `user_canceled -> "Canceled by user"
-          | `setup_needed -> "Setup needed"
-          | `no_email -> "No email returned")
       | `user_logged u -> 
         pcdataf "User: %s (%s)" u.id
           (String.concat ~sep:", " (List.map u.roles 
@@ -232,27 +225,6 @@ module Authentication = struct
 
 
   let check ~configuration = function
-    | `openid_setup_needed ->
-      set_state (`wrong_openid `setup_needed)
-    | `openid_user_canceled ->
-      set_state (`wrong_openid `user_canceled)
-    | `openid_result email ->
-      begin match email with
-      | Some e ->
-        let m = validate_user ~configuration (`email e) in
-        double_bind m
-          ~ok:(fun user -> set_state (`user_logged user))
-          ~error:(function
-          (* | `pam_exn _ as e -> set_state (`wrong_openid e) *)
-          | `email_no_allowed s
-          | `login_not_found s -> set_state (`insufficient_credentials s)
-          | `layout_inconsistency (`record_person,
-                                   `select_did_not_return_one_cache (_, _)) 
-          | `pg_exn _ 
-          | `too_many_persons_with_same_login _ as e -> error e
-          )
-      | None -> set_state (`wrong_openid `no_email)
-      end
     | `pam (user, password) ->
       pam_auth ~configuration ~user ~password ()
 
@@ -360,68 +332,11 @@ end
 
 module Login_service = struct
 
-  module Openid = HSWE_eliom_openid
-
   let make ~configuration () = 
     let open Lwt in
-    (* Initialize the OpenID library *)
-    let authenticate_with_url url =
-      Openid.init ~path:["__openid_return_service"]
-        ~f: (fun _ _ -> Eliom_output.Redirection.send (Services.login ()))
-
-        ~realm:(Eliom_output.Xhtml.make_string_uri ~absolute:true 
-                  ~service:(Services.default ()) ())
-        ~immediate:false
-            (* ~max_auth_age: 4 *)
-        ~required: [Openid.Email]
-        url
-        (fun result ->
-          begin match result with
-          | Openid.Setup_needed -> 
-            Authentication.check ~configuration `openid_setup_needed
-          | Openid.Canceled -> 
-            Authentication.check ~configuration `openid_user_canceled
-          | Openid.Result result -> 
-            let email = List.Assoc.find result.Openid.fields Openid.Email in
-            Authentication.check ~configuration (`openid_result email)
-          end 
-          >>= function
-          | Ok () ->
-            Eliom_output.Redirection.send (Services.home ())
-          | Error _ ->
-            Lwt.fail (Failure "Error during authentication: TODO"))
-    in
-    (* Create the handler for the form *)
-    (* We have to use Eliom_output.String_redirection as we
-       redirect the user to her provider *)
     let redirection = 
       Eliom_output.Html5.make_string_uri ~absolute:true 
         ~service:(Services.home ()) () in
-    let form_handler = 
-      Eliom_output.String_redirection.register_post_coservice
-        ~fallback:Services.(default ())
-        ~error_handler:(fun sel -> 
-          eprintf "form_handler's error_handler\n%!";
-          List.iter sel ~f:(fun (s, e) -> 
-            eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
-          return (redirection))
-        ~post_params:(Eliom_parameters.string "url")
-        (fun _ url ->
-          authenticate_with_url url)
-    in
-    let google_handler = 
-      Eliom_output.String_redirection.register_coservice
-        ~fallback:Services.(default ())
-        ~error_handler:(fun sel -> 
-          eprintf "google_handler's error_handler\n%!";
-          List.iter sel ~f:(fun (s, e) -> 
-            eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
-          return redirection)
-        ~get_params:Eliom_parameters.unit
-        (fun () () ->
-          let url = "https://www.google.com/accounts/o8/id" in
-          authenticate_with_url url)
-    in
     let pam_handler =
       Eliom_output.String_redirection.register_post_coservice
         ~fallback:Services.(default ())
@@ -444,24 +359,10 @@ module Login_service = struct
 
     let open Html5 in
     (fun _ _ ->
-      let form_generic_openid =
-        Eliom_output.Html5.post_form ~service:form_handler
-          (fun url ->
-            [p [pcdata "Your OpenID identifier: ";
-                Eliom_output.Html5.string_input ~input_type:`Text ~name:url ();
-                Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
-               ];
-            ]) () 
-      in
-      let google_openid_link =
-        p [pcdata "Login with ";
-           Eliom_output.Html5.a ~service:google_handler [pcdata "Google"] ();
-          ]
-      in
       let pam_form =
         Eliom_output.Html5.post_form ~service:pam_handler
           (fun (name, pwd) ->
-            [p [pcdata "Try PAM identification: ";
+            [p [pcdata "PAM identification: ";
                 Eliom_output.Html5.string_input ~input_type:`Text ~name ();
                 Eliom_output.Html5.string_input ~input_type:`Password ~name:pwd ();
                 Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
@@ -470,8 +371,6 @@ module Login_service = struct
       in
       let html_content = Hitscore_lwt.Result_IO.return  [
         h1 [pcdata "Login"];
-        form_generic_openid;
-        google_openid_link;
         pam_form] in
       Template.default ~title:"Log-in" html_content)
 end
@@ -953,14 +852,6 @@ let () =
 
       let _ = Eliom_output.set_exn_handler
         (function
-        | HSWE_eliom_openid.Error e ->
-          Eliom_output.Html5.send ~code:500
-            Html5.(html
-                     (head (title (pcdata "Open ID Error")) [])
-                     (body [h1 [pcdata "OpenID Error"];
-                            p [ksprintf pcdata
-                                  "The OpenID process failed: %S"
-                                  (HSWE_eliom_openid.string_of_openid_error e)]]))
         | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
       in
 

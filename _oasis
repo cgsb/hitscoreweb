@@ -15,7 +15,6 @@ Library hitscoreweb
   Install: true
   Modules: Hitscoreweb,
            Hitscoreweb_queries,
-           HSWE_eliom_openid,
            Hitscoreweb_std
 
 Library hitscorewebpam
