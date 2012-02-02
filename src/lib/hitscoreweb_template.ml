@@ -90,7 +90,6 @@ let default ?(title) content =
     )))
 
 
-
 module Display_service = struct
 
 
@@ -165,7 +164,7 @@ module Display_service = struct
             tr (List.map l make_cell)))
       ]
 
-  let make_content ~main_title content =
+  let make_content ~hsc ~main_title content =
     let open Html5 in
     content >>= fun content ->
     return [
@@ -173,7 +172,25 @@ module Display_service = struct
       html_of_content content]
 
   let make ~hsc ~main_title content =
-    let html_content = make_content ~main_title content in
+    let html_content = make_content ~hsc ~main_title content in
     default ~title:main_title html_content
+
+end
+
+
+module Authentication_error = struct
+
+  let make_content ~hsc ~main_title content =
+    let open Html5 in
+    content >>= fun content ->
+    return [
+      h1 [pcdataf "Authentication Error: %s" main_title];
+      div [
+          div content;
+        pcdata "Perhaps should you ";
+        Services.(link login) [pcdata "login"] ();
+        pcdataf "? or maybe request more access rights?"
+      ];
+    ]
 
 end

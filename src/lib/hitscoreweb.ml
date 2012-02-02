@@ -98,23 +98,18 @@ module Flowcells_service = struct
           (content_list ul)
       ))
 
-  let make hitscore_configuration =
+  let make hsc =
     (fun () () ->
-      let content = 
-        Authentication.authorizes (`view `all_flowcells)
-        >>= function
-        | true ->
-          Template.Display_service.make_content
-            ~main_title:"Flowcells" (flowcells hitscore_configuration)
-        | false ->
-          let open Html5 in
-          return [
-            h1 [pcdata "Authentication Error"];
-            p [pcdata "You should maybe login? or ask for the right of \
-                      viewing all flowcells?"];
-          ]
-      in
-      Template.default ~title:"All Flowcells" content)
+      Template.default ~title:"Flowcells"
+        (Authentication.authorizes (`view `all_flowcells)
+         >>= function
+         | true ->
+           Template.Display_service.make_content ~hsc
+             ~main_title:"Flowcells" (flowcells hsc)
+         | false ->
+           Template.Authentication_error.make_content ~hsc
+             ~main_title:"Flowcells" 
+             (return [Html5.pcdataf "You may not view all the flowcells."])))
 end
 
 let person_essentials dbh person_t =
