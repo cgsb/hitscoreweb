@@ -601,7 +601,7 @@ let persons ?(transpose=false) ?(highlight=[]) hsc =
       of_list_sequential plist (fun p ->
         cache_value ~dbh p >>| get_fields
         >>= fun {print_name; given_name; middle_name; family_name;
-  	         email; login; nickname; note;} ->
+  	         email; secondary_emails; roles; login; nickname; note;} ->
         let opt f m = Option.value_map ~f ~default:(f "") m in
         let is_vip = List.exists highlight ((=) email) in
         if not is_vip && (highlight <> []) then
@@ -616,9 +616,14 @@ let persons ?(transpose=false) ?(highlight=[]) hsc =
             `text [pcdata given_name];
             `text [opt pcdata middle_name];
             `text [pcdata family_name];
-            email_field;
-            `text [code [opt pcdata login]];
             `text [opt pcdata nickname];
+            email_field;
+            `text (array_to_list_intermap secondary_emails ~sep:(pcdata ", ")
+                     ~f:(codef "%s\n"));
+            `text [code [opt pcdata login]];
+            `text (array_to_list_intermap roles ~sep:(br ())
+                     ~f:(fun s -> pcdataf "%s" 
+                       (Layout.Enumeration_role.to_string s)));
             `text [opt pcdata note];]))) in
     rows_m >>= fun rows ->
     Hitscore_lwt.db_disconnect hsc dbh
@@ -634,9 +639,11 @@ let persons ?(transpose=false) ?(highlight=[]) hsc =
 	     `head [pcdata "Given name"];
 	     `head [pcdata "Middle name"];
 	     `head [pcdata "Family name"];
-	     `head [pcdata "Email"];
-	     `head [pcdata "Login"];
 	     `head [pcdata "Nickname"];
+	     `head [pcdata "Email"];
+             `head [pcdata "Secondary Emails"];
+	     `head [pcdata "Login"];
+	     `head [pcdata "Roles"];
 	     `head [pcdata "Note"];]
             :: actual_rows)))))
 

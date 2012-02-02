@@ -3,7 +3,14 @@ include Core.Std
 
 let (|>) x f = f x
 
-module Html5 = Eliom_pervasives.HTML5.M
+module Html5 = struct
+  include Eliom_pervasives.HTML5.M
+    
+  let pcdataf fmt = ksprintf pcdata fmt
+
+  let codef fmt = ksprintf (fun s -> code [pcdata s]) fmt
+
+end
 
 
 module Lwt_config = struct
@@ -18,7 +25,11 @@ module PGOCaml = Layout.PGOCaml
 
 include Hitscore_lwt.Result_IO
 
+
 let rec interleave_list ~sep = function
   | [] -> []
   | [one] -> [one]
   | l :: t -> l :: sep :: interleave_list ~sep t
+
+let array_to_list_intermap ~sep ~f a =
+  interleave_list ~sep (List.map (Array.to_list a) ~f)
