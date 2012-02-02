@@ -4,7 +4,8 @@ module Services = Hitscoreweb_services
 
 
 type capability = [
-| `view of [`all | `all_flowcells | `persons | `full_persons]
+| `view of [`all | `all_flowcells | `persons 
+           | `full_persons | `full_flowcell]
 ]
 
 let roles_allow roles cap =

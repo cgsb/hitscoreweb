@@ -208,109 +208,129 @@ module Persons_service = struct
 
 end
 
-let one_flowcell hsc ~serial_name =
-  Hitscore_lwt.db_connect hsc
-  >>= fun dbh ->
-  Layout.Search.record_flowcell_by_serial_name ~dbh serial_name
-  >>= function
-  | [ one ] ->
-    let lanes =
-      let lane = ref 0 in
-      Layout.Record_flowcell.(
-        cache_value ~dbh one >>| get_fields
-        >>= fun {serial_name; lanes} ->
-        of_list_sequential (Array.to_list lanes) (fun lane_t ->
-          incr lane;
-          Layout.Record_lane.(
-            cache_value ~dbh lane_t >>| get_fields
-            >>= fun {
-  	      seeding_concentration_pM ;
-  	      total_volume ;
-  	      libraries ;
-  	      pooled_percentages ;
-  	      requested_read_length_1 ;
-  	      requested_read_length_2 ;
-  	      contacts ; } ->
-            of_list_sequential (Array.to_list contacts) 
-              (Persons_service.person_essentials dbh)
-            >>= fun people ->
-            of_list_sequential
-              (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
-              (fun (i, ilibt) ->
-                Layout.Record_input_library.(
-                  cache_value ~dbh ilibt >>| get_fields
-                  >>= fun { library; _ } ->
-                  Layout.Record_stock_library.(
-                    cache_value ~dbh library >>| get_fields
-                    >>= fun { name; project; _ } ->
-                    return (name, project))))
-            >>= fun libs ->
-            return Html5.(
-              let na = pcdata "—" in
-              let opt o f = Option.value_map ~default:na o ~f in
-              let pcf = (ksprintf pcdata "%.0f") in
-              let people_cell = 
-                (List.map people (fun (f, l, e) ->
-                  [ 
-                    Services.(link persons)
-                      [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
-                    br () ]) |! List.flatten)
-                @ [
-                  if List.length people > 1 then
-                    small [
-                      pcdata "(";
-                      Services.(link persons) [pcdata "all"]
-                        (None, List.map people (fun (f, l, e) -> e));
-                      pcdata ")"
-                    ]
-                  else
-                    span []
-                ]
-              in
-              let libs_cell =
-                let qnames =
-                  List.map libs (function (l, None) -> l
-                  | (l, Some p) -> sprintf "%s.%s" p l) in
-                (List.map qnames (fun qn ->
-                  Services.(link libraries) [pcdata qn] (Some true, [qn]))
-                  |! interleave_list ~sep:(pcdata ", "))
-                @ [
-                  if List.length qnames > 1 then
-                    small [
-                      pcdata " (";
-                      Services.(link libraries) [pcdata "all"] (None, qnames);
-                      pcdata ")"
-                    ]
-                  else
-                    span []
-                ]
-              in
-              [
-                `text   [ksprintf pcdata "Lane %d" !lane];
-                `number [opt seeding_concentration_pM pcf];
-		`text   [opt total_volume pcf];
-		`text   people_cell;
-                `text   libs_cell
-              ]))))
-    in
-    lanes >>= fun lanes ->
-    Hitscore_lwt.db_disconnect hsc dbh
-    >>= fun _ ->
-    return Template.Display_service.(Html5.(
-      content_section 
-        (ksprintf pcdata "Flowcell %s" serial_name)
-        (content_table 
-           ([ `head [pcdata "Lane Nb"]; 
-	      `head [pcdata "Seeding C."];
-	      `head [pcdata "Vol."];
-	      `head [pcdata "Contacts"];
-	      `head [pcdata "Libraries"];]
-            :: lanes))))
-  | [] ->
-    error (`no_flowcell_named serial_name)
-  | more ->
-    error (`layout_inconsistency (`record_flowcell, 
-                                  `more_than_one_flowcell_called serial_name))
+module Flowcell_service = struct
+  let one_flowcell hsc ~serial_name =
+    Hitscore_lwt.db_connect hsc
+    >>= fun dbh ->
+    Layout.Search.record_flowcell_by_serial_name ~dbh serial_name
+    >>= function
+    | [ one ] ->
+      let lanes =
+        let lane = ref 0 in
+        Layout.Record_flowcell.(
+          cache_value ~dbh one >>| get_fields
+          >>= fun {serial_name; lanes} ->
+          of_list_sequential (Array.to_list lanes) (fun lane_t ->
+            incr lane;
+            Layout.Record_lane.(
+              cache_value ~dbh lane_t >>| get_fields
+              >>= fun {
+  	        seeding_concentration_pM ;
+  	        total_volume ;
+  	        libraries ;
+  	        pooled_percentages ;
+  	        requested_read_length_1 ;
+  	        requested_read_length_2 ;
+  	        contacts ; } ->
+              of_list_sequential (Array.to_list contacts) 
+                (Persons_service.person_essentials dbh)
+              >>= fun people ->
+              of_list_sequential
+                (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
+                (fun (i, ilibt) ->
+                  Layout.Record_input_library.(
+                    cache_value ~dbh ilibt >>| get_fields
+                    >>= fun { library; _ } ->
+                    Layout.Record_stock_library.(
+                      cache_value ~dbh library >>| get_fields
+                      >>= fun { name; project; _ } ->
+                      return (name, project))))
+              >>= fun libs ->
+              return Html5.(
+                let na = pcdata "—" in
+                let opt o f = Option.value_map ~default:na o ~f in
+                let pcf = (ksprintf pcdata "%.0f") in
+                let people_cell = 
+                  (List.map people (fun (f, l, e) ->
+                    [ 
+                      Services.(link persons)
+                        [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
+                      br () ]) |! List.flatten)
+                  @ [
+                    if List.length people > 1 then
+                      small [
+                        pcdata "(";
+                        Services.(link persons) [pcdata "all"]
+                          (None, List.map people (fun (f, l, e) -> e));
+                        pcdata ")"
+                      ]
+                    else
+                      span []
+                  ]
+                in
+                let libs_cell =
+                  let qnames =
+                    List.map libs (function (l, None) -> l
+                    | (l, Some p) -> sprintf "%s.%s" p l) in
+                  (List.map qnames (fun qn ->
+                    Services.(link libraries) [pcdata qn] (Some true, [qn]))
+                    |! interleave_list ~sep:(pcdata ", "))
+                  @ [
+                    if List.length qnames > 1 then
+                      small [
+                        pcdata " (";
+                        Services.(link libraries) [pcdata "all"] (None, qnames);
+                        pcdata ")"
+                      ]
+                    else
+                      span []
+                  ]
+                in
+                [
+                  `text   [ksprintf pcdata "Lane %d" !lane];
+                  `number [opt seeding_concentration_pM pcf];
+		  `text   [opt total_volume pcf];
+		  `text   people_cell;
+                  `text   libs_cell
+                ]))))
+      in
+      lanes >>= fun lanes ->
+      Hitscore_lwt.db_disconnect hsc dbh
+      >>= fun _ ->
+      return Template.Display_service.(Html5.(
+        content_section 
+          (ksprintf pcdata "Flowcell %s" serial_name)
+          (content_table 
+             ([ `head [pcdata "Lane Nb"]; 
+	        `head [pcdata "Seeding C."];
+	        `head [pcdata "Vol."];
+	        `head [pcdata "Contacts"];
+	        `head [pcdata "Libraries"];]
+              :: lanes))))
+    | [] ->
+      error (`no_flowcell_named serial_name)
+    | more ->
+      error (`layout_inconsistency (`record_flowcell, 
+                                    `more_than_one_flowcell_called serial_name))
+
+
+  let make hsc =
+    (fun (serial_name) () ->
+      let main_title = (sprintf "FC:%s" serial_name) in
+      Template.default ~title:main_title
+        (Authentication.authorizes (`view `full_flowcell)
+         >>= function
+         | true ->
+           Template.Display_service.make_content ~hsc ~main_title
+             (one_flowcell ~serial_name hsc)
+         | false ->
+           Template.Authentication_error.make_content ~hsc ~main_title
+             (return [Html5.pcdataf 
+                         "You may not view the flowcell called %s."
+                         serial_name])))
+
+
+end
 
 let default_service hsc =
   Template.default ~title:"Home" Html5.(return [
@@ -517,10 +537,8 @@ let () =
           ~main_title:"Libraries"
           (libraries ~qualified_names ?transpose hitscore_configuration));
 
-      Services.(register flowcell) (fun (serial_name) () ->
-        Template.Display_service.make ~hsc:hitscore_configuration
-          ~main_title:"Flowcell"
-          (one_flowcell hitscore_configuration ~serial_name));
+      Services.(register flowcell)
+        Flowcell_service.(make hitscore_configuration);
 
       Services.(register login) (Login_service.make
                                    ~configuration:hitscore_configuration ());
