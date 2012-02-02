@@ -1,7 +1,6 @@
 open Hitscoreweb_std
 
-module Queries = 
-  Hitscoreweb_queries.Make (Hitscore_lwt.Result_IO) (Hitscore_lwt.Layout.PGOCaml)
+module Queries = Hitscoreweb_queries
 
 module Services = Hitscoreweb_services
 
