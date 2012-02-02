@@ -112,73 +112,101 @@ module Flowcells_service = struct
              (return [Html5.pcdataf "You may not view all the flowcells."])))
 end
 
-let person_essentials dbh person_t =
-  Layout.Record_person.(
-    cache_value ~dbh person_t >>| get_fields
-    >>= fun { given_name; family_name; email; _ } ->
-    return (given_name, family_name, email))
+module Persons_service = struct
+  let person_essentials dbh person_t =
+    Layout.Record_person.(
+      cache_value ~dbh person_t >>| get_fields
+      >>= fun { given_name; family_name; email; _ } ->
+      return (given_name, family_name, email))
 
-let person_link dbh person_t =
-  person_essentials dbh person_t >>= fun (f, l, e) ->
-  return (Services.(link persons)
-            [ksprintf Html5.pcdata "%s %s" f l]
-            (Some true, [e]))
+  let person_link dbh person_t =
+    person_essentials dbh person_t >>= fun (f, l, e) ->
+    return (Services.(link persons)
+              [ksprintf Html5.pcdata "%s %s" f l]
+              (Some true, [e]))
 
 
-let persons ?(transpose=false) ?(highlight=[]) hsc =
-  Hitscore_lwt.db_connect hsc
-  >>= fun dbh ->
-  Layout.Record_person.(
-    get_all ~dbh >>= fun plist ->
-    let rows_m =
-      of_list_sequential plist (fun p ->
-        cache_value ~dbh p >>| get_fields
-        >>= fun {print_name; given_name; middle_name; family_name;
-  	         email; secondary_emails; roles; login; nickname; note;} ->
-        let opt f m = Option.value_map ~f ~default:(f "") m in
-        let is_vip = List.exists highlight ((=) email) in
-        if not is_vip && (highlight <> []) then
-          return None
-        else Html5.(
-          let email_field =
-            let style = if is_vip then "color: green" else "" in
-            `text [code ~a:[a_id email; a_style style] [pcdata email]]
-          in
-          return (Some [
-            `text [opt pcdata print_name];
-            `text [pcdata given_name];
-            `text [opt pcdata middle_name];
-            `text [pcdata family_name];
-            `text [opt pcdata nickname];
-            email_field;
-            `text (array_to_list_intermap secondary_emails ~sep:(pcdata ", ")
-                     ~f:(codef "%s\n"));
-            `text [code [opt pcdata login]];
-            `text (array_to_list_intermap roles ~sep:(br ())
-                     ~f:(fun s -> pcdataf "%s" 
-                       (Layout.Enumeration_role.to_string s)));
-            `text [opt pcdata note];]))) in
-    rows_m >>= fun rows ->
-    Hitscore_lwt.db_disconnect hsc dbh
-    >>= fun _ ->
-    let actual_rows = List.filter_opt rows in
-    let nrows = List.length actual_rows in
-    return Template.Display_service.(Html5.(
-      content_section 
-        (ksprintf pcdata "Found %d Person%s" nrows
-           (if nrows > 1 then "s" else ""))
-        (content_table ~transpose
-           ([`head [pcdata "Print name"];
-	     `head [pcdata "Given name"];
-	     `head [pcdata "Middle name"];
-	     `head [pcdata "Family name"];
-	     `head [pcdata "Nickname"];
-	     `head [pcdata "Email"];
-             `head [pcdata "Secondary Emails"];
-	     `head [pcdata "Login"];
-	     `head [pcdata "Roles"];
-	     `head [pcdata "Note"];]
-            :: actual_rows)))))
+  let persons ~full_view ?(transpose=false) ?(highlight=[]) hsc =
+    Hitscore_lwt.db_connect hsc
+    >>= fun dbh ->
+    Layout.Record_person.(
+      get_all ~dbh >>= fun plist ->
+      let rows_m =
+        of_list_sequential plist (fun p ->
+          cache_value ~dbh p >>| get_fields
+          >>= fun {print_name; given_name; middle_name; family_name;
+  	           email; secondary_emails; roles; login; nickname; note;} ->
+          let opt f m = Option.value_map ~f ~default:(f "") m in
+          let is_vip = List.exists highlight ((=) email) in
+          if not is_vip && (highlight <> []) then
+            return None
+          else Html5.(
+            let email_field =
+              let style = if is_vip then "color: green" else "" in
+              `text [code ~a:[a_id email; a_style style] [pcdata email]]
+            in
+            let default = [
+              `text [opt pcdata print_name];
+              `text [pcdata given_name];
+              `text [opt pcdata middle_name];
+              `text [pcdata family_name];
+              `text [opt pcdata nickname];
+              email_field;
+              `text (array_to_list_intermap secondary_emails ~sep:(pcdata ", ")
+                       ~f:(codef "%s\n"));
+              `text [code [opt pcdata login]];
+            ] in
+            let supplement = 
+              if not full_view then [] else [
+                `text (array_to_list_intermap roles ~sep:(br ())
+                         ~f:(fun s -> pcdataf "%s" 
+                           (Layout.Enumeration_role.to_string s)));
+                `text [opt pcdata note];]
+            in
+            return (Some (default @ supplement)))) in
+      rows_m >>= fun rows ->
+      Hitscore_lwt.db_disconnect hsc dbh
+      >>= fun _ ->
+      let actual_rows = List.filter_opt rows in
+      let nrows = List.length actual_rows in
+      return Template.Display_service.(Html5.(
+        let normal_rows = [
+          `head [pcdata "Print name"];
+	  `head [pcdata "Given name"];
+	  `head [pcdata "Middle name"];
+	  `head [pcdata "Family name"];
+	  `head [pcdata "Nickname"];
+	  `head [pcdata "Email"];
+          `head [pcdata "Secondary Emails"];
+	  `head [pcdata "Login"]] in
+        let supplement = 
+          if not full_view then [] else [
+	    `head [pcdata "Roles"];
+	    `head [pcdata "Note"];] in
+        content_section 
+          (ksprintf pcdata "Found %d Person%s" nrows
+             (if nrows > 1 then "s" else ""))
+          (content_table ~transpose
+             ((normal_rows @ supplement)
+              :: actual_rows)))))
+
+  let make hsc =
+    (fun (transpose, highlight) () ->
+      Template.default ~title:"Persons"
+        (Authentication.authorizes (`view `persons)
+         >>= function
+         | true ->
+           Authentication.authorizes (`view `full_persons)
+           >>= fun full_view ->
+           Template.Display_service.make_content ~hsc
+             ~main_title:"People" 
+             (persons ?transpose ~highlight ~full_view hsc)
+         | false ->
+           Template.Authentication_error.make_content ~hsc
+             ~main_title:"Persons" 
+             (return [Html5.pcdataf "You may not view any person."])))
+
+end
 
 let one_flowcell hsc ~serial_name =
   Hitscore_lwt.db_connect hsc
@@ -203,7 +231,8 @@ let one_flowcell hsc ~serial_name =
   	      requested_read_length_1 ;
   	      requested_read_length_2 ;
   	      contacts ; } ->
-            of_list_sequential (Array.to_list contacts) (person_essentials dbh)
+            of_list_sequential (Array.to_list contacts) 
+              (Persons_service.person_essentials dbh)
             >>= fun people ->
             of_list_sequential
               (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
@@ -481,10 +510,7 @@ let () =
       Services.(register flowcells)
         Flowcells_service.(make hitscore_configuration);
 
-      Services.(register persons) (fun (transpose, highlight) () ->
-        Template.Display_service.make ~hsc:hitscore_configuration
-          ~main_title:"People"
-          (persons ~highlight ?transpose hitscore_configuration));
+      Services.(register persons) Persons_service.(make hitscore_configuration);
       
       Services.(register libraries) (fun (transpose, qualified_names) () ->
         Template.Display_service.make ~hsc:hitscore_configuration

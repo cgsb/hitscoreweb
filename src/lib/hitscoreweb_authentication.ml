@@ -4,14 +4,14 @@ module Services = Hitscoreweb_services
 
 
 type capability = [
-| `view of [`all | `all_flowcells]
+| `view of [`all | `all_flowcells | `persons | `full_persons]
 ]
 
 let roles_allow roles cap =
   match cap with
   | `view smth ->
     List.exists roles (fun c -> c = `auditor || c = `administrator)
-
+    || (List.exists roles ((=) `user) && smth = `persons)
 
 type user_logged = {
   id: string;
