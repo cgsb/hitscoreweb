@@ -519,11 +519,31 @@ module Default_service = struct
           potential_li (`view `libraries)
             [Services.(link libraries) [pcdata "Libraries"] (None, [])];
         ] >>= fun ul_opt ->
-        return [
+        let header = [
           h1 [pcdata "Gencore Home"];
-          h2 [pcdata "Services"];
-          ul (List.filter_opt ul_opt);
-        ]
+        ] in
+        let welcome = [
+          h2 [pcdata "Welcome"];
+          p [
+            pcdata "For now, most services require ";
+            Services.(link login) [pcdata "authentication"] ();
+            pcdata ", but here is a useful link: ";
+            a ~a:[
+              a_href "https://docs.google.com/a/nyu.edu/?tab=co#folders/\
+                0B6RMw3n537F2OTc3ZjZlMzktZTY2YS00MmI4LTk0MmQtZmZlYzQ3Nzk3YTRl"]
+              [pcdata "GenCore FAQs and Presentations"];
+            pcdata ".";
+          ];
+        ] in
+        let display_section =
+          match List.filter_opt ul_opt with
+          | [] -> []
+          | items -> [
+            h2 [pcdata "Display Services"];
+            ul items;
+          ]
+        in
+        return (header @ welcome @ display_section)
       in
       Template.default ~title:"Home" content)
 
