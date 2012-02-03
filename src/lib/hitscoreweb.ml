@@ -340,7 +340,7 @@ module Libraries_service = struct
     >>= fun dbh ->
     Queries.full_libraries dbh >>= fun library_list ->
     of_list_sequential library_list ~f:(fun result_item ->
-      let  (idopt, name, project, app, stranded, truseq, rnaseq,
+      let  (idopt, name, project, desc, app, stranded, truseq, rnaseq,
             bartype, barcodes, bartoms, p5, p7, note,
             sample_name, org_name, prep_email, protocol) = result_item in
       let qualified_name_passes =
@@ -366,7 +366,7 @@ module Libraries_service = struct
         | false -> return None))
     >>= fun libs_filtered ->
     of_list_sequential (List.filter_opt libs_filtered)
-      ~f:(fun ((idopt, name, project, app, 
+      ~f:(fun ((idopt, name, project, desc, app, 
                 stranded, truseq, rnaseq,
                 bartype, barcodes, bartoms,
                 p5, p7, note,
@@ -443,6 +443,7 @@ module Libraries_service = struct
         barcodes_cell >>= fun barcoding ->
         return [
           `text [opt pcdata name]; `text [opt pcdata project];
+          `text [opt pcdata desc];
           `text submissions_cell;
           `text [opt pcdata sample_name]; `text [opt pcdata org_name];
           `text [opt person prep_email]; `text [opt pcdata protocol];
@@ -466,6 +467,7 @@ module Libraries_service = struct
         (content_table ~transpose
            ([ `head [pcdata "Name"]; 
 	      `head [pcdata "Project"];
+              `head [pcdata "Description"];
               `head [pcdata "Submitted"];
               `head [pcdata "Sample-name"];
               `head [pcdata "Organism"];

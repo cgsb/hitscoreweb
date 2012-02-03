@@ -7,7 +7,8 @@ module PGOCaml = Hitscoreweb_std.PGOCaml
 let full_libraries dbh =
   let query () =
     PGSQL (dbh) "nullable-results"
-      "SELECT stock.g_id, stock.name, stock.project, stock.application,
+      "SELECT stock.g_id, stock.name, stock.project,
+                stock.description, stock.application,
                 stock.stranded, stock.truseq_control, stock.rnaseq_control,
                 stock.barcode_type, stock.barcodes, stock.custom_barcodes,
                 stock.p5_adapter_length, stock.p7_adapter_length, stock.note,
