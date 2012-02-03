@@ -43,7 +43,7 @@ type authentication_state = [
 | `nothing
 | `user_logged of user_logged
 | `insufficient_credentials of string
-| `wrong_pam of [`wrong_login| `pam_exn of exn]
+| `wrong_pam of [ `pam_exn of exn]
 | `error of [ 
   | `layout_inconsistency of
       [ `record_person ] * [ `select_did_not_return_one_cache of string * int ]
@@ -117,11 +117,8 @@ let display_state () =
                                       Layout.Enumeration_role.to_string));
       ]
     | `insufficient_credentials s -> pcdataf "Wrong credentials for: %s" s
-    | `wrong_pam wp ->
-      pcdataf "PAM: %s"
-        (match wp with
-        | `wrong_login -> "wrong login or password"
-        | `pam_exn e -> sprintf "error: %s" (Exn.to_string e))
+    | `wrong_pam (`pam_exn e) ->
+      pcdataf "Authentication failure";
     | `error e -> 
       begin match e with
       | `layout_inconsistency (`record_person, 
@@ -144,7 +141,7 @@ let display_state () =
           ))
 
 
-let pam_auth ~configuration ?(service = "login") ~user ~password () =
+let pam_auth ~configuration ?(service = "") ~user ~password () =
   let wrap_pam f a = try Ok (f a) with e -> Error (`pam_exn e) in
   let auth () =
     let open Result in
