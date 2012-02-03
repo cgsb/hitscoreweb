@@ -39,6 +39,11 @@ let libraries =
       ~get_params:Eliom_parameters.(opt (bool "transpose")
                                     ** set string "qualified_name"))
 
+let evaluations =
+  make (Eliom_services.service
+          ~path:["evaluations"]
+          ~get_params: Eliom_parameters.unit)
+
 let login =
   make (Eliom_services.service
           ~path:["login"]

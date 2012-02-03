@@ -3,6 +3,7 @@
 
 module RIO = Hitscoreweb_std.Hitscore_lwt.Result_IO
 module PGOCaml = Hitscoreweb_std.PGOCaml
+module Layout = Hitscoreweb_std.Hitscore_lwt.Layout
 
 let full_libraries dbh =
   let query () =
@@ -34,5 +35,21 @@ let library_submissions ~lib_id dbh =
   in
   RIO.wrap_pgocaml ~query ~on_result:RIO.return
 
-
+let sample_sheet_kind ~dbh sample_sheet =
+  let sample_sheet = sample_sheet.Layout.Record_sample_sheet.id in
+  let query () =
+    PGSQL (dbh)
+      "SELECT assemble_sample_sheet.kind
+       FROM assemble_sample_sheet, sample_sheet
+       WHERE assemble_sample_sheet.g_result = $sample_sheet"
+  in
+  RIO.(
+    wrap_pgocaml ~query ~on_result:return
+    >>= function
+    | kind_str :: _ ->
+      begin match Layout.Enumeration_sample_sheet_kind.of_string kind_str with
+          | Core.Std.Result.Ok k -> return k
+          | Core.Std.Result.Error e -> error (`sample_sheet_kind_of_string e)
+      end
+    | _ -> error (`sample_sheet_kind_not_found sample_sheet))
 

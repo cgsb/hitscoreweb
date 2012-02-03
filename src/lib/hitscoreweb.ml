@@ -499,6 +499,101 @@ module Libraries_service = struct
     
 end
 
+module Evaluations_service = struct
+
+
+  let bcl_to_fastq_section ~dbh name b2fs = 
+    let open Html5 in
+    let module B2F = Layout.Function_bcl_to_fastq in
+    let module HSR = Layout.Record_hiseq_raw in
+    let module S = Layout.Record_sample_sheet in
+    if List.length b2fs > 0 then (
+      of_list_sequential b2fs ~f:(fun b2f ->
+        B2F.cache_evaluation ~dbh b2f >>| B2F.get_arguments
+        >>= function
+        | Ok {B2F.raw_data; availability; mismatch; version;
+  	      tiles; sample_sheet; } ->
+          HSR.cache_value ~dbh raw_data >>| HSR.get_fields
+          >>= fun { HSR.flowcell_name; _ } ->
+          Queries.sample_sheet_kind ~dbh sample_sheet
+          >>= fun kind ->
+          let fc_link = 
+            Services.(link flowcell) [pcdata flowcell_name] (flowcell_name) in
+          return [
+            `text [fc_link];
+            `text [pcdataf "%ld" mismatch];
+            `text [pcdataf "%s" version];
+            `text [codef "%s" (Option.value ~default:"" tiles)];
+            `text [pcdata
+                      (match kind with
+                      | `all_barcodes -> "All barcodes"
+                      | `specific_barcodes -> "Specific barcodes")]
+          ]
+        | Error exn -> error (`io_exn exn)
+      )
+       >>= fun rows ->
+      return Template.Display_service.(
+        let tab = 
+          content_table (
+            [`head [pcdata "Flowcell"]; 
+             `head [pcdata "Mismatch"];
+             `head [pcdata "Version"];
+             `head [pcdata "Tiles Option"];
+             `head [pcdata "Kind of sample-sheet"];
+            ] :: rows)
+        in
+        content_section (pcdataf "%s: %d" name (List.length b2fs)) tab))
+    else
+      return (Template.Display_service.paragraph [])
+
+  let evaluations configuration =
+    let open Html5 in
+    Hitscore_lwt.db_connect configuration
+    >>= fun dbh ->
+    (* Bcl_to_fastqs *)
+    Layout.Function_bcl_to_fastq.get_all_inserted ~dbh
+    >>= bcl_to_fastq_section ~dbh "Inserted"
+    >>= fun inserted_b2fs ->
+    Layout.Function_bcl_to_fastq.get_all_started ~dbh
+    >>= bcl_to_fastq_section ~dbh "Started"
+    >>= fun started_b2fs ->
+    Layout.Function_bcl_to_fastq.get_all_failed ~dbh
+    >>= bcl_to_fastq_section ~dbh "Failed"
+    >>= fun failed_b2fs ->
+    Layout.Function_bcl_to_fastq.get_all_succeeded ~dbh
+    >>= bcl_to_fastq_section ~dbh "Succeeded"
+    >>= fun succeeded_b2fs ->
+
+    return Template.Display_service.(
+      content_list [
+        inserted_b2fs; started_b2fs; failed_b2fs; succeeded_b2fs;
+      ])
+    >>= fun b2f_content ->
+    Hitscore_lwt.db_disconnect configuration dbh
+    >>= fun _ ->
+    return Template.Display_service.(
+      content_list [
+        content_section (pcdataf "Bcl_to_fastq") b2f_content;
+      ])
+
+  let make ~configuration =
+    let hsc = configuration in
+    (fun () () ->
+      let main_title = "Function Evaluations" in
+      Template.default ~title:main_title
+        (Authentication.authorizes (`view `all_evaluations)
+         >>= function
+         | true ->
+           Template.Display_service.make_content ~hsc ~main_title    
+             (evaluations hsc);
+         | false ->
+           Template.Authentication_error.make_content ~hsc ~main_title
+             (return [Html5.pcdataf 
+                         "You may not view the function evaluations."])))
+
+
+end
+
 module Default_service = struct
   let make hsc =
     (fun () () ->
@@ -518,6 +613,9 @@ module Default_service = struct
             [Services.(link persons) [pcdata "Persons"] (None, [])];
           potential_li (`view `libraries)
             [Services.(link libraries) [pcdata "Libraries"] (None, [])];
+          potential_li (`view `all_evaluations)
+            [Services.(link evaluations) [pcdata "Function evaluations"] ()];
+
         ] >>= fun ul_opt ->
         let header = [
           h1 [pcdata "Gencore Home"];
@@ -605,6 +703,9 @@ let () =
 
       Services.(register flowcell)
         Flowcell_service.(make hitscore_configuration);
+
+      Services.(register evaluations) 
+        Evaluations_service.(make ~configuration:hitscore_configuration);
 
       Services.(register login) (Login_service.make
                                    ~configuration:hitscore_configuration ());

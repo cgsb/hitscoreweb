@@ -58,6 +58,13 @@ let default ?(title) content =
       ksprintf pcdata "There is no flowcell with that serial name: ";
       code [pcdata name];
       pcdata "."])
+  | Error (`sample_sheet_kind_not_found i) ->
+    Lwt.return (error_page [
+      pcdataf "Cannot find this sample-sheet: %ld." i])
+  | Error (`sample_sheet_kind_of_string s) ->
+    Lwt.return (error_page [
+      pcdataf "Could not transform %S to a sample-sheet kind." s;
+    ])
   | Error (`layout_inconsistency (place, problem)) ->
     let place_presentation =
       let r = pcdata "the record " in
@@ -71,6 +78,7 @@ let default ?(title) content =
       | `record_lane          -> [ r; code [pcdata "record_lane"          ]]
       | `record_hiseq_raw     -> [ r; code [pcdata "record_hiseq_raw"     ]]
       | `record_custom_barcode -> [ r; code [pcdata "record_custom_barcode"]]
+      | `function_bcl_to_fastq -> [ r; code [pcdata "function_bcl_to_fastq"]]
     in
     let error_message =
       match problem with

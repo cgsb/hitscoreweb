@@ -5,6 +5,7 @@ module Services = Hitscoreweb_services
 
 type capability = [
 | `view of [`all 
+           | `all_evaluations
            | `all_flowcells
            | `persons
            | `libraries
