@@ -82,9 +82,9 @@ let default ?(title) content =
     in
     let error_message =
       match problem with
-      | `select_did_not_return_one_cache (s, i) ->
+      | `select_did_not_return_one_tuple (s, i) ->
         [code [ksprintf pcdata
-                  "(select_did_not_return_one_cache %s %d)" s i]]
+                  "(select_did_not_return_one_tuple %s %d)" s i]]
       | `more_than_one_person_with_that_email ->
         [pcdata "There is (are?) more than one person with that email address."]
       | `more_than_one_flowcell_called s ->

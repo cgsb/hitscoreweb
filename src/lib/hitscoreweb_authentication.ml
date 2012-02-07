@@ -9,7 +9,7 @@ type capability = [
            | `all_flowcells
            | `persons
            | `libraries
-           | `libraries_of of Layout.Record_person.t list
+           | `libraries_of of Layout.Record_person.pointer list
            | `full_persons
            | `full_flowcell]
 ]
@@ -36,7 +36,7 @@ let roles_allow ?person roles cap =
 
 type user_logged = {
   id: string;
-  person: Layout.Record_person.t option;
+  person: Layout.Record_person.pointer option;
   roles: Layout.Enumeration_role.t list;
 }
     
@@ -47,9 +47,10 @@ type authentication_state = [
 | `wrong_pam of [ `pam_exn of exn]
 | `error of [ 
   | `layout_inconsistency of
-      [ `record_person ] * [ `select_did_not_return_one_cache of string * int ]
+      [ `record_person ] * [ `select_did_not_return_one_tuple of string * int ]
   | `pg_exn of exn
-  | `too_many_persons_with_same_login of Layout.Record_person.t Core.Std.List.t ]
+  | `too_many_persons_with_same_login of 
+      Layout.Record_person.pointer Core.Std.List.t ]
 ]
 
 let authentication_history =
@@ -86,8 +87,7 @@ let validate_user  ~configuration u =  (* TODO *)
     | more -> error (`too_many_persons_with_same_login more))
     >>= fun found ->
     Layout.Record_person.(
-      cache_value ~dbh found >>| get_fields
-      >>= fun {email; roles; _ } ->
+      get ~dbh found >>= fun {email; roles; _ } ->
       Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
       return (email, Array.to_list roles))
     >>= fun (id, roles) ->
@@ -123,8 +123,8 @@ let display_state () =
     | `error e -> 
       begin match e with
       | `layout_inconsistency (`record_person, 
-                               `select_did_not_return_one_cache (s, i)) ->
-        pcdataf "ERROR: LI: More than one cache: %s, %d" s i
+                               `select_did_not_return_one_tuple (s, i)) ->
+        pcdataf "ERROR: LI: More than one tuple: %s, %d" s i
       | `pg_exn e ->
         pcdataf "ERROR: PG: %s" (Exn.to_string e)
       | `too_many_persons_with_same_login tl ->
@@ -162,7 +162,7 @@ let pam_auth ~configuration ?(service = "") ~user ~password () =
     | `email_no_allowed s
     | `login_not_found s -> set_state (`insufficient_credentials s)
     | `layout_inconsistency (`record_person,
-                             `select_did_not_return_one_cache (_, _)) 
+                             `select_did_not_return_one_tuple (_, _)) 
     | `pg_exn _ 
     | `too_many_persons_with_same_login _ as e -> set_state (`error e)
     )

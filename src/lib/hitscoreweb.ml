@@ -63,13 +63,12 @@ module Flowcells_service = struct
       get_all ~dbh
       >>= fun flowcells ->
       of_list_sequential flowcells ~f:(fun f ->
-        cache_value ~dbh f >>| get_fields
-        >>= fun {serial_name; lanes} ->
+        get ~dbh f >>= fun {serial_name; lanes} ->
         Layout.Search.record_hiseq_raw_by_flowcell_name ~dbh serial_name
         >>= fun dirs ->
         of_list_sequential dirs ~f:(fun d ->
           Layout.Record_hiseq_raw.(
-            cache_value ~dbh d >>| get_fields
+            get ~dbh d
             >>= fun {read_length_1; read_length_index; read_length_2; 
                      run_date; host; hiseq_dir_name} ->
             return (li [
@@ -115,7 +114,7 @@ end
 module Persons_service = struct
   let person_essentials dbh person_t =
     Layout.Record_person.(
-      cache_value ~dbh person_t >>| get_fields
+      get ~dbh person_t
       >>= fun { given_name; family_name; email; _ } ->
       return (given_name, family_name, email))
 
@@ -133,7 +132,7 @@ module Persons_service = struct
       get_all ~dbh >>= fun plist ->
       let rows_m =
         of_list_sequential plist (fun p ->
-          cache_value ~dbh p >>| get_fields
+          get ~dbh p
           >>= fun {print_name; given_name; middle_name; family_name;
   	           email; secondary_emails; roles; login; nickname; note;} ->
           let opt f m = Option.value_map ~f ~default:(f "") m in
@@ -218,12 +217,11 @@ module Flowcell_service = struct
       let lanes =
         let lane = ref 0 in
         Layout.Record_flowcell.(
-          cache_value ~dbh one >>| get_fields
-          >>= fun {serial_name; lanes} ->
+          get ~dbh one >>= fun {serial_name; lanes} ->
           of_list_sequential (Array.to_list lanes) (fun lane_t ->
             incr lane;
             Layout.Record_lane.(
-              cache_value ~dbh lane_t >>| get_fields
+              get ~dbh lane_t
               >>= fun {
   	        seeding_concentration_pM ;
   	        total_volume ;
@@ -239,10 +237,10 @@ module Flowcell_service = struct
                 (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
                 (fun (i, ilibt) ->
                   Layout.Record_input_library.(
-                    cache_value ~dbh ilibt >>| get_fields
+                    get ~dbh ilibt
                     >>= fun { library; _ } ->
                     Layout.Record_stock_library.(
-                      cache_value ~dbh library >>| get_fields
+                      get ~dbh library
                       >>= fun { name; project; _ } ->
                       return (name, project))))
               >>= fun libs ->
@@ -409,7 +407,7 @@ module Libraries_service = struct
               let l = Array.to_list a in
               Layout.Record_custom_barcode.(
                 of_list_sequential l (fun id ->
-                  cache_value ~dbh {id} >>| get_fields
+                  get ~dbh {id}
                   >>= fun {position_in_r1; position_in_r2; 
                            position_in_index; sequence} ->
                   return [ br ();
@@ -509,29 +507,25 @@ module Evaluations_service = struct
     let module S = Layout.Record_sample_sheet in
     if List.length b2fs > 0 then (
       of_list_sequential b2fs ~f:(fun b2f ->
-        B2F.cache_evaluation ~dbh b2f >>| B2F.get_arguments
-        >>= function
-        | Ok {B2F.raw_data; availability; mismatch; version;
-  	      tiles; sample_sheet; } ->
-          HSR.cache_value ~dbh raw_data >>| HSR.get_fields
-          >>= fun { HSR.flowcell_name; _ } ->
-          Queries.sample_sheet_kind ~dbh sample_sheet
-          >>= fun kind ->
-          let fc_link = 
-            Services.(link flowcell) [pcdata flowcell_name] (flowcell_name) in
-          return [
-            `text [fc_link];
-            `text [pcdataf "%ld" mismatch];
-            `text [pcdataf "%s" version];
-            `text [codef "%s" (Option.value ~default:"" tiles)];
-            `text [pcdata
-                      (match kind with
-                      | `all_barcodes -> "All barcodes"
-                      | `specific_barcodes -> "Specific barcodes")]
-          ]
-        | Error exn -> error (`io_exn exn)
-      )
-       >>= fun rows ->
+        B2F.get ~dbh b2f
+        >>= fun {B2F.raw_data; availability; mismatch; version;
+  	         tiles; sample_sheet; } ->
+        HSR.get ~dbh raw_data
+        >>= fun { HSR.flowcell_name; _ } ->
+        Queries.sample_sheet_kind ~dbh sample_sheet
+        >>= fun kind ->
+        let fc_link = 
+          Services.(link flowcell) [pcdata flowcell_name] (flowcell_name) in
+        return [
+          `text [fc_link];
+          `text [pcdataf "%ld" mismatch];
+          `text [pcdataf "%s" version];
+          `text [codef "%s" (Option.value ~default:"" tiles)];
+          `text [pcdata
+                    (match kind with
+                    | `all_barcodes -> "All barcodes"
+                    | `specific_barcodes -> "Specific barcodes")]])
+      >>= fun rows ->
       return Template.Display_service.(
         let tab = 
           content_table (
