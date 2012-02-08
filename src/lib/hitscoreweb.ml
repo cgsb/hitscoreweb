@@ -500,11 +500,11 @@ end
 module Evaluations_service = struct
 
 
-  let bcl_to_fastq_section ~dbh name b2fs = 
+  let bcl_to_fastq_section ~dbh ~configuration name b2fs = 
     let open Html5 in
     let module B2F = Layout.Function_bcl_to_fastq in
     let module HSR = Layout.Record_hiseq_raw in
-    let module S = Layout.Record_sample_sheet in
+    let module FS = Layout.File_system in
     if List.length b2fs > 0 then (
       of_list_sequential b2fs ~f:(fun b2f ->
         B2F.get ~dbh b2f
@@ -514,6 +514,15 @@ module Evaluations_service = struct
         >>= fun { HSR.flowcell_name; _ } ->
         Queries.sample_sheet_kind ~dbh sample_sheet
         >>= fun kind ->
+        Layout.Record_sample_sheet.(
+          get ~dbh sample_sheet >>= fun {file; _} ->
+          FS.get_volume ~dbh file >>= fun vol ->
+          IO.return (FS.volume_trees vol) >>= fun vol_trees ->
+          return (FS.trees_to_unix_paths vol_trees) >>= function
+          | [ csv ] ->
+            return FS.(entry_unix_path vol.volume_entry, csv)
+          | _ -> error (`sample_sheet_should_a_lonely_file sample_sheet))
+        >>= fun (vol_path, csv_path) -> 
         let fc_link = 
           Services.(link flowcell) [pcdata flowcell_name] (flowcell_name) in
         return [
@@ -524,7 +533,18 @@ module Evaluations_service = struct
           `text [pcdata
                     (match kind with
                     | `all_barcodes -> "All barcodes"
-                    | `specific_barcodes -> "Specific barcodes")]])
+                    | `specific_barcodes -> "Specific barcodes");
+                 small [
+                   pcdata " (";
+                   a ~a:[ 
+                     ksprintf a_href "file://%s/%s/%s"
+                       (Option.value ~default:"$HSROOT" 
+                          (Configuration.volumes_directory configuration))
+                       vol_path csv_path] [pcdata "file"];
+                   pcdata ")"
+                 ];
+                ]
+        ])
       >>= fun rows ->
       return Template.Display_service.(
         let tab = 
@@ -546,16 +566,16 @@ module Evaluations_service = struct
     >>= fun dbh ->
     (* Bcl_to_fastqs *)
     Layout.Function_bcl_to_fastq.get_all_inserted ~dbh
-    >>= bcl_to_fastq_section ~dbh "Inserted"
+    >>= bcl_to_fastq_section ~dbh ~configuration "Inserted"
     >>= fun inserted_b2fs ->
     Layout.Function_bcl_to_fastq.get_all_started ~dbh
-    >>= bcl_to_fastq_section ~dbh "Started"
+    >>= bcl_to_fastq_section ~dbh ~configuration "Started"
     >>= fun started_b2fs ->
     Layout.Function_bcl_to_fastq.get_all_failed ~dbh
-    >>= bcl_to_fastq_section ~dbh "Failed"
+    >>= bcl_to_fastq_section ~dbh ~configuration "Failed"
     >>= fun failed_b2fs ->
     Layout.Function_bcl_to_fastq.get_all_succeeded ~dbh
-    >>= bcl_to_fastq_section ~dbh "Succeeded"
+    >>= bcl_to_fastq_section ~dbh ~configuration "Succeeded"
     >>= fun succeeded_b2fs ->
 
     return Template.Display_service.(

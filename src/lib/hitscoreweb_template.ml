@@ -61,6 +61,20 @@ let default ?(title) content =
   | Error (`sample_sheet_kind_not_found i) ->
     Lwt.return (error_page [
       pcdataf "Cannot find this sample-sheet: %ld." i])
+  | Error (`sample_sheet_should_a_lonely_file p) ->
+    Lwt.return (error_page [
+      pcdataf "This sample-sheet should be lonely in its volume: %ld."
+        p.Layout.Record_sample_sheet.id
+    ])
+  | Error (`cannot_recognize_file_type s) ->
+    Lwt.return (error_page [
+      pcdataf "The file-system is in a bad state, cannot recognize this \
+              file-type: %s." s
+    ])
+  | Error (`inconsistency_inode_not_found inode) ->
+    Lwt.return (error_page [
+      pcdataf "The file-system is in a bad state, cannot find file: %ld." inode
+    ])
   | Error (`sample_sheet_kind_of_string s) ->
     Lwt.return (error_page [
       pcdataf "Could not transform %S to a sample-sheet kind." s;
@@ -78,6 +92,8 @@ let default ?(title) content =
       | `record_lane          -> [ r; code [pcdata "record_lane"          ]]
       | `record_hiseq_raw     -> [ r; code [pcdata "record_hiseq_raw"     ]]
       | `record_custom_barcode -> [ r; code [pcdata "record_custom_barcode"]]
+      | `record_sample_sheet ->   [ r; code [pcdata "record_sample_sheet"]]
+      | `file_system ->   [ r; code [pcdata "file_system"]]
       | `function_bcl_to_fastq -> [ r; code [pcdata "function_bcl_to_fastq"]]
     in
     let error_message =

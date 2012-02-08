@@ -22,6 +22,7 @@ end
 module Hitscore_lwt = Hitscore.Make(Lwt_config)
 module Layout = Hitscore_lwt.Layout
 module PGOCaml = Layout.PGOCaml
+module Configuration = Hitscore_lwt.Configuration
 
 include Hitscore_lwt.Result_IO
 
