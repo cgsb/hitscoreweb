@@ -660,7 +660,7 @@ let () =
         let pgdb = ref None in
         let pguser = ref None in
         let pgpass = ref None in
-
+        let rodi = ref None in
         let open Simplexmlparser in
         let rec go_through = function
           | Element ("pghost", [], [PCData h]) -> pghost := Some h
@@ -668,6 +668,7 @@ let () =
           | Element ("pgdb", [], [PCData d]) -> pgdb := Some d
           | Element ("pguser", [], [PCData u]) -> pguser := Some u
           | Element ("pgpass", [], [PCData p]) -> pgpass := Some p
+          | Element ("root-directory", [], [PCData p]) -> rodi := Some p
           | Element (tag, atts, inside) ->
             Ocsigen_messages.console (fun () ->
               sprintf "Unknown Config XML Tag: %s\n" tag);
@@ -682,7 +683,8 @@ let () =
                     ~host ~port ~database ~username ~password)
           | _ -> None
         in
-        Hitscore_lwt.Configuration.configure ?db_configuration () in
+        Hitscore_lwt.Configuration.configure
+          ?root_directory:!rodi ?db_configuration () in
 
       Services.(register default) (Default_service.make hitscore_configuration);
       Services.(register home) (Default_service.make hitscore_configuration);

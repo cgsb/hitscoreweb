@@ -132,11 +132,13 @@ let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
     db_username c >>= fun user ->
     db_password c >>= fun pswd ->
     db_database c >>= fun dbnm ->
+    root_directory c >>= fun rodi ->
     ksprintf output_string "  <pghost>%s</pghost>\n" host;
     ksprintf output_string "  <pgport>%d</pgport>\n" port;
     ksprintf output_string "  <pgdb>%s</pgdb>\n" dbnm;
     ksprintf output_string "  <pguser>%s</pguser>\n" user;
     ksprintf output_string "  <pgpass>%s</pgpass>\n" pswd;
+    ksprintf output_string "  <root-directory>%s</root-directory>\n" rodi;
     return None)) |! Pervasives.ignore;
   ksprintf output_string "</eliom>\n";
   ksprintf output_string "</host>\n";
