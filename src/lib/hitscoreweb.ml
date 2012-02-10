@@ -356,7 +356,7 @@ module Libraries_service = struct
         let people = 
           submissions |! List.map ~f:(fun (_,_,ids) -> Array.to_list ids)
           |! List.flatten
-          |! List.map ~f:(fun id -> {Layout.Record_person.id})
+          |! List.map ~f:(fun id -> Layout.Record_person.unsafe_cast id)
         in
         Authentication.authorizes (`view (`libraries_of people))
         >>= function
@@ -407,7 +407,7 @@ module Libraries_service = struct
               let l = Array.to_list a in
               Layout.Record_custom_barcode.(
                 of_list_sequential l (fun id ->
-                  get ~dbh {id}
+                  get ~dbh (unsafe_cast id)
                   >>= fun {position_in_r1; position_in_r2; 
                            position_in_index; sequence} ->
                   return [ br ();
