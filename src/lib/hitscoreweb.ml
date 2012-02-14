@@ -640,30 +640,6 @@ module Layout_service = struct
       | Volume (name, toplevel) ->     prefix = "volume"   && suffix = name
       )
 
-
-  let _dump =
-    Eliom_references.eref 
-      ~scope:Eliom_common.session (None: Sexplib.Sexp.t option)
-      
-  let dump dbh =
-    let on_exn e = `io_exn e in
-    wrap_io ~on_exn Eliom_references.get _dump
-    >>= function
-    | Some d -> return d
-    | None -> 
-      Layout.(get_dump ~dbh >>| sexp_of_dump)
-      >>= fun sexp (* a.k.a. the generic interface *) ->
-      wrap_io ~on_exn (Eliom_references.set _dump) (Some sexp)
-      >>= fun () -> 
-      return sexp
-
-  let rec find_in_sexp name = 
-    let open Sexplib.Sexp in
-    function
-    | List (Atom n :: contents) when n = name -> Some contents
-    | List l -> List.find_map l (find_in_sexp name)
-    | Atom n -> None
-
   let typed_values_in_table l =
     let open Html5 in
     List.map l (fun (n, t) ->
@@ -671,26 +647,30 @@ module Layout_service = struct
         b [codef "%s" n]; codef ": "; 
         i [codef "%s" (LDSL.string_of_dsl_type t)]]) 
 
-  let sexp_to_table sexps =
-    let open Sexplib.Sexp in
+  let get_all_generic dbh name =
+    let module PG = Layout.PGOCaml in
+    let sanitized_name =
+      String.map name (function
+      | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' as c -> c
+      | _ -> '_') in
+    let query = sprintf  "select * from %s" sanitized_name in
+    wrap_io (PG.prepare ~name ~query dbh) ()
+    >>= fun () ->
+    wrap_io (PG.execute ~name ~params:[] dbh) ()
+    >>= fun result ->
+    wrap_io (PG.close_statement dbh ~name) ()
+    >>= fun () ->
+    return result
+
+  let generic_to_table r =
     let open Html5 in
-    let f = function
-      | List (Atom n :: contents) -> 
-        `text [to_string_hum (List contents) |! pcdataf "%s"]
-      | List l -> `head [to_string_hum (List l) |! pcdataf "WRONG SEXP: %s"]
-      | Atom n -> `head [pcdataf "ATOM: %s" n] 
-    in
-    match sexps with
-    | [ List sexps] ->
-      List.map sexps ~f:(function List l ->
-        List.map l ~f | Atom n -> [])
-    | _ -> []
+    List.map r ~f:(List.map ~f:(Option.value_map ~default:(`text [pcdataf ""])
+                                  ~f:(fun s -> `text [pcdataf "%s" s])))
+
 
   let layout ~configuration ~main_title ~elements =
     let content =
       Hitscore_lwt.db_connect configuration >>= fun dbh ->
-
-      dump dbh >>= fun sexp ->
 
       LDSL.(
         read_file "../hitscore/data/hitscore_layout" >>| parse_str
@@ -699,40 +679,47 @@ module Layout_service = struct
                                     |! interleave_list ~sep:(pcdata ", "))))
       >>= fun (layout, nodes) ->
 
-      let displayed_nodes =
-        Template.Display_service.(Html5.(
-          let open LDSL in
-          let todo = paragraph [pcdata "TODO"] in
-          List.map elements (fun elt ->
-            match find_node layout elt with
-            | Some s -> 
-              begin match s with
-              | Enumeration (name, values) ->
-                content_section (span [pcdata "Enumeration "; codef "%s" name])
-                  (paragraph 
-                     (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
-              | Record (name, typed_values) ->
-                let local_sexp = find_in_sexp elt sexp in
-                content_section (span [pcdata "Record "; codef "%s" name])
-                  (content_table
-                     (typed_values_in_table (record_standard_fields @ typed_values)
-                      :: (Option.value_map ~default:[] ~f:sexp_to_table local_sexp)))
+
+      Template.Display_service.(Html5.(
+        let open LDSL in
+        let todo = paragraph [pcdata "TODO"] in
+        of_list_sequential elements ~f:(fun elt ->
+          match find_node layout elt with
+          | Some s -> 
+            begin match s with
+            | Enumeration (name, values) ->
+              content_section (span [pcdata "Enumeration "; codef "%s" name])
+                (paragraph 
+                   (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
+              |! return
+            | Record (name, typed_values) ->
+              get_all_generic dbh name >>| generic_to_table 
+              >>= fun table ->
+              return (content_section (span [pcdata "Record "; codef "%s" name])
+                        (content_table
+                           (typed_values_in_table
+                              (record_standard_fields @ typed_values)
+                            :: table)))
               | Function (name, args, res)  -> 
-                let local_sexp = find_in_sexp elt sexp in
-                content_section (span [pcdata "Function "; codef "%s" name])
-                  (content_table
-                     (typed_values_in_table 
-                        (function_standard_fields res @ args)
-                      :: (Option.value_map ~default:[] ~f:sexp_to_table local_sexp)))
+                get_all_generic dbh name >>| generic_to_table 
+                >>= fun table ->
+                return (
+                  content_section (span [pcdata "Function "; codef "%s" name])
+                    (content_table
+                       (typed_values_in_table 
+                          (function_standard_fields res @ args)
+                        :: table)))
               | Volume (name, toplevel) ->     
-                content_section (span [pcdata "Volume "; codef "%s" name])
-                  todo
+                return (
+                  content_section (span [pcdata "Volume "; codef "%s" name])
+                    todo)
               end
             | None -> 
-                content_section (span [pcdata "Element "; codef "%s" elt])
-                  (paragraph [pcdataf "The element %S was not found" elt])
-          ))) in
-
+                return (
+                  content_section (span [pcdata "Element "; codef "%s" elt])
+                    (paragraph [pcdataf "The element %S was not found" elt]))
+        )))
+      >>= fun displayed_nodes ->
       Hitscore_lwt.db_disconnect configuration dbh >>= fun () -> 
       return Template.Display_service.(
         let open Html5 in
