@@ -624,9 +624,18 @@ module Layout_service = struct
     | Function (name, args, res)  -> "function_" ^ name
     | Volume (name, toplevel) ->     "volume_" ^ name
 
+  let self_link = function
+    | `default ->
+      fun html -> Services.(link layout) [html] ("view", ([], [])) 
+    | `view_one_type t ->
+      fun html -> Services.(link layout) [html] ("view", ([t], [])) 
+    | `view_one_value (t, n) ->
+      fun html -> Services.(link layout) [html] ("view", ([t], [n])) 
+
+
   let node_link n = 
     let name = node_name n in
-    Services.(link layout) [Html5.(codef "%s" name)] ([name], []) 
+    self_link (`view_one_type name) Html5.(codef "%s" name)
 
   let find_node dsl nodename =
     let open LDSL in
@@ -681,8 +690,7 @@ module Layout_service = struct
       let open LDSL in
       let text s = `text [pcdataf "%s" s] in
       let link s t =
-        `text [
-          Services.(link layout) [pcdataf "%s" s] ([t], [Int.of_string s])
+        `text [self_link (`view_one_value (t, Int.of_string s)) (pcdataf "%s" s)
         ] in
       function
       | Bool 
@@ -698,7 +706,7 @@ module Layout_service = struct
         let ids = Array.to_list (Layout.PGOCaml.int32_array_of_string s)
                   |! List.map ~f:Int32.to_int_exn in
         `text (List.map ids (fun i -> 
-          Services.(link layout) [pcdataf "%d" i] ([(sprintf "record_%s" r)], [i]))
+          self_link (`view_one_value (sprintf "record_%s" r, i)) (pcdataf "%d" i))
           |! interleave_list ~sep:(pcdata ", "))
       | Array a -> text s
       | Record_name r -> link s (sprintf "record_%s" r)
@@ -724,7 +732,7 @@ module Layout_service = struct
                                      ~f:(fun s -> `text [pcdataf "%s" s])))
 
 
-  let layout ~configuration ~main_title ~types ~values =
+  let view_layout ~configuration ~main_title ~types ~values =
     let content =
       Hitscore_lwt.db_connect configuration >>= fun dbh ->
 
@@ -792,19 +800,133 @@ module Layout_service = struct
     Template.Display_service.make_content ~hsc:configuration
       ~main_title content 
 
+  let raw_update ~configuration ~table ~g_id ~fields =
+    let module PG = Layout.PGOCaml in
+    let query =
+      sprintf "UPDATE %s SET %s WHERE g_id = %d" table
+        (List.map fields (fun (n,_,v) -> 
+          sprintf "%s = %s" n 
+            (Option.value_map ~default:"NULL" ~f:(sprintf "'%s'") v))
+         |! String.concat ~sep:", ")
+        g_id
+    in
+    let name = "todo_change_this" in
+    eprintf "QUERY: %s\n" query;
+    Hitscore_lwt.db_connect configuration >>= fun dbh ->
+    wrap_io (PG.prepare ~name ~query dbh) ()
+    >>= fun () ->
+    wrap_io (PG.execute ~name ~params:[] dbh) ()
+    >>= fun result ->
+    wrap_io (PG.close_statement dbh ~name) ()
+    >>= fun () ->
+    Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
+    return result
+
+  let edit_layout ~configuration ~main_title ~types ~values =
+    match types, values with
+    | _, [] | [], _ ->
+      error (`nothing_to_edit (types, values))
+    | [one_type], [one_value] -> 
+      begin match find_node (Layout.Meta.layout ()) one_type with
+      | Some (LDSL.Record (name, typed_values)) ->
+        let all_typed =  (LDSL.record_standard_fields @ typed_values) in
+        Hitscore_lwt.db_connect configuration
+        >>= fun dbh ->
+        get_all_generic ~only:[one_value] dbh name
+        >>= (function
+        | [one_row] -> 
+          begin 
+            try
+              List.map2_exn one_row all_typed (fun v (n,t) -> (n,t,v))
+              |! return
+            with
+              e -> error (`wrong_layout_typing name)
+          end
+        | not_one_row -> error (`did_not_get_one_row (name, not_one_row)))
+        >>= fun currrent_typed_values ->
+        let my_service_with_post_params =
+          Eliom_output.Redirection.register_post_coservice
+            ~fallback:Services.(default ())
+            ~post_params:Eliom_parameters.(list "field" (string "str"))
+            (fun () fields ->
+              let fields, g_id =
+                let g_id = ref "" in
+                try
+                  let n =
+                    List.map2_exn currrent_typed_values fields (fun (n,t,v1) v2 ->
+                  eprintf "replacing with value: %S\n%!" v2;
+                  let v = match v2 with "" -> None | s -> Some s in
+                  if n = "g_id" then (
+                    g_id := Option.value_exn v1; None
+                  ) else 
+                    Some (n,t,v))
+                  |! List.filter_opt in
+                  (n, Int.of_string !g_id)
+                with 
+                  e ->  failwithf "NLKDSANFDLKSNF lfdskf" ()
+              in
+              Lwt.bind (raw_update ~configuration ~table:name ~fields ~g_id)
+                (fun _ ->
+                  Lwt.return (Eliom_services.preapply  
+                                Services.(layout ())  ("view", (types, values)))))
+        in
+        let form2 = 
+          Eliom_output.Html5.(
+            post_form 
+              ~service:my_service_with_post_params
+              Html5.(fun values ->
+                let f name (n, t, value) next =
+                  let msg = 
+                    sprintf "Write the %s (%s)" n (LDSL.string_of_dsl_type t) in
+                  begin match t with
+                  | LDSL.Identifier ->
+                    [pcdataf "Don't mess up with identifiers\n";
+                     string_input ~input_type:`Hidden ?value ~name ();
+                     br ();
+                    ]
+                  | _ ->
+                    [pcdata msg;
+                     string_input ~input_type:`Text ~name ?value ();
+                     br ()]
+                  end @ next
+                in
+                let submit =
+                  Eliom_output.Html5.string_input ~input_type:`Submit
+                    ~value:"Go" () in
+                [p 
+                    (values.Eliom_parameters.it f currrent_typed_values [submit])
+                ])
+              ())
+        in
+        Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
+        return [form2]
+      | _ -> error (`not_implemented "editing anything else than records")
+      end
+    | _, _ -> error (`not_implemented "editing more than one 'thing'")
 
   let make ~configuration =
     let hsc = configuration in
-    (fun (types, values) () ->
+    (fun (action, (types, values)) () ->
       let main_title = "The Layout Navigaditor" in
-      Template.default ~title:main_title
-        (Authentication.authorizes (`view `layout)
-         >>= function
-         | true -> layout ~configuration ~main_title ~types ~values
-         | false ->
-           Template.Authentication_error.make_content ~hsc ~main_title
-             (return [Html5.pcdataf 
-                         "You may not view the function evaluations."])))
+      match action with
+      | "view" ->
+        Template.default ~title:main_title
+          (Authentication.authorizes (`view `layout)
+           >>= function
+           | true -> view_layout ~configuration ~main_title ~types ~values
+           | false ->
+             Template.Authentication_error.make_content ~hsc ~main_title
+               (return [Html5.pcdataf "You may not view the whole Layout."]))
+      | "edit" ->
+        Template.default ~title:main_title
+          (Authentication.authorizes (`edit `layout)
+           >>= function
+           | true -> edit_layout ~configuration ~main_title ~types ~values
+           | false ->
+             Template.Authentication_error.make_content ~hsc ~main_title
+               (return [Html5.pcdataf "You may not edit the Layout."]))
+      | s ->
+        Template.default ~title:main_title (error (`unknown_layout_action s)))
       
 end
 
@@ -832,7 +954,7 @@ module Default_service = struct
           potential_li (`view `all_evaluations)
             [Services.(link evaluations) [pcdata "Function evaluations"] ()];
           potential_li (`view `layout)
-            [Services.(link layout) [pcdata "Layout Navigaditor"] ([], [])];
+            [Layout_service.self_link (`default) (pcdata "Layout Navigaditor")]
 
         ] >>= fun ul_opt ->
         let header = [

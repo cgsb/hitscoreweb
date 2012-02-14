@@ -13,10 +13,16 @@ type capability = [
            | `libraries_of of Layout.Record_person.pointer list
            | `full_persons
            | `full_flowcell]
+| `edit of [`layout]
 ]
 
 let roles_allow ?person roles cap =
   match cap with
+  | `edit something ->
+    if List.exists roles (fun c -> c = `administrator) then
+      true
+    else
+      false
   | `view something ->
     if List.exists roles (fun c -> c = `auditor || c = `administrator) then
       true

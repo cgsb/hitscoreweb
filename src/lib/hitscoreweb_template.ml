@@ -79,6 +79,27 @@ let default ?(title) content =
     Lwt.return (error_page [
       pcdataf "Could not transform %S to a sample-sheet kind." s;
     ])
+  | Error (`nothing_to_edit (types, values)) ->
+    Lwt.return (error_page [
+      pcdataf "There is nothing to edit.";
+    ])
+  | Error (`not_implemented action) ->
+    Lwt.return (error_page [
+      pcdataf "The action %S is not implemented … yet." action;
+    ])
+  | Error (`unknown_layout_action s) ->
+    Lwt.return (error_page [
+      pcdataf "Cannot understand this action: %S." s;
+    ])
+  | Error (`did_not_get_one_row (name, not_one_row)) ->
+    Lwt.return (error_page [
+      pcdataf "Getting a value did not return right: %s (%d rows)." 
+        name (List.length not_one_row);
+    ])
+  | Error (`wrong_layout_typing name) ->
+    Lwt.return (error_page [
+      pcdataf "The record %S is not well typed w.r.t the official Layout." name;
+    ])
   | Error (`layout_inconsistency (place, problem)) ->
     let place_presentation =
       let r = pcdata "the record " in
