@@ -626,7 +626,7 @@ module Layout_service = struct
 
   let node_link n = 
     let name = node_name n in
-    Services.(link layout) [Html5.(codef "%s" name)] [name] 
+    Services.(link layout) [Html5.(codef "%s" name)] ([name], []) 
 
   let find_node dsl nodename =
     let open LDSL in
@@ -644,16 +644,23 @@ module Layout_service = struct
     let open Html5 in
     List.map l (fun (n, t) ->
       `head [
-        b [codef "%s" n]; codef ": "; 
+        b [codef "%s" n]; codef ": "; br ();
         i [codef "%s" (LDSL.string_of_dsl_type t)]]) 
 
-  let get_all_generic dbh name =
+  let get_all_generic ?(only=[]) dbh name =
     let module PG = Layout.PGOCaml in
     let sanitized_name =
       String.map name (function
       | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' as c -> c
       | _ -> '_') in
-    let query = sprintf  "select * from %s" sanitized_name in
+    let query =
+      let where = 
+        match only with
+        | [] -> ""
+        | l -> sprintf " where %s"
+          (List.map l (sprintf "g_id = %d") |! String.concat ~sep:" or ") 
+      in
+      sprintf  "select * from %s%s" sanitized_name where in
     wrap_io (PG.prepare ~name ~query dbh) ()
     >>= fun () ->
     wrap_io (PG.execute ~name ~params:[] dbh) ()
@@ -662,13 +669,49 @@ module Layout_service = struct
     >>= fun () ->
     return result
 
-  let generic_to_table r =
+  let generic_to_table type_info r =
     let open Html5 in
-    List.map r ~f:(List.map ~f:(Option.value_map ~default:(`text [pcdataf ""])
-                                  ~f:(fun s -> `text [pcdataf "%s" s])))
+    let rec display_typed s =
+      let open LDSL in
+      let text s = `text [pcdataf "%s" s] in
+      let link s t =
+        `text [
+          Services.(link layout) [pcdataf "%s" s] ([t], [Int.of_string s])
+        ] in
+      function
+      | Bool 
+      | Int
+      | Real
+      | String -> text s
+      | Timestamp -> 
+        `text [ span ~a:[a_title s]
+                  [pcdata 
+                      (Time.(of_string s |! to_local_date) |! Date.to_string)]]
+      | Option o -> display_typed s o
+      | Array (Record_name r) ->
+        let ids = Array.to_list (Layout.PGOCaml.int32_array_of_string s)
+                  |! List.map ~f:Int32.to_int_exn in
+        `text (List.map ids (fun i -> 
+          Services.(link layout) [pcdataf "%d" i] ([(sprintf "record_%s" r)], [i]))
+          |! interleave_list ~sep:(pcdata ", "))
+      | Array a -> text s
+      | Record_name r -> link s (sprintf "record_%s" r)
+      | Enumeration_name e -> text s
+      | Function_name f -> link s (sprintf "function_%s" f)
+      | Volume_name v -> link s (sprintf "volume_%s" v)
+      | Identifier -> text s
+    in
+    try
+      List.map r ~f:(fun row ->
+        List.map2_exn row type_info
+          ~f:(fun sopt (n, t) ->
+            Option.value_map sopt
+              ~default:(`text [codef "—"])
+              ~f:(fun s -> display_typed s t)))
+    with
+      e -> []
 
-
-  let layout ~configuration ~main_title ~elements =
+  let layout ~configuration ~main_title ~types ~values =
     let content =
       Hitscore_lwt.db_connect configuration >>= fun dbh ->
 
@@ -683,7 +726,7 @@ module Layout_service = struct
       Template.Display_service.(Html5.(
         let open LDSL in
         let todo = paragraph [pcdata "TODO"] in
-        of_list_sequential elements ~f:(fun elt ->
+        of_list_sequential types ~f:(fun elt ->
           match find_node layout elt with
           | Some s -> 
             begin match s with
@@ -693,22 +736,20 @@ module Layout_service = struct
                    (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
               |! return
             | Record (name, typed_values) ->
-              get_all_generic dbh name >>| generic_to_table 
+              let all_typed =  (record_standard_fields @ typed_values) in
+              get_all_generic ~only:values dbh name >>| generic_to_table all_typed 
               >>= fun table ->
               return (content_section (span [pcdata "Record "; codef "%s" name])
                         (content_table
-                           (typed_values_in_table
-                              (record_standard_fields @ typed_values)
-                            :: table)))
-              | Function (name, args, res)  -> 
-                get_all_generic dbh name >>| generic_to_table 
+                           (typed_values_in_table all_typed :: table)))
+              | Function (name, args, res)  ->
+                let all_typed = function_standard_fields res @ args in
+                get_all_generic ~only:values dbh name >>| generic_to_table all_typed
                 >>= fun table ->
                 return (
                   content_section (span [pcdata "Function "; codef "%s" name])
                     (content_table
-                       (typed_values_in_table 
-                          (function_standard_fields res @ args)
-                        :: table)))
+                       (typed_values_in_table all_typed :: table)))
               | Volume (name, toplevel) ->     
                 return (
                   content_section (span [pcdata "Volume "; codef "%s" name])
@@ -737,12 +778,12 @@ module Layout_service = struct
 
   let make ~configuration =
     let hsc = configuration in
-    (fun elements () ->
+    (fun (types, values) () ->
       let main_title = "The Layout Navigaditor" in
       Template.default ~title:main_title
         (Authentication.authorizes (`view `layout)
          >>= function
-         | true -> layout ~configuration ~main_title ~elements
+         | true -> layout ~configuration ~main_title ~types ~values
          | false ->
            Template.Authentication_error.make_content ~hsc ~main_title
              (return [Html5.pcdataf 
@@ -774,7 +815,7 @@ module Default_service = struct
           potential_li (`view `all_evaluations)
             [Services.(link evaluations) [pcdata "Function evaluations"] ()];
           potential_li (`view `layout)
-            [Services.(link layout) [pcdata "Layout Navigaditor"] []];
+            [Services.(link layout) [pcdata "Layout Navigaditor"] ([], [])];
 
         ] >>= fun ul_opt ->
         let header = [
