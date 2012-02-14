@@ -7,6 +7,7 @@ type capability = [
 | `view of [`all 
            | `all_evaluations
            | `all_flowcells
+           | `layout
            | `persons
            | `libraries
            | `libraries_of of Layout.Record_person.pointer list

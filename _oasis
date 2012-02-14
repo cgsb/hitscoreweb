@@ -10,7 +10,7 @@ BuildTools:  ocamlbuild
 Library hitscoreweb
   Path: src/lib
   FindlibName: hitscoreweb
-  BuildDepends: hitscorewebpam, threads, core, hitscore, lwt.syntax,
+  BuildDepends: hitscoregen, hitscorewebpam, threads, core, hitscore, lwt.syntax,
                 pgocaml.syntax, eliom.server
   Install: true
   Modules: Hitscoreweb,

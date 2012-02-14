@@ -1,5 +1,5 @@
 # OASIS_START
-# DO NOT EDIT (digest: d46e7f3853c876deaa68c3e914722cba)
+# DO NOT EDIT (digest: 0eaa8b2d8b6d904f653d956bd122a5ed)
 # Library hitscorewebpam
 "src/simple_pam": include
 <src/simple_pam/hitscorewebpam.{cma,cmxa}>: oasis_library_hitscorewebpam_cclib
@@ -14,6 +14,7 @@
 <src/lib/*.ml{,i}>: pkg_threads
 <src/lib/*.ml{,i}>: pkg_pgocaml.syntax
 <src/lib/*.ml{,i}>: pkg_lwt.syntax
+<src/lib/*.ml{,i}>: pkg_hitscoregen
 <src/lib/*.ml{,i}>: pkg_hitscore
 <src/lib/*.ml{,i}>: pkg_eliom.server
 <src/lib/*.ml{,i}>: pkg_core
@@ -23,6 +24,7 @@
 <src/app/hitscoreweb.{native,byte}>: pkg_threads
 <src/app/hitscoreweb.{native,byte}>: pkg_pgocaml.syntax
 <src/app/hitscoreweb.{native,byte}>: pkg_lwt.syntax
+<src/app/hitscoreweb.{native,byte}>: pkg_hitscoregen
 <src/app/hitscoreweb.{native,byte}>: pkg_hitscore
 <src/app/hitscoreweb.{native,byte}>: pkg_eliom.server
 <src/app/hitscoreweb.{native,byte}>: pkg_core
@@ -31,6 +33,7 @@
 <src/app/*.ml{,i}>: pkg_threads
 <src/app/*.ml{,i}>: pkg_pgocaml.syntax
 <src/app/*.ml{,i}>: pkg_lwt.syntax
+<src/app/*.ml{,i}>: pkg_hitscoregen
 <src/app/*.ml{,i}>: pkg_hitscore
 <src/app/*.ml{,i}>: pkg_eliom.server
 <src/app/*.ml{,i}>: pkg_core

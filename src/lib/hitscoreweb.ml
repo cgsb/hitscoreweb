@@ -608,6 +608,163 @@ module Evaluations_service = struct
 
 end
 
+module Layout_service = struct
+
+  module LDSL = Hitscoregen_layout_dsl
+
+  let read_file file =
+    let io f = Lwt_io.(with_file ~mode:input f read) in
+    wrap_io io file
+    
+  let node_name = 
+    let open LDSL in
+    function
+    | Enumeration (name, values) ->  "enumeration_" ^ name
+    | Record (name, typed_values) -> "record_" ^ name
+    | Function (name, args, res)  -> "function_" ^ name
+    | Volume (name, toplevel) ->     "volume_" ^ name
+
+  let node_link n = 
+    let name = node_name n in
+    Services.(link layout) [Html5.(codef "%s" name)] [name] 
+
+  let find_node dsl nodename =
+    let open LDSL in
+    match String.lsplit2 nodename ~on:'_' with
+    | None -> None
+    | Some (prefix, suffix) ->
+      List.find dsl.nodes (function
+      | Enumeration (name,_) -> prefix = "enumeration" && name = suffix
+      | Record (name, typed_values) -> prefix = "record"   && suffix = name
+      | Function (name, args, res)  -> prefix = "function" && suffix = name
+      | Volume (name, toplevel) ->     prefix = "volume"   && suffix = name
+      )
+
+
+  let _dump =
+    Eliom_references.eref 
+      ~scope:Eliom_common.session (None: Sexplib.Sexp.t option)
+      
+  let dump dbh =
+    let on_exn e = `io_exn e in
+    wrap_io ~on_exn Eliom_references.get _dump
+    >>= function
+    | Some d -> return d
+    | None -> 
+      Layout.(get_dump ~dbh >>| sexp_of_dump)
+      >>= fun sexp (* a.k.a. the generic interface *) ->
+      wrap_io ~on_exn (Eliom_references.set _dump) (Some sexp)
+      >>= fun () -> 
+      return sexp
+
+  let rec find_in_sexp name = 
+    let open Sexplib.Sexp in
+    function
+    | List (Atom n :: contents) when n = name -> Some contents
+    | List l -> List.find_map l (find_in_sexp name)
+    | Atom n -> None
+
+  let typed_values_in_table l =
+    let open Html5 in
+    List.map l (fun (n, t) ->
+      `head [
+        b [codef "%s" n]; codef ": "; 
+        i [codef "%s" (LDSL.string_of_dsl_type t)]]) 
+
+  let sexp_to_table sexps =
+    let open Sexplib.Sexp in
+    let open Html5 in
+    let f = function
+      | List (Atom n :: contents) -> 
+        `text [to_string_hum (List contents) |! pcdataf "%s"]
+      | List l -> `head [to_string_hum (List l) |! pcdataf "WRONG SEXP: %s"]
+      | Atom n -> `head [pcdataf "ATOM: %s" n] 
+    in
+    match sexps with
+    | [ List sexps] ->
+      List.map sexps ~f:(function List l ->
+        List.map l ~f | Atom n -> [])
+    | _ -> []
+
+  let layout ~configuration ~main_title ~elements =
+    let content =
+      Hitscore_lwt.db_connect configuration >>= fun dbh ->
+
+      dump dbh >>= fun sexp ->
+
+      LDSL.(
+        read_file "../hitscore/data/hitscore_layout" >>| parse_str
+        >>= fun layout ->
+        return Html5.(layout, span (List.map layout.nodes node_link
+                                    |! interleave_list ~sep:(pcdata ", "))))
+      >>= fun (layout, nodes) ->
+
+      let displayed_nodes =
+        Template.Display_service.(Html5.(
+          let open LDSL in
+          let todo = paragraph [pcdata "TODO"] in
+          List.map elements (fun elt ->
+            match find_node layout elt with
+            | Some s -> 
+              begin match s with
+              | Enumeration (name, values) ->
+                content_section (span [pcdata "Enumeration "; codef "%s" name])
+                  (paragraph 
+                     (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
+              | Record (name, typed_values) ->
+                let local_sexp = find_in_sexp elt sexp in
+                content_section (span [pcdata "Record "; codef "%s" name])
+                  (content_table
+                     (typed_values_in_table (record_standard_fields @ typed_values)
+                      :: (Option.value_map ~default:[] ~f:sexp_to_table local_sexp)))
+              | Function (name, args, res)  -> 
+                let local_sexp = find_in_sexp elt sexp in
+                content_section (span [pcdata "Function "; codef "%s" name])
+                  (content_table
+                     (typed_values_in_table 
+                        (function_standard_fields res @ args)
+                      :: (Option.value_map ~default:[] ~f:sexp_to_table local_sexp)))
+              | Volume (name, toplevel) ->     
+                content_section (span [pcdata "Volume "; codef "%s" name])
+                  todo
+              end
+            | None -> 
+                content_section (span [pcdata "Element "; codef "%s" elt])
+                  (paragraph [pcdataf "The element %S was not found" elt])
+          ))) in
+
+      Hitscore_lwt.db_disconnect configuration dbh >>= fun () -> 
+      return Template.Display_service.(
+        let open Html5 in
+        content_list (
+          [
+            content_section (pcdataf "The Layout")
+              (paragraph [nodes]); 
+          ] 
+          @ displayed_nodes
+        ))
+    in
+    Template.Display_service.make_content ~hsc:configuration
+      ~main_title content 
+
+
+  let make ~configuration =
+    let hsc = configuration in
+    (fun elements () ->
+      let main_title = "The Layout Navigaditor" in
+      Template.default ~title:main_title
+        (Authentication.authorizes (`view `layout)
+         >>= function
+         | true -> layout ~configuration ~main_title ~elements
+         | false ->
+           Template.Authentication_error.make_content ~hsc ~main_title
+             (return [Html5.pcdataf 
+                         "You may not view the function evaluations."])))
+      
+end
+
+
+
 module Default_service = struct
   let make hsc =
     (fun () () ->
@@ -629,6 +786,8 @@ module Default_service = struct
             [Services.(link libraries) [pcdata "Libraries"] (None, [])];
           potential_li (`view `all_evaluations)
             [Services.(link evaluations) [pcdata "Function evaluations"] ()];
+          potential_li (`view `layout)
+            [Services.(link layout) [pcdata "Layout Navigaditor"] []];
 
         ] >>= fun ul_opt ->
         let header = [
@@ -722,6 +881,10 @@ let () =
 
       Services.(register evaluations) 
         Evaluations_service.(make ~configuration:hitscore_configuration);
+
+      Services.(register layout) 
+        Layout_service.(make ~configuration:hitscore_configuration);
+
 
       Services.(register login) (Login_service.make
                                    ~configuration:hitscore_configuration ());

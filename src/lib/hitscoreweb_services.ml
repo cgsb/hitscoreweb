@@ -54,6 +54,9 @@ let logout =
           ~path:["logout"]
           ~get_params:Eliom_parameters.unit)
           
+let layout =
+  make (Eliom_services.service ~path:["layout"]
+          ~get_params:Eliom_parameters.(set string "elements"))
 
 let link service =
   Eliom_output.Html5.a ~service:(service ())

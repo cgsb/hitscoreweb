@@ -82,6 +82,7 @@ let default ?(title) content =
   | Error (`layout_inconsistency (place, problem)) ->
     let place_presentation =
       let r = pcdata "the record " in
+      let f = pcdata "the function " in
       match place with
       | `record_person ->        [ r; code [pcdata "person"        ]]  
       | `record_organism ->      [ r; code [pcdata "organism"      ]]  
@@ -94,7 +95,22 @@ let default ?(title) content =
       | `record_custom_barcode -> [ r; code [pcdata "record_custom_barcode"]]
       | `record_sample_sheet ->   [ r; code [pcdata "record_sample_sheet"]]
       | `file_system ->   [ r; code [pcdata "file_system"]]
-      | `function_bcl_to_fastq -> [ r; code [pcdata "function_bcl_to_fastq"]]
+      | `function_bcl_to_fastq -> [ f; code [pcdata "bcl_to_fastq"]]
+      | `function_assemble_sample_sheet      -> [f; codef "assemble_sample_sheet "]
+      | `function_delete_intensities         -> [f; codef "delete_intensities "]
+      | `function_dircmp_raw                 -> [f; codef "dircmp_raw "]
+      | `function_prepare_unaligned_delivery -> [f; codef "prepare_unaligned_delivery"]
+      | `function_transfer_hisqeq_raw        -> [f; codef "transfer_hisqeq_raw "]
+      | `record_agarose_gel                  -> [r; codef "agarose_gel "]
+      | `record_bcl_to_fastq_unaligned       -> [r; codef "bcl_to_fastq_unaligned"]
+      | `record_bioanalyzer                  -> [r; codef "bioanalyzer "]
+      | `record_client_fastqs_dir            -> [r; codef "client_fastqs_dir "]
+      | `record_hiseq_checksum               -> [r; codef "hiseq_checksum "]
+      | `record_inaccessible_hiseq_raw       -> [r; codef "inaccessible_hiseq_raw"]
+      | `record_invoicing                    -> [r; codef "invoicing "]
+      | `record_key_value                    -> [r; codef "key_value "]
+      | `record_log                          -> [r; codef "log "]
+      | `record_protocol                     -> [r; codef "protocol "]
     in
     let error_message =
       match problem with
