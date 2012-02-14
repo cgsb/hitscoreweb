@@ -647,20 +647,26 @@ module Layout_service = struct
         b [codef "%s" n]; codef ": "; br ();
         i [codef "%s" (LDSL.string_of_dsl_type t)]]) 
 
-  let get_all_generic ?(only=[]) dbh name =
+  let get_all_generic ?(only=[]) ?(more_where=[]) dbh name =
     let module PG = Layout.PGOCaml in
-    let sanitized_name =
+    let sanitize_name name =
       String.map name (function
       | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' as c -> c
       | _ -> '_') in
+    let sanitize_string s = String.map s (function ''' -> '_' | c -> c) in
     let query =
       let where = 
-        match only with
-        | [] -> ""
-        | l -> sprintf " where %s"
-          (List.map l (sprintf "g_id = %d") |! String.concat ~sep:" or ") 
+        match only, more_where with
+        | [], [] -> ""
+        | lo, lw ->
+          sprintf " where (%s%s%s)"
+            (List.map lo (sprintf "g_id = %d") |! String.concat ~sep:" or ")
+            (if lw <> [] && lo <> [] then ") and (" else "")
+            (List.map lw (fun (k, v) -> 
+              sprintf "%s = '%s'" (sanitize_name k) (sanitize_string v))
+              |! String.concat ~sep:" or ") 
       in
-      sprintf  "select * from %s%s" sanitized_name where in
+      sprintf  "select * from %s%s" (sanitize_name name) where in
     wrap_io (PG.prepare ~name ~query dbh) ()
     >>= fun () ->
     wrap_io (PG.execute ~name ~params:[] dbh) ()
@@ -711,6 +717,13 @@ module Layout_service = struct
     with
       e -> []
 
+  let volume_to_table name toplevel rows =
+    let open Html5 in
+    List.map rows ~f:(List.map ~f:(Option.value_map
+                                     ~default:(`text [codef "—"])
+                                     ~f:(fun s -> `text [pcdataf "%s" s])))
+
+
   let layout ~configuration ~main_title ~types ~values =
     let content =
       Hitscore_lwt.db_connect configuration >>= fun dbh ->
@@ -725,7 +738,6 @@ module Layout_service = struct
 
       Template.Display_service.(Html5.(
         let open LDSL in
-        let todo = paragraph [pcdata "TODO"] in
         of_list_sequential types ~f:(fun elt ->
           match find_node layout elt with
           | Some s -> 
@@ -750,10 +762,18 @@ module Layout_service = struct
                   content_section (span [pcdata "Function "; codef "%s" name])
                     (content_table
                        (typed_values_in_table all_typed :: table)))
-              | Volume (name, toplevel) ->     
+              | Volume (name, toplevel) ->
+                get_all_generic
+                  ~only:values ~more_where:["g_toplevel", toplevel]
+                  dbh "g_volume"
+                >>| volume_to_table name toplevel
+                >>= fun table ->
+                let head s = List.map s (fun s -> `head [pcdataf "%s" s]) in
                 return (
                   content_section (span [pcdata "Volume "; codef "%s" name])
-                    todo)
+                    (content_table
+                       (head ["Id"; "Top-level"; "Human-readable tag …"; "Files"]
+                        :: table)))
               end
             | None -> 
                 return (
