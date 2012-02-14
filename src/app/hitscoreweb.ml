@@ -79,7 +79,9 @@ video/x-msvideo			avi
 let global_hitscore_configuration = ref None
 
 
-let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
+let config
+    ?(authentication=`pam "login") ?(port=80) ~runtime_root ?conf_root
+    ?log_root kind output_string =
   let conf_dir = Option.value ~default:runtime_root conf_root in
   let log_dir = Option.value ~default:runtime_root log_root in
   let extensions =
@@ -139,6 +141,12 @@ let config ?(port=80) ~runtime_root ?conf_root ?log_root kind output_string =
     ksprintf output_string "  <pguser>%s</pguser>\n" user;
     ksprintf output_string "  <pgpass>%s</pgpass>\n" pswd;
     ksprintf output_string "  <root-directory>%s</root-directory>\n" rodi;
+    begin match authentication with
+    | `none -> ksprintf output_string "  <pam-authentication-service/>\n"
+    | `pam s -> 
+      ksprintf output_string
+        "  <pam-authentication-service>%s</pam-authentication-service>\n" s
+    end;
     return None)) |! Pervasives.ignore;
   ksprintf output_string "</eliom>\n";
   ksprintf output_string "</host>\n";
@@ -152,7 +160,7 @@ let syscmd s =
   | e -> Error (Failure (Unix.Process_status.to_string_hum e))
 let syscmd_exn s = syscmd s |> Result.raise_error
 
-let testing ?(port=8080) kind =
+let testing ?authentication ?(port=8080) kind =
   let runtime_root = "/tmp/hitscoreweb" in
   let exec =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
@@ -162,7 +170,8 @@ let testing ?(port=8080) kind =
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
   with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
-    ~f:(fun o -> config ~port ~runtime_root kind (output_string o));
+    ~f:(fun o -> config ?authentication
+      ~port ~runtime_root kind (output_string o));
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
 
@@ -452,9 +461,10 @@ let () =
     global_hitscore_configuration := Some hitscore_config;
     begin match cmd_args with
     | [] -> printf "Nothing to do\n"
-    | "test" :: [] -> testing ~port:8080 `Ocsigen
+    | "test" :: [] -> testing ~port:8080 ~authentication:`none `Ocsigen
     | "static" :: [] -> testing ~port:8080 `Static
-    | "test" :: p :: [] -> testing ~port:(Int.of_string p) `Ocsigen
+    | "test" :: p :: [] -> 
+      testing ~port:(Int.of_string p) ~authentication:`none `Ocsigen
     | "static" :: p :: [] -> testing ~port:(Int.of_string p) `Static
     | "rpm" :: [] -> rpm_build ()
     | "rpm" :: release :: [] -> rpm_build ~release:(Int.of_string release) ()

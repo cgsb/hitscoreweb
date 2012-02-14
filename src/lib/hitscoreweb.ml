@@ -893,6 +893,10 @@ let () =
           | Element ("pguser", [], [PCData u]) -> pguser := Some u
           | Element ("pgpass", [], [PCData p]) -> pgpass := Some p
           | Element ("root-directory", [], [PCData p]) -> rodi := Some p
+          | Element ("pam-authentication-service", [], []) ->
+            Authentication.global_authentication_disabled := true
+          | Element ("pam-authentication-service", [], [PCData p]) ->
+            Authentication.global_pam_service := p
           | Element (tag, atts, inside) ->
             Ocsigen_messages.console (fun () ->
               sprintf "Unknown Config XML Tag: %s\n" tag);

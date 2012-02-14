@@ -142,8 +142,11 @@ let display_state () =
              Services.(link login) [pcdata "Login"] ();]
           ))
 
-
-let pam_auth ~configuration ?(service = "") ~user ~password () =
+let global_pam_service = ref ("")
+  
+let pam_auth ~configuration ?service ~user ~password () =
+  let service =
+    Option.value ~default:!global_pam_service service in
   let wrap_pam f a = try Ok (f a) with e -> Error (`pam_exn e) in
   let auth () =
     let open Result in
@@ -176,9 +179,11 @@ let check ~configuration = function
 let logout () =
   set_state `nothing
 
+let global_authentication_disabled = ref false
+
 let authorizes (cap:capability) =
   user_logged () >>= 
     begin function
     | Some u -> return (roles_allow ?person:u.person u.roles cap)
-    | _ -> return false
+    | _ -> return !global_authentication_disabled
     end
