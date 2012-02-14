@@ -728,14 +728,11 @@ module Layout_service = struct
     let content =
       Hitscore_lwt.db_connect configuration >>= fun dbh ->
 
-      LDSL.(
-        read_file "../hitscore/data/hitscore_layout" >>| parse_str
-        >>= fun layout ->
-        return Html5.(layout, span (List.map layout.nodes node_link
-                                    |! interleave_list ~sep:(pcdata ", "))))
-      >>= fun (layout, nodes) ->
-
-
+      let layout = Layout.Meta.layout () in
+      let nodes =
+        Html5.(span (List.map layout.LDSL.nodes node_link
+                     |! interleave_list ~sep:(pcdata ", "))) 
+      in 
       Template.Display_service.(Html5.(
         let open LDSL in
         of_list_sequential types ~f:(fun elt ->
