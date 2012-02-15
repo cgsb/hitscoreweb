@@ -870,6 +870,8 @@ module Layout_service = struct
         >>= fun currrent_typed_values ->
         let my_service_with_post_params =
           Eliom_output.Redirection.register_post_coservice
+            ~scope:Eliom_common.session
+            ~max_use:1
             ~fallback:Services.(default ())
             ~post_params:Eliom_parameters.(list "field" (string "str"))
             (fun () fields ->
