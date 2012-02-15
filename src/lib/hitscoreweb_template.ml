@@ -4,103 +4,60 @@ module Services = Hitscoreweb_services
 
 module Authentication = Hitscoreweb_authentication
 
-let default ?(title) content =
-  let page page_title auth_state html_stuff =
-    Html5.(
-      html
-        (head (title (pcdata page_title)) [])
-        (body [
-          div [
-            Services.(link default) [pcdata "Home"] ();
-            div auth_state;
-          ];
-          hr ();
-          div html_stuff
-        ]))
-  in
-  let html_result =
-    let page_title = 
-      Option.value_map title ~default:"Hitscoreweb" ~f:(sprintf "HSW: %s")
-    in
-    Authentication.display_state ()
-    >>= fun auth_state ->
-    content
-    >>= fun good_content ->
-    return (page page_title auth_state good_content)
-  in
+
+let html_of_error = 
   let open Html5 in
-  let error_page msg =
-    page "Error" [] [
-      h1 [ksprintf pcdata "Histcore's Error Page"];
-      p [ksprintf pcdata "An error occurred on %s:"
-            Time.(now () |> to_string)];
-      div msg;
-      p [pcdata "Please complain at bio.gencore@nyu.edu."];] in
-  Lwt.bind html_result (function
-  | Ok html ->
-    Lwt.return html
-  | Error (`io_exn e) ->
-    Lwt.return (error_page [
-      ksprintf pcdata "Generic I/O exception: %s" (Exn.to_string e)])
-  | Error (`auth_state_exn e) ->
-    Lwt.return (error_page [
-      ksprintf pcdata "Authentication-state exception: %s" (Exn.to_string e)])
-  | Error (`pg_exn e) ->
-    Lwt.return (error_page [
-      ksprintf pcdata "PGOCaml exception: %s" (Exn.to_string e)])
-  | Error (`no_person_with_that_email email)->
-    Lwt.return (error_page [
-      ksprintf pcdata "There is no person with that email: ";
-      code [pcdata email];
-      pcdata "."])
-  | Error (`no_flowcell_named name) ->
-    Lwt.return (error_page [
-      ksprintf pcdata "There is no flowcell with that serial name: ";
-      code [pcdata name];
-      pcdata "."])
-  | Error (`sample_sheet_kind_not_found i) ->
-    Lwt.return (error_page [
-      pcdataf "Cannot find this sample-sheet: %ld." i])
-  | Error (`sample_sheet_should_a_lonely_file p) ->
-    Lwt.return (error_page [
-      pcdataf "This sample-sheet should be lonely in its volume: %ld."
-        p.Layout.Record_sample_sheet.id
-    ])
-  | Error (`cannot_recognize_file_type s) ->
-    Lwt.return (error_page [
-      pcdataf "The file-system is in a bad state, cannot recognize this \
-              file-type: %s." s
-    ])
-  | Error (`inconsistency_inode_not_found inode) ->
-    Lwt.return (error_page [
-      pcdataf "The file-system is in a bad state, cannot find file: %ld." inode
-    ])
-  | Error (`sample_sheet_kind_of_string s) ->
-    Lwt.return (error_page [
-      pcdataf "Could not transform %S to a sample-sheet kind." s;
-    ])
-  | Error (`nothing_to_edit (types, values)) ->
-    Lwt.return (error_page [
-      pcdataf "There is nothing to edit.";
-    ])
-  | Error (`not_implemented action) ->
-    Lwt.return (error_page [
-      pcdataf "The action %S is not implemented … yet." action;
-    ])
-  | Error (`unknown_layout_action s) ->
-    Lwt.return (error_page [
-      pcdataf "Cannot understand this action: %S." s;
-    ])
-  | Error (`did_not_get_one_row (name, not_one_row)) ->
-    Lwt.return (error_page [
-      pcdataf "Getting a value did not return right: %s (%d rows)." 
-        name (List.length not_one_row);
-    ])
-  | Error (`wrong_layout_typing name) ->
-    Lwt.return (error_page [
-      pcdataf "The record %S is not well typed w.r.t the official Layout." name;
-    ])
-  | Error (`layout_inconsistency (place, problem)) ->
+  function
+  | `eliom_404 -> [pcdataf "Error 404."]
+  | `eliom_wrong_parameter -> [pcdataf "Error 404 (wrong parameter)."]
+  | `eliom_typing_error _ -> [pcdataf "Error 404 (wrong parameter types)."]
+  | `io_exn e -> [pcdataf "Generic I/O exception: %s" (Exn.to_string e)]
+  | `auth_state_exn e ->
+    [pcdataf "Authentication-state exception: %s" (Exn.to_string e)]
+  | `pg_exn e -> [pcdataf "PGOCaml exception: %s" (Exn.to_string e)]
+  | `no_person_with_that_email email ->
+    [pcdataf "There is no person with that email: ";
+     code [pcdata email];
+     pcdata "."]
+  | `no_flowcell_named name ->
+    [pcdata "There is no flowcell with that serial name: ";
+     code [pcdata name];
+     pcdata "."]
+  | `sample_sheet_kind_not_found i ->
+    [pcdataf "Cannot find this sample-sheet: %ld." i]
+  | `sample_sheet_should_a_lonely_file p ->
+    [pcdataf "This sample-sheet should be lonely in its volume: %ld."
+        p.Layout.Record_sample_sheet.id]
+  | `cannot_recognize_file_type s ->
+    [pcdataf "The file-system is in a bad state, cannot recognize this \
+              file-type: %s." s]
+  | `inconsistency_inode_not_found inode ->
+    [pcdataf "The file-system is in a bad state, cannot find file: %ld." inode]
+  | `sample_sheet_kind_of_string s ->
+    [pcdataf "Could not transform %S to a sample-sheet kind." s;]
+  | `nothing_to_edit (types, values) ->
+    [pcdataf "There is nothing to edit.";]
+  | `not_implemented action ->
+    [pcdataf "The action %S is not implemented … yet." action;]
+  | `unknown_layout_action s ->
+    [pcdataf "Cannot understand this action: %S." s;]
+  | `did_not_get_one_row (name, not_one_row) ->
+    [pcdataf "Getting a value did not return right: %s (%d rows)." 
+        name (List.length not_one_row);]
+  | `wrong_layout_typing name ->
+    [pcdataf "The record %S is not well typed w.r.t the official Layout." name;]
+  | `layout_edit_coservice_error e ->
+    [pcdata "Error while editing: ";
+     match e with
+     | `fields_wrong_typing -> pcdata "Fields have wrong types"
+     | `wrong_id -> pcdata "Could not get a decent g_id value"
+     | `wrong_rights -> pcdata "You don't have enough access rights to do edit this.."
+     | `io_exn e -> pcdataf "I/O Error: %s" (Exn.to_string e)
+     | `layout_inconsistency (`record_log, _) -> 
+       pcdata "Error while logging (chances are that the editing actually worked!)"
+     | `pg_exn e -> pcdataf "PostgreSQL Error: %s" (Exn.to_string e)
+    ]
+  | `layout_inconsistency (place, problem) ->
     let place_presentation =
       let r = pcdata "the record " in
       let f = pcdata "the function " in
@@ -145,13 +102,52 @@ let default ?(title) content =
       | `insert_did_not_return_one_id (s, l) ->
         [pcdataf "Insert in %s did not return one id but %d." s (List.length l)]
     in
-    Lwt.return (error_page (
-      [ksprintf pcdata "Layout Inconsistency in "]
-      @ place_presentation
-      @ [pcdata ":"; br ()]
-                  @ error_message
-    )))
+    ([pcdata "Layout Inconsistency in "]
+     @ place_presentation
+     @ [pcdata ":"; br ()]
+     @ error_message)
 
+
+
+let default ?(title) content =
+  let page page_title auth_state html_stuff =
+    Html5.(
+      html
+        (head (title (pcdata page_title)) [])
+        (body [
+          div [
+            Services.(link default) [pcdata "Home"] ();
+            div auth_state;
+          ];
+          hr ();
+          div html_stuff
+        ]))
+  in
+  let html_result =
+    let page_title = 
+      Option.value_map title ~default:"Gencore" ~f:(sprintf "Gencore: %s")
+    in
+    Authentication.display_state ()
+    >>= fun auth_state ->
+    content
+    >>= fun good_content ->
+    return (page page_title auth_state good_content)
+  in
+  let open Html5 in
+  let error_page msg =
+    page "Error" [] [
+      h1 [ksprintf pcdata "Gencore: Error Page"];
+      p [ksprintf pcdata "An error occurred on %s:"
+            Time.(now () |> to_string)];
+      div msg;
+      p [pcdata "Please complain at ";
+         codef "bio.gencore@nyu.edu";
+         pcdataf "."];]
+    |! Lwt.return
+  in
+  Lwt.bind html_result (function
+  | Ok html -> Lwt.return html
+  | Error e -> error_page (html_of_error e))
 
 module Display_service = struct
 
@@ -231,7 +227,7 @@ module Display_service = struct
     let open Html5 in
     content >>= fun content ->
     return [
-      h1 [ksprintf pcdata "Hitscoreweb: %s" main_title];
+      h1 [ksprintf pcdata "Gencore: %s" main_title];
       html_of_content content]
 
   let make ~hsc ~main_title content =

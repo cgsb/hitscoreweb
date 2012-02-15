@@ -10,6 +10,9 @@ module Template = Hitscoreweb_template
 
 module Login_service = struct
 
+
+  exception Authentication_error of [ `auth_state_exn of exn | `io_exn of exn ]
+
   let make ~configuration () = 
     let open Lwt in
     let pam_handler =
@@ -18,15 +21,15 @@ module Login_service = struct
          The function Authentication.check handles the
          session-dependent stuff. *)
       Eliom_output.Redirection.register_post_coservice
-        ~fallback:Services.(default ())
+        ~fallback:Services.(home ())
         ~post_params:Eliom_parameters.(string "user" ** string "pwd")
         (fun () (user, pwd) ->
           Authentication.check ~configuration (`pam (user,pwd))
           >>= function
           | Ok () ->
-            return (Services.home ())
-          | Error _ ->
-            Lwt.fail (Failure "Error during authentication: TODO"))
+            return (Services.default ())
+          | Error e ->
+            Lwt.fail (Authentication_error e))
     in
 
     let open Html5 in
@@ -828,6 +831,7 @@ module Layout_service = struct
     eprintf "QUERY: %s\n" query;
     Hitscore_lwt.with_database ~configuration 
       ~f:(pg_raw_query ~with_log:"web_raw_update" ~query)
+    >>= fun _ -> return ()
 
   let raw_insert  ~configuration ~table ~fields =
     let query =
@@ -840,7 +844,21 @@ module Layout_service = struct
     eprintf "QUERY: %s\n" query;
     Hitscore_lwt.with_database ~configuration 
       ~f:(pg_raw_query ~with_log:"web_raw_insert" ~query)
+    >>= fun _ -> return ()
 
+  exception Edition_error of [ 
+    `layout_edit_coservice_error of [
+    | `fields_wrong_typing
+    | `wrong_id
+    | `wrong_rights
+    | `io_exn of exn
+    | `layout_inconsistency of [ `record_log ] *
+        [ `insert_did_not_return_one_id of string * int32 list ]
+    | `pg_exn of exn
+    ]
+  ]
+  let coservice_error e =
+    Lwt.fail (Edition_error (`layout_edit_coservice_error e))
 
   let edit_layout ~configuration ~main_title ~types ~values =
     match types, values with
@@ -874,14 +892,14 @@ module Layout_service = struct
           Eliom_output.Redirection.register_post_coservice
             ~scope:Eliom_common.session
             ~max_use:1
-            ~fallback:Services.(default ())
+            ~fallback:Services.(home ())
             ~post_params:Eliom_parameters.(list "field" (string "str"))
             (fun () fields ->
               let can_edit_m = Authentication.authorizes (`edit `layout) in
               Lwt.bind can_edit_m (fun can_edit ->
               match can_edit, currrent_typed_values with
               | Ok true, Some typed_values ->
-                let fields, g_id =
+                let m =
                   let g_id = ref "" in
                   try
                     let n =
@@ -893,16 +911,24 @@ module Layout_service = struct
                         ) else 
                           Some (n,t,v))
                       |! List.filter_opt in
-                    (n, Int.of_string !g_id)
+                    Lwt.return (n, Int.of_string !g_id)
                   with 
-                    e ->  failwithf "NLKDSANFDLKSNF lfdskf" ()
+                  | Invalid_argument s -> 
+                    coservice_error `fields_wrong_typing
+                  | Failure "Option.value_exn None" ->
+                    coservice_error `wrong_id
+                  | Failure s -> coservice_error `wrong_id
                 in
-                Lwt.bind (raw_update ~configuration ~table:name ~fields ~g_id)
-                  (fun _ ->
-                    Lwt.return (Eliom_services.preapply  
-                                  Services.(layout ())  ("view", (types, values))))
+                Lwt.bind m (fun (fields, g_id) ->
+                  Lwt.bind (raw_update ~configuration ~table:name ~fields ~g_id)
+                    (function
+                    | Ok () ->
+                      Lwt.return (Eliom_services.preapply  
+                                    Services.(layout ())  ("view", (types, values)))
+                    | Error e -> 
+                      coservice_error e))
               | Ok true, None ->
-                let fields =
+                let m =
                   try
                     let n =
                       List.map2_exn all_typed fields (fun (n,t) v2 ->
@@ -910,19 +936,21 @@ module Layout_service = struct
                         let v = match v2 with "" -> None | s -> Some s in
                         if n = "g_id" then None else Some (n,t,v))
                       |! List.filter_opt in
-                    n
+                    Lwt.return n
                   with 
-                    e ->  failwithf "NLKDSANFDLKSNF lfdskf" ()
+                  | Invalid_argument s -> 
+                    coservice_error `fields_wrong_typing
                 in
-                Lwt.bind (raw_insert ~configuration ~table:name ~fields)
-                  (fun _ ->
-                    Lwt.return (Eliom_services.preapply  
-                                  Services.(layout ())  ("view", (types, values))))
+                Lwt.bind m (fun fields ->
+                  Lwt.bind (raw_insert ~configuration ~table:name ~fields)
+                    (function
+                    | Ok () ->
+                      Lwt.return (Eliom_services.preapply  
+                                    Services.(layout ())  ("view", (types, values)))
+                    | Error e -> 
+                      coservice_error e))
               | _, _ ->
-                eprintf "EDIT-LAYOUT-POST-COSERVICE without auth???\n";
-                (* TODO: Display something *)
-                Lwt.return (Eliom_services.preapply  
-                              Services.(layout ())  ("view", (types, values)))))
+                coservice_error `wrong_rights))
         in
         let form2 =
           let typed_values =
@@ -1025,21 +1053,21 @@ module Default_service = struct
         let welcome = [
           h2 [pcdata "Welcome"];
           p [
-            pcdata "For now, most services require ";
-            Services.(link login) [pcdata "authentication"] ();
-            pcdata ", but here is a useful link: ";
+            pcdata "This is Gencore's website; see also ";
             a ~a:[
               a_href "https://docs.google.com/a/nyu.edu/?tab=co#folders/\
                 0B6RMw3n537F2OTc3ZjZlMzktZTY2YS00MmI4LTk0MmQtZmZlYzQ3Nzk3YTRl"]
               [pcdata "GenCore FAQs and Presentations"];
-            pcdata ".";
+            pcdata " on Google-Docs.";
           ];
         ] in
         let display_section =
           match List.filter_opt ul_opt with
-          | [] -> []
+          | [] -> [
+            pcdata "There are no services to display.";
+          ]
           | items -> [
-            h2 [pcdata "Display Services"];
+            h2 [pcdata "Services"];
             ul items;
           ]
         in
@@ -1056,9 +1084,30 @@ let () =
       
       Lwt_preemptive.init 1 500 (eprintf "LwtP:%s\n%!");
 
-      let _ = Eliom_output.set_exn_handler
-        (function
-        | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
+      let _ =
+        (* From the doc: http://ocsigen.org/eliom/api/server/Eliom_output
+           >   Note that you should not catch every exception here
+           >   since some Eliom mechanisms are done using exceptions,
+           >   like redirections. Do not catch exception defined in
+           >   Eliom except Eliom_common.Eliom_404,
+           >   Eliom_common.Eliom_Wrong_parameter
+           >   Eliom_common.Eliom_Typing_Error.
+
+           I don't understand why we see Eliom_404 exceptions
+           everywhere, and only the `real' ones get redirected to the
+           404. anyway, It Works™.
+        *)        
+        let send ?code e =
+          Lwt.bind (Template.default (error e)) (Eliom_output.Html5.send ?code)
+        in
+        Eliom_output.set_exn_handler (function
+          | Eliom_common.Eliom_404 -> send ~code:404 `eliom_404
+          | Eliom_common.Eliom_Wrong_parameter -> send `eliom_wrong_parameter
+          | Eliom_common.Eliom_Typing_Error l -> send (`eliom_typing_error l)
+          | Login_service.Authentication_error e -> send e
+          | Layout_service.Edition_error (`layout_edit_coservice_error e) ->
+            send (`layout_edit_coservice_error e)
+          | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
       in
 
       let hitscore_configuration =
