@@ -903,8 +903,10 @@ module Layout_service = struct
             ~fallback:Services.(default ())
             ~post_params:Eliom_parameters.(list "field" (string "str"))
             (fun () fields ->
-              match currrent_typed_values with
-              | Some typed_values ->
+              let can_edit_m = Authentication.authorizes (`edit `layout) in
+              Lwt.bind can_edit_m (fun can_edit ->
+              match can_edit, currrent_typed_values with
+              | Ok true, Some typed_values ->
                 let fields, g_id =
                   let g_id = ref "" in
                   try
@@ -925,7 +927,7 @@ module Layout_service = struct
                   (fun _ ->
                     Lwt.return (Eliom_services.preapply  
                                   Services.(layout ())  ("view", (types, values))))
-              | None ->
+              | Ok true, None ->
                 let fields =
                   try
                     let n =
@@ -941,7 +943,12 @@ module Layout_service = struct
                 Lwt.bind (raw_insert ~configuration ~table:name ~fields)
                   (fun _ ->
                     Lwt.return (Eliom_services.preapply  
-                                  Services.(layout ())  ("view", (types, values)))))
+                                  Services.(layout ())  ("view", (types, values))))
+              | _, _ ->
+                eprintf "EDIT-LAYOUT-POST-COSERVICE without auth???\n";
+                (* TODO: Display something *)
+                Lwt.return (Eliom_services.preapply  
+                              Services.(layout ())  ("view", (types, values)))))
         in
         let form2 =
           let typed_values =
