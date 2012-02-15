@@ -12,25 +12,19 @@ module Login_service = struct
 
   let make ~configuration () = 
     let open Lwt in
-    let redirection = 
-      Eliom_output.Html5.make_string_uri ~absolute:true 
-        ~service:(Services.home ()) () in
     let pam_handler =
-      Eliom_output.String_redirection.register_post_coservice
+      (* This coservice is created/registered once, and then re-used
+         for every login.
+         The function Authentication.check handles the
+         session-dependent stuff. *)
+      Eliom_output.Redirection.register_post_coservice
         ~fallback:Services.(default ())
-        ~error_handler:(fun sel -> 
-          eprintf "pam_handler's error_handler\n%!";
-          List.iter sel ~f:(fun (s, e) -> 
-            eprintf "ERRORS? %S %S\n%!" s (Exn.to_string e));
-          return (redirection))
         ~post_params:Eliom_parameters.(string "user" ** string "pwd")
         (fun () (user, pwd) ->
           Authentication.check ~configuration (`pam (user,pwd))
           >>= function
           | Ok () ->
-            let uri = redirection in
-            eprintf "uri: %s\n%!" uri;
-            return uri
+            return (Services.home ())
           | Error _ ->
             Lwt.fail (Failure "Error during authentication: TODO"))
     in
@@ -40,8 +34,9 @@ module Login_service = struct
       let pam_form =
         Eliom_output.Html5.post_form ~service:pam_handler
           (fun (name, pwd) ->
-            [p [pcdata "PAM identification: ";
+            [p [pcdata "NetID: ";
                 Eliom_output.Html5.string_input ~input_type:`Text ~name ();
+                pcdata " Password: ";
                 Eliom_output.Html5.string_input ~input_type:`Password ~name:pwd ();
                 Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
                ];
