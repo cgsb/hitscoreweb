@@ -687,9 +687,9 @@ module Layout_service = struct
     >>= fun () ->
     return result
 
-  let generic_to_table type_info r =
+  let generic_to_table type_info current_name r =
     let open Html5 in
-    let rec display_typed s =
+    let rec display_typed s  =
       let open LDSL in
       let text s = `text [pcdataf "%s" s] in
       let link s t =
@@ -716,7 +716,7 @@ module Layout_service = struct
       | Enumeration_name e -> text s
       | Function_name f -> link s (sprintf "function_%s" f)
       | Volume_name v -> link s (sprintf "volume_%s" v)
-      | Identifier -> text s
+      | Identifier -> link s current_name
     in
     try
       List.map r ~f:(fun row ->
@@ -788,12 +788,14 @@ module Layout_service = struct
             |! return
           | Record (name, typed_values) ->
             let all_typed =  (record_standard_fields @ typed_values) in
-            get_all_generic ~only:values dbh name >>| generic_to_table all_typed 
+            get_all_generic ~only:values dbh name 
+            >>| generic_to_table all_typed (sprintf "record_%s" name)
             >>= fun table ->
             table_section "record" name (typed_values_in_table all_typed :: table)
           | Function (name, args, res)  ->
             let all_typed = function_standard_fields res @ args in
-            get_all_generic ~only:values dbh name >>| generic_to_table all_typed
+            get_all_generic ~only:values dbh name
+            >>| generic_to_table all_typed (sprintf "function_%s" name)
             >>= fun table ->
             table_section "function" name (typed_values_in_table all_typed :: table)
           | Volume (name, toplevel) ->
