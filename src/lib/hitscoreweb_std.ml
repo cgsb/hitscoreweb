@@ -47,3 +47,14 @@ let rec interleave_list ~sep = function
 
 let array_to_list_intermap ~sep ~f a =
   interleave_list ~sep (List.map (Array.to_list a) ~f)
+
+let pg_raw_query ~dbh ~query =
+  let module PG = Layout.PGOCaml in
+  let name = "todo_change_this" in
+  wrap_io (PG.prepare ~name ~query dbh) ()
+  >>= fun () ->
+  wrap_io (PG.execute ~name ~params:[] dbh) ()
+  >>= fun result ->
+  wrap_io (PG.close_statement dbh ~name) ()
+  >>= fun () ->
+  return result

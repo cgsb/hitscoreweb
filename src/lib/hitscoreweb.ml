@@ -679,13 +679,7 @@ module Layout_service = struct
               |! String.concat ~sep:" or ") 
       in
       sprintf  "select * from %s%s" (sanitize_name name) where in
-    wrap_io (PG.prepare ~name ~query dbh) ()
-    >>= fun () ->
-    wrap_io (PG.execute ~name ~params:[] dbh) ()
-    >>= fun result ->
-    wrap_io (PG.close_statement dbh ~name) ()
-    >>= fun () ->
-    return result
+    pg_raw_query ~dbh ~query
 
   let generic_to_table type_info current_name r =
     let open Html5 in
@@ -828,7 +822,6 @@ module Layout_service = struct
       ~main_title content 
 
   let raw_update ~configuration ~table ~g_id ~fields =
-    let module PG = Layout.PGOCaml in
     let query =
       sprintf "UPDATE %s SET %s WHERE g_id = %d" table
         (List.map fields (fun (n,_,v) -> 
@@ -837,21 +830,10 @@ module Layout_service = struct
          |! String.concat ~sep:", ")
         g_id
     in
-    let name = "todo_change_this" in
     eprintf "QUERY: %s\n" query;
-    Hitscore_lwt.db_connect configuration >>= fun dbh ->
-    wrap_io (PG.prepare ~name ~query dbh) ()
-    >>= fun () ->
-    wrap_io (PG.execute ~name ~params:[] dbh) ()
-    >>= fun result ->
-    wrap_io (PG.close_statement dbh ~name) ()
-    >>= fun () ->
-    Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
-    return result
-
+    Hitscore_lwt.with_database ~configuration ~f:(pg_raw_query ~query)
 
   let raw_insert  ~configuration ~table ~fields =
-    let module PG = Layout.PGOCaml in
     let query =
       sprintf "INSERT INTO %s (%s) VALUES (%s)" table
         (List.map fields (fun (n,_,_) -> n) |! String.concat ~sep:", ")
@@ -859,17 +841,8 @@ module Layout_service = struct
         | (_,_, None) -> "NULL"
         | (_,_, Some s) -> sprintf "'%s'" s) |! String.concat ~sep:", ")
     in
-    let name = "todo_change_this" in
     eprintf "QUERY: %s\n" query;
-    Hitscore_lwt.db_connect configuration >>= fun dbh ->
-    wrap_io (PG.prepare ~name ~query dbh) ()
-    >>= fun () ->
-    wrap_io (PG.execute ~name ~params:[] dbh) ()
-    >>= fun result ->
-    wrap_io (PG.close_statement dbh ~name) ()
-    >>= fun () ->
-    Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
-    return result
+    Hitscore_lwt.with_database ~configuration ~f:(pg_raw_query ~query)
 
 
   let edit_layout ~configuration ~main_title ~types ~values =
