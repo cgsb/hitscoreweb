@@ -18,6 +18,7 @@ Library hitscoreweb
            Hitscoreweb_services,
            Hitscoreweb_authentication,
            Hitscoreweb_template,
+           Hitscoreweb_layout_service,
            Hitscoreweb_std
 
 Library hitscorewebpam
