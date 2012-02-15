@@ -631,7 +631,10 @@ module Layout_service = struct
       fun html -> Services.(link layout) [html] ("view", ([t], [])) 
     | `view_one_value (t, n) ->
       fun html -> Services.(link layout) [html] ("view", ([t], [n])) 
-
+    | `add_one_value t ->
+      fun html -> Services.(link layout) [html] ("edit", ([t], [])) 
+    | `edit_one_value (t, n) ->
+      fun html -> Services.(link layout) [html] ("edit", ([t], [n])) 
 
   let node_link n = 
     let name = node_name n in
@@ -741,50 +744,72 @@ module Layout_service = struct
         Html5.(span (List.map layout.LDSL.nodes node_link
                      |! interleave_list ~sep:(pcdata ", "))) 
       in 
-      Template.Display_service.(Html5.(
-        let open LDSL in
-        of_list_sequential types ~f:(fun elt ->
-          match find_node layout elt with
-          | Some s -> 
-            begin match s with
-            | Enumeration (name, values) ->
-              content_section (span [pcdata "Enumeration "; codef "%s" name])
-                (paragraph 
-                   (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
-              |! return
-            | Record (name, typed_values) ->
-              let all_typed =  (record_standard_fields @ typed_values) in
-              get_all_generic ~only:values dbh name >>| generic_to_table all_typed 
-              >>= fun table ->
-              return (content_section (span [pcdata "Record "; codef "%s" name])
-                        (content_table
-                           (typed_values_in_table all_typed :: table)))
-              | Function (name, args, res)  ->
-                let all_typed = function_standard_fields res @ args in
-                get_all_generic ~only:values dbh name >>| generic_to_table all_typed
-                >>= fun table ->
-                return (
-                  content_section (span [pcdata "Function "; codef "%s" name])
-                    (content_table
-                       (typed_values_in_table all_typed :: table)))
-              | Volume (name, toplevel) ->
-                get_all_generic
-                  ~only:values ~more_where:["g_toplevel", toplevel]
-                  dbh "g_volume"
-                >>| volume_to_table name toplevel
-                >>= fun table ->
-                let head s = List.map s (fun s -> `head [pcdataf "%s" s]) in
-                return (
-                  content_section (span [pcdata "Volume "; codef "%s" name])
-                    (content_table
-                       (head ["Id"; "Top-level"; "Human-readable tag …"; "Files"]
-                        :: table)))
-              end
-            | None -> 
-                return (
-                  content_section (span [pcdata "Element "; codef "%s" elt])
-                    (paragraph [pcdataf "The element %S was not found" elt]))
-        )))
+      let open Template.Display_service in
+      let open Html5 in
+      let open LDSL in
+      let ul_opt l = 
+        ul (List.map (List.filter l ~f:(fun (g, f) -> g))
+              ~f:(fun x -> li [snd x ()])) in
+      let table_section prefix name table =
+        let type_name = sprintf "%s_%s" prefix name in
+        let is_only_one = List.length values = 1 in
+        Authentication.authorizes (`edit `layout)
+        >>= fun can_edit ->
+        let editors_paragraph =
+          if can_edit then
+            paragraph [
+              pcdataf "Actions: ";
+              ul_opt [
+                (can_edit, fun () ->
+                  self_link (`add_one_value type_name) (pcdataf "Add a %s" name));
+                (can_edit && is_only_one, fun () -> 
+                  self_link (`edit_one_value (type_name, List.hd_exn values))
+                    (pcdataf "Edit this %s" name));
+              ]
+            ]
+          else
+            content_list []
+        in
+        return (
+          content_section (span [pcdataf "The %s " prefix; codef "%s" name])
+            (content_list [
+              editors_paragraph;
+              content_table ~transpose:is_only_one table;
+            ]))
+      in
+      of_list_sequential types ~f:(fun elt ->
+        match find_node layout elt with
+        | Some s -> 
+          begin match s with
+          | Enumeration (name, values) ->
+            content_section (span [pcdata "Enumeration "; codef "%s" name])
+              (paragraph 
+                 (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
+            |! return
+          | Record (name, typed_values) ->
+            let all_typed =  (record_standard_fields @ typed_values) in
+            get_all_generic ~only:values dbh name >>| generic_to_table all_typed 
+            >>= fun table ->
+            table_section "record" name (typed_values_in_table all_typed :: table)
+          | Function (name, args, res)  ->
+            let all_typed = function_standard_fields res @ args in
+            get_all_generic ~only:values dbh name >>| generic_to_table all_typed
+            >>= fun table ->
+            table_section "function" name (typed_values_in_table all_typed :: table)
+          | Volume (name, toplevel) ->
+            get_all_generic
+              ~only:values ~more_where:["g_toplevel", toplevel] dbh "g_volume"
+            >>| volume_to_table name toplevel
+            >>= fun table ->
+            let head s = List.map s (fun s -> `head [pcdataf "%s" s]) in
+            table_section "volume" name
+              (head ["Id"; "Top-level"; "Human-readable tag …"; "Files"] :: table)
+          end
+        | None -> 
+          return (
+            content_section (span [pcdata "Element "; codef "%s" elt])
+              (paragraph [pcdataf "The element %S was not found" elt]))
+      )
       >>= fun displayed_nodes ->
       Hitscore_lwt.db_disconnect configuration dbh >>= fun () -> 
       return Template.Display_service.(
