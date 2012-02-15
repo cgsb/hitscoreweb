@@ -822,55 +822,111 @@ module Layout_service = struct
     Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
     return result
 
+
+  let raw_insert  ~configuration ~table ~fields =
+    let module PG = Layout.PGOCaml in
+    let query =
+      sprintf "INSERT INTO %s (%s) VALUES (%s)" table
+        (List.map fields (fun (n,_,_) -> n) |! String.concat ~sep:", ")
+        (List.map fields (function
+        | (_,_, None) -> "NULL"
+        | (_,_, Some s) -> sprintf "'%s'" s) |! String.concat ~sep:", ")
+    in
+    let name = "todo_change_this" in
+    eprintf "QUERY: %s\n" query;
+    Hitscore_lwt.db_connect configuration >>= fun dbh ->
+    wrap_io (PG.prepare ~name ~query dbh) ()
+    >>= fun () ->
+    wrap_io (PG.execute ~name ~params:[] dbh) ()
+    >>= fun result ->
+    wrap_io (PG.close_statement dbh ~name) ()
+    >>= fun () ->
+    Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
+    return result
+
+
   let edit_layout ~configuration ~main_title ~types ~values =
     match types, values with
-    | _, [] | [], _ ->
+    | [], _ ->
       error (`nothing_to_edit (types, values))
-    | [one_type], [one_value] -> 
+    | [one_type], values ->
+      begin match values with
+      | [] -> return None
+      | [one] -> return (Some one)
+      | _ -> error (`not_implemented "editing more than one value")
+      end >>= fun  value_to_edit ->
       begin match find_node (Layout.Meta.layout ()) one_type with
       | Some (LDSL.Record (name, typed_values)) ->
         let all_typed =  (LDSL.record_standard_fields @ typed_values) in
         Hitscore_lwt.db_connect configuration
         >>= fun dbh ->
-        get_all_generic ~only:[one_value] dbh name
-        >>= (function
-        | [one_row] -> 
-          begin 
-            try
-              List.map2_exn one_row all_typed (fun v (n,t) -> (n,t,v))
-              |! return
-            with
-              e -> error (`wrong_layout_typing name)
-          end
-        | not_one_row -> error (`did_not_get_one_row (name, not_one_row)))
+        of_option value_to_edit (fun one_value ->
+          get_all_generic ~only:[one_value] dbh name
+          >>= (function
+          | [one_row] -> 
+            begin 
+              try
+                List.map2_exn one_row all_typed (fun v (n,t) -> (n,t,v))
+                |! return
+              with
+                e -> error (`wrong_layout_typing name)
+            end
+          | not_one_row -> error (`did_not_get_one_row (name, not_one_row))))
         >>= fun currrent_typed_values ->
         let my_service_with_post_params =
           Eliom_output.Redirection.register_post_coservice
             ~fallback:Services.(default ())
             ~post_params:Eliom_parameters.(list "field" (string "str"))
             (fun () fields ->
-              let fields, g_id =
-                let g_id = ref "" in
-                try
-                  let n =
-                    List.map2_exn currrent_typed_values fields (fun (n,t,v1) v2 ->
-                  eprintf "replacing with value: %S\n%!" v2;
-                  let v = match v2 with "" -> None | s -> Some s in
-                  if n = "g_id" then (
-                    g_id := Option.value_exn v1; None
-                  ) else 
-                    Some (n,t,v))
-                  |! List.filter_opt in
-                  (n, Int.of_string !g_id)
-                with 
-                  e ->  failwithf "NLKDSANFDLKSNF lfdskf" ()
-              in
-              Lwt.bind (raw_update ~configuration ~table:name ~fields ~g_id)
-                (fun _ ->
-                  Lwt.return (Eliom_services.preapply  
-                                Services.(layout ())  ("view", (types, values)))))
+              match currrent_typed_values with
+              | Some typed_values ->
+                let fields, g_id =
+                  let g_id = ref "" in
+                  try
+                    let n =
+                      List.map2_exn typed_values fields (fun (n,t,v1) v2 ->
+                        eprintf "replacing with value: %S\n%!" v2;
+                        let v = match v2 with "" -> None | s -> Some s in
+                        if n = "g_id" then (
+                          g_id := Option.value_exn v1; None
+                        ) else 
+                          Some (n,t,v))
+                      |! List.filter_opt in
+                    (n, Int.of_string !g_id)
+                  with 
+                    e ->  failwithf "NLKDSANFDLKSNF lfdskf" ()
+                in
+                Lwt.bind (raw_update ~configuration ~table:name ~fields ~g_id)
+                  (fun _ ->
+                    Lwt.return (Eliom_services.preapply  
+                                  Services.(layout ())  ("view", (types, values))))
+              | None ->
+                let fields =
+                  try
+                    let n =
+                      List.map2_exn all_typed fields (fun (n,t) v2 ->
+                        eprintf "writing value: %S\n%!" v2;
+                        let v = match v2 with "" -> None | s -> Some s in
+                        if n = "g_id" then None else Some (n,t,v))
+                      |! List.filter_opt in
+                    n
+                  with 
+                    e ->  failwithf "NLKDSANFDLKSNF lfdskf" ()
+                in
+                Lwt.bind (raw_insert ~configuration ~table:name ~fields)
+                  (fun _ ->
+                    Lwt.return (Eliom_services.preapply  
+                                  Services.(layout ())  ("view", (types, values)))))
         in
-        let form2 = 
+        let form2 =
+          let typed_values =
+            match currrent_typed_values with
+            | Some one -> one
+            | None -> 
+              List.map all_typed (function
+              | (n, LDSL.Option LDSL.Timestamp) -> 
+                (n, LDSL.Option LDSL.Timestamp, Some Time.(now () |! to_string))
+              | (n,t) -> (n,t, None)) in
           Eliom_output.Html5.(
             post_form 
               ~service:my_service_with_post_params
@@ -894,7 +950,7 @@ module Layout_service = struct
                   Eliom_output.Html5.string_input ~input_type:`Submit
                     ~value:"Go" () in
                 [p 
-                    (values.Eliom_parameters.it f currrent_typed_values [submit])
+                    (values.Eliom_parameters.it f typed_values [submit])
                 ])
               ())
         in
