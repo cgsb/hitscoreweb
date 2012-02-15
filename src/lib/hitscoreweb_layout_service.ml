@@ -260,6 +260,144 @@ exception Edition_error of [
 let coservice_error e =
   Lwt.fail (Edition_error (`layout_edit_coservice_error e))
 
+let one_time_post_coservice () =
+  Eliom_output.Redirection.register_post_coservice
+    ~scope:Eliom_common.session
+    ~max_use:1
+    ~fallback:Services.(home ())
+    ~post_params:Eliom_parameters.(list "field" (string "str"))
+    
+let editing_post_coservice ~configuration ~name ~value current_typed_values =
+  (fun () fields ->
+    let can_edit_m = Authentication.authorizes (`edit `layout) in
+    Lwt.bind can_edit_m (fun can_edit ->
+      match can_edit with
+      | Ok true ->
+        let m =
+          let g_id = ref "" in
+          try
+            let n =
+              List.map2_exn current_typed_values fields (fun (n,t,v1) v2 ->
+                eprintf "replacing with value: %S\n%!" v2;
+                let v = match v2 with "" -> None | s -> Some s in
+                if n = "g_id" then (
+                  g_id := Option.value_exn v1; None
+                ) else 
+                  Some (n,t,v))
+              |! List.filter_opt in
+            Lwt.return (n, Int.of_string !g_id)
+          with 
+          | Invalid_argument s -> 
+            coservice_error `fields_wrong_typing
+          | Failure "Option.value_exn None" ->
+            coservice_error `wrong_id
+          | Failure s -> coservice_error `wrong_id
+        in
+        Lwt.bind m (fun (fields, g_id) ->
+          Lwt.bind (raw_update ~configuration ~table:name ~fields ~g_id)
+            (function
+            | Ok () ->
+              Lwt.return (Eliom_services.preapply  
+                            Services.(layout ()) 
+                            ("view", (["record_" ^ name], [value])))
+            | Error e -> 
+              coservice_error e))
+      | _ ->
+        coservice_error `wrong_rights))
+
+let adding_post_coservice ~configuration ~name all_typed =
+  (fun () fields ->
+    let can_edit_m = Authentication.authorizes (`edit `layout) in
+    Lwt.bind can_edit_m (fun can_edit ->
+      match can_edit with
+      | Ok true ->
+        let m =
+          try
+            let n =
+              List.map2_exn all_typed fields (fun (n,t) v2 ->
+                eprintf "writing value: %S\n%!" v2;
+                let v = match v2 with "" -> None | s -> Some s in
+                if n = "g_id" then None else Some (n,t,v))
+              |! List.filter_opt in
+            Lwt.return n
+          with 
+          | Invalid_argument s -> 
+            coservice_error `fields_wrong_typing
+        in
+        Lwt.bind m (fun fields ->
+          Lwt.bind (raw_insert ~configuration ~table:name ~fields)
+            (function
+            | Ok () ->
+              Lwt.return (Eliom_services.preapply  
+                            Services.(layout ())
+                            ("view", (["record_" ^ name], [])))
+            | Error e -> 
+              coservice_error e))
+      | _ ->
+        coservice_error `wrong_rights))
+
+let add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit =
+  let all_typed =  (LDSL.record_standard_fields @ typed_values) in
+  Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
+    of_option value_to_edit (fun one_value ->
+      get_all_generic ~only:[one_value] dbh name
+      >>= (function
+      | [one_row] -> 
+        begin 
+          try
+            return (one_value,
+                    List.map2_exn one_row all_typed (fun v (n,t) -> (n,t,v)))
+          with
+            e -> error (`wrong_layout_typing name)
+        end
+      | not_one_row -> error (`did_not_get_one_row (name, not_one_row))))
+    >>= fun currrent_typed_values ->
+    let post_coservice =
+      match currrent_typed_values with
+      | Some (value, ctv) ->
+        (one_time_post_coservice ()) 
+          (editing_post_coservice ~configuration ~name ~value ctv)
+      | None ->
+        (one_time_post_coservice ())
+          (adding_post_coservice ~configuration ~name all_typed)
+    in
+    let form =
+      let typed_values =
+        match currrent_typed_values with
+        | Some (_, one) -> one
+        | None -> 
+          List.map all_typed (function
+          | (n, LDSL.Option LDSL.Timestamp) -> 
+            (n, LDSL.Option LDSL.Timestamp, Some Time.(now () |! to_string))
+          | (n,t) -> (n,t, None)) in
+      Eliom_output.Html5.(
+        post_form ~service:post_coservice
+          Html5.(fun values ->
+            let f name (n, t, value) next =
+              let msg = 
+                sprintf "Write the %s (%s)" n (LDSL.string_of_dsl_type t) in
+              begin match t with
+              | LDSL.Identifier ->
+                [pcdataf "Don't mess up with identifiers\n";
+                 string_input ~input_type:`Hidden ?value ~name ();
+                 br ();
+                ]
+              | _ ->
+                [pcdata msg;
+                 string_input ~input_type:`Text ~name ?value ();
+                 br ()]
+              end @ next
+            in
+            let submit =
+              Eliom_output.Html5.string_input ~input_type:`Submit
+                ~value:"Go" () in
+            [p 
+                (values.Eliom_parameters.it f typed_values [submit])
+            ])
+          ())
+    in
+    return [form])
+
 let edit_layout ~configuration ~main_title ~types ~values =
   match types, values with
   | [], _ ->
@@ -269,127 +407,11 @@ let edit_layout ~configuration ~main_title ~types ~values =
     | [] -> return None
     | [one] -> return (Some one)
     | _ -> error (`not_implemented "editing more than one value")
-    end >>= fun  value_to_edit ->
+    end
+    >>= fun  value_to_edit ->
     begin match find_node (Layout.Meta.layout ()) one_type with
     | Some (LDSL.Record (name, typed_values)) ->
-      let all_typed =  (LDSL.record_standard_fields @ typed_values) in
-      Hitscore_lwt.db_connect configuration
-      >>= fun dbh ->
-      of_option value_to_edit (fun one_value ->
-        get_all_generic ~only:[one_value] dbh name
-        >>= (function
-        | [one_row] -> 
-          begin 
-            try
-              List.map2_exn one_row all_typed (fun v (n,t) -> (n,t,v))
-              |! return
-            with
-              e -> error (`wrong_layout_typing name)
-          end
-        | not_one_row -> error (`did_not_get_one_row (name, not_one_row))))
-      >>= fun currrent_typed_values ->
-      let my_service_with_post_params =
-        Eliom_output.Redirection.register_post_coservice
-          ~scope:Eliom_common.session
-          ~max_use:1
-          ~fallback:Services.(home ())
-          ~post_params:Eliom_parameters.(list "field" (string "str"))
-          (fun () fields ->
-            let can_edit_m = Authentication.authorizes (`edit `layout) in
-            Lwt.bind can_edit_m (fun can_edit ->
-              match can_edit, currrent_typed_values with
-              | Ok true, Some typed_values ->
-                let m =
-                  let g_id = ref "" in
-                  try
-                    let n =
-                      List.map2_exn typed_values fields (fun (n,t,v1) v2 ->
-                        eprintf "replacing with value: %S\n%!" v2;
-                        let v = match v2 with "" -> None | s -> Some s in
-                        if n = "g_id" then (
-                          g_id := Option.value_exn v1; None
-                        ) else 
-                          Some (n,t,v))
-                      |! List.filter_opt in
-                    Lwt.return (n, Int.of_string !g_id)
-                  with 
-                  | Invalid_argument s -> 
-                    coservice_error `fields_wrong_typing
-                  | Failure "Option.value_exn None" ->
-                    coservice_error `wrong_id
-                  | Failure s -> coservice_error `wrong_id
-                in
-                Lwt.bind m (fun (fields, g_id) ->
-                  Lwt.bind (raw_update ~configuration ~table:name ~fields ~g_id)
-                    (function
-                    | Ok () ->
-                      Lwt.return (Eliom_services.preapply  
-                                    Services.(layout ())  ("view", (types, values)))
-                    | Error e -> 
-                      coservice_error e))
-              | Ok true, None ->
-                let m =
-                  try
-                    let n =
-                      List.map2_exn all_typed fields (fun (n,t) v2 ->
-                        eprintf "writing value: %S\n%!" v2;
-                        let v = match v2 with "" -> None | s -> Some s in
-                        if n = "g_id" then None else Some (n,t,v))
-                      |! List.filter_opt in
-                    Lwt.return n
-                  with 
-                  | Invalid_argument s -> 
-                    coservice_error `fields_wrong_typing
-                in
-                Lwt.bind m (fun fields ->
-                  Lwt.bind (raw_insert ~configuration ~table:name ~fields)
-                    (function
-                    | Ok () ->
-                      Lwt.return (Eliom_services.preapply  
-                                    Services.(layout ())  ("view", (types, values)))
-                    | Error e -> 
-                      coservice_error e))
-              | _, _ ->
-                coservice_error `wrong_rights))
-      in
-      let form2 =
-        let typed_values =
-          match currrent_typed_values with
-          | Some one -> one
-          | None -> 
-            List.map all_typed (function
-            | (n, LDSL.Option LDSL.Timestamp) -> 
-              (n, LDSL.Option LDSL.Timestamp, Some Time.(now () |! to_string))
-            | (n,t) -> (n,t, None)) in
-        Eliom_output.Html5.(
-          post_form 
-            ~service:my_service_with_post_params
-            Html5.(fun values ->
-              let f name (n, t, value) next =
-                let msg = 
-                  sprintf "Write the %s (%s)" n (LDSL.string_of_dsl_type t) in
-                begin match t with
-                | LDSL.Identifier ->
-                  [pcdataf "Don't mess up with identifiers\n";
-                   string_input ~input_type:`Hidden ?value ~name ();
-                   br ();
-                  ]
-                | _ ->
-                  [pcdata msg;
-                   string_input ~input_type:`Text ~name ?value ();
-                   br ()]
-                end @ next
-              in
-              let submit =
-                Eliom_output.Html5.string_input ~input_type:`Submit
-                  ~value:"Go" () in
-              [p 
-                  (values.Eliom_parameters.it f typed_values [submit])
-              ])
-            ())
-      in
-      Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
-      return [form2]
+      add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit
     | _ -> error (`not_implemented "editing anything else than records")
     end
   | _, _ -> error (`not_implemented "editing more than one 'thing'")
