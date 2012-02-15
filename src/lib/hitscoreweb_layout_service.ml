@@ -50,6 +50,14 @@ let find_node dsl nodename =
     | Volume (name, toplevel) ->     prefix = "volume"   && suffix = name
     )
 
+let find_enumeration_values name =
+  let open LDSL in
+  List.find_map (Layout.Meta.layout ()).nodes 
+    (function
+    | Enumeration (enum, vals) when enum = name -> Some vals
+    | _ -> None)
+
+
 let typed_values_in_table l =
   let open Html5 in
   List.map l (fun (n, t) ->
@@ -362,37 +370,59 @@ let add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit =
           (adding_post_coservice ~configuration ~name all_typed)
     in
     let form =
-      let typed_values =
+      let form_title, typed_values =
         match currrent_typed_values with
-        | Some (_, one) -> one
-        | None -> 
-          List.map all_typed (function
-          | (n, LDSL.Option LDSL.Timestamp) -> 
-            (n, LDSL.Option LDSL.Timestamp, Some Time.(now () |! to_string))
-          | (n,t) -> (n,t, None)) in
+        | Some (one_value, one) -> 
+          (sprintf "Edit %s #%d" name one_value, one)
+        | None ->
+          (sprintf "Add a new %s" name,
+           List.map all_typed (function
+           | (n, LDSL.Option LDSL.Timestamp) -> 
+             (n, LDSL.Option LDSL.Timestamp, Some Time.(now () |! to_string))
+           | (n,t) -> (n,t, None))) in
       Eliom_output.Html5.(
         post_form ~service:post_coservice
           Html5.(fun values ->
             let f name (n, t, value) next =
               let msg = 
-                sprintf "Write the %s (%s)" n (LDSL.string_of_dsl_type t) in
+                sprintf "%s (%s)" n (LDSL.string_of_dsl_type t) in
+              let styled_input = string_input ~a:[ a_style "min-width: 40em;"] in
+              let selectable ?display n = 
+                (Option ([], n, display, Some n = value)) in
               begin match t with
               | LDSL.Identifier ->
-                [pcdataf "Don't mess up with identifiers\n";
-                 string_input ~input_type:`Hidden ?value ~name ();
-                 br ();
-                ]
+                [[ `head [pcdataf "Don't mess up with identifiers\n"];
+                   `text [styled_input ~input_type:`Hidden ?value ~name ()];
+                ]]
+              | LDSL.Bool ->
+                [[ `head [pcdata msg];
+                   `text [string_select ~name
+                             (selectable ~display:(pcdataf "False") "f") 
+                             [selectable ~display:(pcdataf "True") "t"]]]]
+              | LDSL.Enumeration_name enum ->
+                begin match find_enumeration_values enum with
+                | Some (h :: t) ->
+                  [[ `head [pcdata msg];
+                     `text [string_select ~name
+                               (selectable h) (List.map t selectable)];]]
+                | _ -> 
+                  [[ `head [pcdata msg];
+                     `text [styled_input ~input_type:`Text ~name ?value ()];]]
+                end
               | _ ->
-                [pcdata msg;
-                 string_input ~input_type:`Text ~name ?value ();
-                 br ()]
+                [[ `head [pcdata msg];
+                   `text [styled_input ~input_type:`Text ~name ?value ()];]]
               end @ next
             in
             let submit =
               Eliom_output.Html5.string_input ~input_type:`Submit
                 ~value:"Go" () in
-            [p 
-                (values.Eliom_parameters.it f typed_values [submit])
+            [
+              h1 [pcdataf "%s" form_title];
+              Template.Display_service.(
+                html_of_content
+                  (content_table (values.Eliom_parameters.it f typed_values [])));
+              div [submit]
             ])
           ())
     in
