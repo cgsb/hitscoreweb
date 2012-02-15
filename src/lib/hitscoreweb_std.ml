@@ -48,13 +48,36 @@ let rec interleave_list ~sep = function
 let array_to_list_intermap ~sep ~f a =
   interleave_list ~sep (List.map (Array.to_list a) ~f)
 
-let pg_raw_query ~dbh ~query =
+
+let layout_log ~dbh fmt =
+  let f log =
+    Layout.Record_log.add_value ~dbh ~log >>= fun _ -> return () in
+  ksprintf f fmt
+
+let pg_raw_query ?with_log ~dbh ~query =
   let module PG = Layout.PGOCaml in
   let name = "todo_change_this" in
-  wrap_io (PG.prepare ~name ~query dbh) ()
-  >>= fun () ->
-  wrap_io (PG.execute ~name ~params:[] dbh) ()
-  >>= fun result ->
-  wrap_io (PG.close_statement dbh ~name) ()
-  >>= fun () ->
-  return result
+  let execution = 
+    wrap_io (PG.prepare ~name ~query dbh) ()
+    >>= fun () ->
+    wrap_io (PG.execute ~name ~params:[] dbh) ()
+    >>= fun result ->
+    wrap_io (PG.close_statement dbh ~name) ()
+    >>= fun () ->
+    return result
+  in
+  match with_log with
+  | None -> execution
+  | Some tag ->
+    double_bind execution
+      ~ok:(fun x -> 
+        layout_log ~dbh "(%s success %S)" tag query
+        >>= fun () ->
+        return x)
+      ~error:(function
+      | `io_exn e as err ->
+        layout_log ~dbh "(%s error %S %S)" tag query (Exn.to_string e)
+        >>= fun () -> 
+        error err
+      | err -> error err)
+

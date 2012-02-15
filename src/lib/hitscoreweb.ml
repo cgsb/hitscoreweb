@@ -674,7 +674,7 @@ module Layout_service = struct
               |! String.concat ~sep:" or ") 
       in
       sprintf  "select * from %s%s" (sanitize_name name) where in
-    pg_raw_query ~dbh ~query
+    pg_raw_query ?with_log:None ~dbh ~query
 
   let generic_to_table type_info current_name r =
     let open Html5 in
@@ -826,7 +826,8 @@ module Layout_service = struct
         g_id
     in
     eprintf "QUERY: %s\n" query;
-    Hitscore_lwt.with_database ~configuration ~f:(pg_raw_query ~query)
+    Hitscore_lwt.with_database ~configuration 
+      ~f:(pg_raw_query ~with_log:"web_raw_update" ~query)
 
   let raw_insert  ~configuration ~table ~fields =
     let query =
@@ -837,7 +838,8 @@ module Layout_service = struct
         | (_,_, Some s) -> sprintf "'%s'" s) |! String.concat ~sep:", ")
     in
     eprintf "QUERY: %s\n" query;
-    Hitscore_lwt.with_database ~configuration ~f:(pg_raw_query ~query)
+    Hitscore_lwt.with_database ~configuration 
+      ~f:(pg_raw_query ~with_log:"web_raw_insert" ~query)
 
 
   let edit_layout ~configuration ~main_title ~types ~values =

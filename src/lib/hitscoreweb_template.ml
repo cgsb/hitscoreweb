@@ -142,6 +142,8 @@ let default ?(title) content =
         [pcdata "There is (are?) more than one person with that email address."]
       | `more_than_one_flowcell_called s ->
         [ksprintf pcdata "There are more than one flowcells called %s" s]
+      | `insert_did_not_return_one_id (s, l) ->
+        [pcdataf "Insert in %s did not return one id but %d." s (List.length l)]
     in
     Lwt.return (error_page (
       [ksprintf pcdata "Layout Inconsistency in "]
