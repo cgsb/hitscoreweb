@@ -37,7 +37,10 @@ CAMLP4= 'camlp4o str.cma \
 ELIOMC      := eliomc -thread -pp $(CAMLP4) -I . -I ../src/simple_pam
 #ELIOMC      := eliomc
 ELIOMOPT    := eliomopt -thread -pp $(CAMLP4) -I . -I ../src/simple_pam
-ELIOMDEP    := eliomdep -pp $(CAMLP4) -I .
+
+ELIOMDEPSERVER := eliomdep -server -pp $(CAMLP4) -I .
+ELIOMDEPCLIENT := eliomdep -client -pp $(CAMLP4) -I .
+
 JS_OF_ELIOM := js_of_eliom -pp $(CAMLP4) -I . -I ../src/simple_pam
 
 ## Where to put intermediate object files.
@@ -119,16 +122,16 @@ clean:
 distclean: clean.local
 	-rm -f *~ \#* .\#*
 
-## ## Dependencies
-##  
-## depend: .depend
-## .depend: ${SERVER_FILES} ${CLIENT_FILES}
-##  	$(ELIOMDEP) -server ${SERVER_INC} ${SERVER_FILES} > .depend
-##  	$(ELIOMDEP) -client ${CLIENT_INC} ${CLIENT_FILES} >> .depend
-##  
-## ## Warning: Dependencies towards *.eliom are not handled by eliomdep yet.
-##  
-## include .depend
+## Dependencies
+
+depend: .depend
+.depend: ${SERVER_FILES} ${CLIENT_FILES}
+	$(ELIOMDEPSERVER)  ${SERVER_INC} ${SERVER_FILES} > .depend
+	$(ELIOMDEPCLIENT)  ${CLIENT_INC} ${CLIENT_FILES} >> .depend
+	ocaml ../../bin/fake_eliomdep.ml $(patsubst %.eliom,%,${COMMON_FILES}) >> .depend
+## Warning: Dependencies towards *.eliom are not handled by eliomdep yet.
+
+include .depend
 
 ## installation #########
 
