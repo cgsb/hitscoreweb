@@ -7,20 +7,6 @@ License:     PROP
 Plugins:     META (0.2)
 BuildTools:  ocamlbuild
 
-Library hitscoreweb
-  Path: src/lib
-  FindlibName: hitscoreweb
-  BuildDepends: hitscoregen, hitscorewebpam, threads, core, hitscore, lwt.syntax,
-                pgocaml.syntax, eliom.server
-  Install: true
-  Modules: Hitscoreweb,
-           Hitscoreweb_queries,
-           Hitscoreweb_services,
-           Hitscoreweb_authentication,
-           Hitscoreweb_template,
-           Hitscoreweb_layout_service,
-           Hitscoreweb_std
-
 Library hitscorewebpam
   Path: src/simple_pam
   Modules: Simple_pam
@@ -30,5 +16,6 @@ Library hitscorewebpam
 Executable hitscoreweb
   Path:   src/app
   MainIs: hitscoreweb.ml
-  BuildDepends: hitscoreweb
+  BuildTools:  ocamlbuild
+  BuildDepends: threads, hitscore
   CompiledObject: best

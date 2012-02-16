@@ -1,5 +1,5 @@
 (* OASIS_START *)
-(* DO NOT EDIT (digest: 3fec654305fca287c5a1f1af5f23d4d6) *)
+(* DO NOT EDIT (digest: 225075e3e6fbe78f3ec8d7bc3ed32f16) *)
 module OASISGettext = struct
 # 21 "/build/buildd/oasis-0.2.0/src/oasis/OASISGettext.ml"
   
@@ -452,10 +452,7 @@ open Ocamlbuild_plugin;;
 let package_default =
   {
      MyOCamlbuildBase.lib_ocaml =
-       [
-          ("src/simple_pam/hitscorewebpam", ["src/simple_pam"]);
-          ("src/lib/hitscoreweb", ["src/lib"])
-       ];
+       [("src/simple_pam/hitscorewebpam", ["src/simple_pam"])];
      lib_c = [("hitscorewebpam", "src/simple_pam", [])];
      flags =
        [

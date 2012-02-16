@@ -1,5 +1,10 @@
 # OASIS_START
-# DO NOT EDIT (digest: 0eaa8b2d8b6d904f653d956bd122a5ed)
+# DO NOT EDIT (digest: df4f16880c2956ec6c50a2ef753a7066)
+# Executable hitscoreweb
+<src/app/hitscoreweb.{native,byte}>: pkg_threads
+<src/app/hitscoreweb.{native,byte}>: pkg_hitscore
+<src/app/*.ml{,i}>: pkg_threads
+<src/app/*.ml{,i}>: pkg_hitscore
 # Library hitscorewebpam
 "src/simple_pam": include
 <src/simple_pam/hitscorewebpam.{cma,cmxa}>: oasis_library_hitscorewebpam_cclib
@@ -8,35 +13,6 @@
 "src/simple_pam/libhitscorewebpam.a": oasis_library_hitscorewebpam_cclib
 "src/simple_pam/dllhitscorewebpam.so": oasis_library_hitscorewebpam_cclib
 <src/simple_pam/hitscorewebpam.{cma,cmxa}>: use_libhitscorewebpam
-# Library hitscoreweb
-"src/lib": include
-<src/lib/*.ml{,i}>: use_hitscorewebpam
-<src/lib/*.ml{,i}>: pkg_threads
-<src/lib/*.ml{,i}>: pkg_pgocaml.syntax
-<src/lib/*.ml{,i}>: pkg_lwt.syntax
-<src/lib/*.ml{,i}>: pkg_hitscoregen
-<src/lib/*.ml{,i}>: pkg_hitscore
-<src/lib/*.ml{,i}>: pkg_eliom.server
-<src/lib/*.ml{,i}>: pkg_core
-# Executable hitscoreweb
-<src/app/hitscoreweb.{native,byte}>: use_hitscoreweb
-<src/app/hitscoreweb.{native,byte}>: use_hitscorewebpam
-<src/app/hitscoreweb.{native,byte}>: pkg_threads
-<src/app/hitscoreweb.{native,byte}>: pkg_pgocaml.syntax
-<src/app/hitscoreweb.{native,byte}>: pkg_lwt.syntax
-<src/app/hitscoreweb.{native,byte}>: pkg_hitscoregen
-<src/app/hitscoreweb.{native,byte}>: pkg_hitscore
-<src/app/hitscoreweb.{native,byte}>: pkg_eliom.server
-<src/app/hitscoreweb.{native,byte}>: pkg_core
-<src/app/*.ml{,i}>: use_hitscoreweb
-<src/app/*.ml{,i}>: use_hitscorewebpam
-<src/app/*.ml{,i}>: pkg_threads
-<src/app/*.ml{,i}>: pkg_pgocaml.syntax
-<src/app/*.ml{,i}>: pkg_lwt.syntax
-<src/app/*.ml{,i}>: pkg_hitscoregen
-<src/app/*.ml{,i}>: pkg_hitscore
-<src/app/*.ml{,i}>: pkg_eliom.server
-<src/app/*.ml{,i}>: pkg_core
 # OASIS_STOP
 
 <src/lib/*.ml>: syntax_camlp4o

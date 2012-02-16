@@ -1,4 +1,5 @@
-open Hitscoreweb_std
+open Core.Std
+let (|>) x f = f x
 
 let mime_types = "
 application/atom+xml		atom
@@ -110,7 +111,7 @@ let config
     match kind with
     | `Ocsigen ->
       sprintf " \
-        <eliom module=\"_build/src/lib/hitscoreweb.cma\">\n"
+        <eliom module=\"_build/hitscoreweb/hitscoreweb.cma\">\n"
     |`Static ->
       sprintf " <eliom name=\"hitscoreweb\">\n"
   in
@@ -126,7 +127,7 @@ let config
   output_string extensions;
   ksprintf output_string "<host hostfilter=\"*\">\n <static dir=\"%s/\" /> %s\n"
     runtime_root hitscore_module;
-  Hitscore_lwt.Configuration.(Option.(
+  Hitscore_configuration.(Option.(
     !global_hitscore_configuration
     >>= fun c ->
     db_host c >>= fun host ->
@@ -447,7 +448,7 @@ let () =
     let config = In_channel.(with_file config_file ~f:input_all) in
     let hitscore_config =
       let open Result in
-      Hitscore_lwt.Configuration.(
+      Hitscore_configuration.(
         parse_str config >>= fun c -> use_profile c profile_name)
       |! function
         | Ok o -> o
