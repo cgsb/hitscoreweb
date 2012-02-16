@@ -43,16 +43,6 @@ let evaluations =
   make (Eliom_services.service
           ~path:["evaluations"]
           ~get_params: Eliom_parameters.unit)
-
-let login =
-  make (Eliom_services.service
-          ~path:["login"]
-          ~get_params: Eliom_parameters.unit)
-  
-let logout =
-  make (Eliom_services.service
-          ~path:["logout"]
-          ~get_params:Eliom_parameters.unit)
           
 let layout =
   make (Eliom_services.service ~path:["layout"]

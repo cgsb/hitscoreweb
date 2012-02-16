@@ -10,49 +10,6 @@ module Template = Hitscoreweb_template
 
 module Layout_service = Hitscoreweb_layout_service
 
-module Login_service = struct
-
-
-  exception Authentication_error of [ `auth_state_exn of exn | `io_exn of exn ]
-
-  let make ~configuration () = 
-    let open Lwt in
-    let pam_handler =
-      (* This coservice is created/registered once, and then re-used
-         for every login.
-         The function Authentication.check handles the
-         session-dependent stuff. *)
-      Eliom_output.Redirection.register_post_coservice
-        ~fallback:Services.(home ())
-        ~post_params:Eliom_parameters.(string "user" ** string "pwd")
-        (fun () (user, pwd) ->
-          Authentication.check ~configuration (`pam (user,pwd))
-          >>= function
-          | Ok () ->
-            return (Services.default ())
-          | Error e ->
-            Lwt.fail (Authentication_error e))
-    in
-
-    let open Html5 in
-    (fun _ _ ->
-      let pam_form =
-        Eliom_output.Html5.post_form ~service:pam_handler
-          (fun (name, pwd) ->
-            [p [pcdata "NetID: ";
-                Eliom_output.Html5.string_input ~input_type:`Text ~name ();
-                pcdata " Password: ";
-                Eliom_output.Html5.string_input ~input_type:`Password ~name:pwd ();
-                Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
-               ];
-            ]) () 
-      in
-      let html_content = Hitscore_lwt.Result_IO.return  [
-        h1 [pcdata "Login"];
-        pam_form] in
-      Template.default ~title:"Log-in" html_content)
-end
-
 
 module Flowcells_service = struct
   let flowcells hsc =
@@ -690,7 +647,7 @@ let () =
           | Eliom_common.Eliom_404 -> send ~code:404 `eliom_404
           | Eliom_common.Eliom_Wrong_parameter -> send `eliom_wrong_parameter
           | Eliom_common.Eliom_Typing_Error l -> send (`eliom_typing_error l)
-          | Login_service.Authentication_error e -> send e
+          | Authentication.Authentication_error e -> send e
           | Layout_service.Edition_error (`layout_edit_coservice_error e) ->
             send (`layout_edit_coservice_error e)
           | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
@@ -704,6 +661,8 @@ let () =
         let pguser = ref None in
         let pgpass = ref None in
         let rodi = ref None in
+        let pam_service = ref None in
+        let auth_disabled = ref None in
         let open Simplexmlparser in
         let rec go_through = function
           | Element ("pghost", [], [PCData h]) -> pghost := Some h
@@ -713,9 +672,9 @@ let () =
           | Element ("pgpass", [], [PCData p]) -> pgpass := Some p
           | Element ("root-directory", [], [PCData p]) -> rodi := Some p
           | Element ("pam-authentication-service", [], []) ->
-            Authentication.global_authentication_disabled := true
+            auth_disabled := Some true;
           | Element ("pam-authentication-service", [], [PCData p]) ->
-            Authentication.global_pam_service := p
+            pam_service := Some p;
           | Element (tag, atts, inside) ->
             Ocsigen_messages.console (fun () ->
               sprintf "Unknown Config XML Tag: %s\n" tag);
@@ -730,10 +689,15 @@ let () =
                     ~host ~port ~database ~username ~password)
           | _ -> None
         in
-        Hitscore_lwt.Configuration.configure
-          ?root_directory:!rodi ?db_configuration () in
+        let config =
+          Hitscore_lwt.Configuration.configure
+            ?root_directory:!rodi ?db_configuration () in
+        Authentication.init ?disabled:!auth_disabled ?pam_service:!pam_service config;
+        config
+      in
 
       Services.(register default) (Default_service.make hitscore_configuration);
+
       Services.(register home) (Default_service.make hitscore_configuration);
       
       Services.(register flowcells)
@@ -752,16 +716,6 @@ let () =
 
       Services.(register layout) 
         Layout_service.(make ~configuration:hitscore_configuration);
-
-
-      Services.(register login) (Login_service.make
-                                   ~configuration:hitscore_configuration ());
-      
-      Services.(register logout) 
-        (fun () () ->
-          Lwt.bind (Authentication.logout ()) 
-            Html5.(fun _ ->
-              Template.default ~title:"Logout" (return [h1 [pcdata "Log Out"]])));
 
     )
 

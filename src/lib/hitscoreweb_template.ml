@@ -245,10 +245,8 @@ module Authentication_error = struct
     return [
       h1 [pcdataf "Authentication Error: %s" main_title];
       div [
-          div content;
-        pcdata "Perhaps should you ";
-        Services.(link login) [pcdata "login"] ();
-        pcdataf "? or maybe request more access rights?"
+        div content;
+        pcdata "Perhaps should you login? or maybe request more access rights?"
       ];
     ]
 
