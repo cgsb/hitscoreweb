@@ -54,7 +54,7 @@ let link service =
 
 
 let register f =
-  Eliom_output.Html5.register 
+  Output_app.register 
     ~error_handler:(fun sel -> 
       List.iter sel ~f:(fun (s, e) -> 
         eprintf "Errors: %S %S\n%!" s (Exn.to_string e));

@@ -82,7 +82,7 @@ let global_hitscore_configuration = ref None
 
 let config
     ?(authentication=`pam "login") ?(port=80) ~runtime_root ?conf_root
-    ?log_root kind output_string =
+    ~static_dir ?log_root kind output_string =
   let conf_dir = Option.value ~default:runtime_root conf_root in
   let log_dir = Option.value ~default:runtime_root log_root in
   let extensions =
@@ -126,7 +126,7 @@ let config
   output_string " <charset>utf-8</charset> <debugmode/>\n";
   output_string extensions;
   ksprintf output_string "<host hostfilter=\"*\">\n <static dir=\"%s/\" /> %s\n"
-    runtime_root hitscore_module;
+    static_dir hitscore_module;
   Hitscore_configuration.(Option.(
     !global_hitscore_configuration
     >>= fun c ->
@@ -159,6 +159,10 @@ let syscmd s =
   match Unix.system s with
   | `Exited 0 -> Ok ()
   | e -> Error (Failure (Unix.Process_status.to_string_hum e))
+
+let syscmdf fmt =
+  ksprintf syscmd fmt
+
 let syscmd_exn s = syscmd s |> Result.raise_error
 
 let testing ?authentication ?(port=8080) kind =
@@ -166,13 +170,15 @@ let testing ?authentication ?(port=8080) kind =
   let exec =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
   let open Result in
-  syscmd (sprintf "mkdir -p %s" runtime_root) |> raise_error;
+  syscmd (sprintf "mkdir -p %s/static/" runtime_root) |> raise_error;
   let open Out_channel in
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
   with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
-    ~f:(fun o -> config ?authentication
+    ~f:(fun o -> config ?authentication ~static_dir:(runtime_root ^ "/static")
       ~port ~runtime_root kind (output_string o));
+  syscmdf "cp _build/hitscoreweb/hitscoreweb.js %s/static/" 
+    runtime_root |! raise_error;
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
 
@@ -331,9 +337,14 @@ let rpm_build ?(release=1) () =
   let mimes_target = (sprintf "%s/mime.types" conf_root) in
   let sysv_tmp = sprintf "%s/hitscoreweb.init" tmp_dir in
   let sysv_target = "/etc/init.d/hitscoreweb" in
-  let runtime_root = "/var/run/hitscoreweb" in
-
+  let runtime_root = "/var/hitscoreweb" in
+  let static_dir = "/var/hitscoreweb/static" in
   let log_dir = "/var/log/hitscoreweb" in
+
+  let javascript_tmp =
+    sprintf "%s/_build/hitscoreweb/hitscoreweb.js"  (Unix.getcwd ()) in
+  let javascript_target =
+    sprintf "%s/hitscoreweb.js" static_dir in
 
   let open Out_channel in
 
@@ -345,7 +356,7 @@ let rpm_build ?(release=1) () =
     ~f:(fun o -> output_string o (mime_types));
 
   with_file conf_tmp ~f:(fun o -> 
-    config ~port:80 ~runtime_root ~conf_root 
+    config ~port:80 ~runtime_root ~conf_root ~static_dir 
       ~log_root:log_dir `Static (output_string o));
   
   with_file sysv_tmp ~f:(fun o ->
@@ -393,12 +404,13 @@ rm -rf $RPM_BUILD_ROOT
 ";
     fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" binary_dir;
     fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" conf_root;
+    fprintf o "mkdir -p $RPM_BUILD_ROOT/%s\n" static_dir;
     fprintf o "mkdir -p $RPM_BUILD_ROOT/etc/init.d\n";
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" binary_tmp binary_dir;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" conf_tmp conf_root;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" mimes_tmp conf_root;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
-
+    fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" javascript_tmp static_dir;
     output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -411,6 +423,7 @@ rm -rf $RPM_BUILD_ROOT
     output_string o "%defattr(0444,root,root,-)\n";
     fprintf o "%s\n" conf_target;
     fprintf o "%s\n" mimes_target;
+    fprintf o "%s\n" javascript_target;
     output_string o "
 
 %doc

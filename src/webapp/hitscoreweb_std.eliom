@@ -11,7 +11,10 @@ module Html5 = struct
   let codef fmt = ksprintf (fun s -> code [pcdata s]) fmt
 
 end
-
+module Output_app =
+  Eliom_output.Eliom_appl (struct
+    let application_name = "hitscoreweb"
+  end)
 
 module Lwt_config = struct
   include Lwt
