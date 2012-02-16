@@ -38,8 +38,8 @@ module Flowcells_service = struct
                 (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_2)
             ])))
         >>= fun l ->
-        return Template.Display_service.(
-          paragraph [
+        return Template.(
+          content_paragraph [
             strong [
               Services.(link flowcell) [pcdata serial_name] serial_name;
               pcdata ":"];
@@ -48,22 +48,22 @@ module Flowcells_service = struct
       >>= fun ul ->
       Hitscore_lwt.db_disconnect hsc dbh
       >>= fun _ ->
-      return Template.Display_service.(
+      return Template.(
         content_section
           (ksprintf pcdata "Found %d Flowcells" (List.length ul))
           (content_list ul)
       ))
 
-  let make hsc =
+  let make configuration =
     (fun () () ->
       Template.default ~title:"Flowcells"
         (Authentication.authorizes (`view `all_flowcells)
          >>= function
          | true ->
-           Template.Display_service.make_content ~hsc
-             ~main_title:"Flowcells" (flowcells hsc)
+           Template.make_content ~configuration
+             ~main_title:"Flowcells" (flowcells configuration)
          | false ->
-           Template.Authentication_error.make_content ~hsc
+           Template.make_authentication_error ~configuration
              ~main_title:"Flowcells" 
              (return [Html5.pcdataf "You may not view all the flowcells."])))
 end
@@ -125,7 +125,7 @@ module Persons_service = struct
       >>= fun _ ->
       let actual_rows = List.filter_opt rows in
       let nrows = List.length actual_rows in
-      return Template.Display_service.(Html5.(
+      return Template.(Html5.(
         let normal_rows = [
           `head [pcdata "Print name"];
 	  `head [pcdata "Given name"];
@@ -146,7 +146,7 @@ module Persons_service = struct
              ((normal_rows @ supplement)
               :: actual_rows)))))
 
-  let make hsc =
+  let make configuration =
     (fun (transpose, highlight) () ->
       Template.default ~title:"Persons"
         (Authentication.authorizes (`view `persons)
@@ -154,11 +154,11 @@ module Persons_service = struct
          | true ->
            Authentication.authorizes (`view `full_persons)
            >>= fun full_view ->
-           Template.Display_service.make_content ~hsc
+           Template.make_content ~configuration
              ~main_title:"People" 
-             (persons ?transpose ~highlight ~full_view hsc)
+             (persons ?transpose ~highlight ~full_view configuration)
          | false ->
-           Template.Authentication_error.make_content ~hsc
+           Template.make_authentication_error ~configuration
              ~main_title:"Persons" 
              (return [Html5.pcdataf "You may not view any person."])))
 
@@ -252,7 +252,7 @@ module Flowcell_service = struct
       lanes >>= fun lanes ->
       Hitscore_lwt.db_disconnect hsc dbh
       >>= fun _ ->
-      return Template.Display_service.(Html5.(
+      return Template.(Html5.(
         content_section 
           (ksprintf pcdata "Flowcell %s" serial_name)
           (content_table 
@@ -269,17 +269,17 @@ module Flowcell_service = struct
                                     `more_than_one_flowcell_called serial_name))
 
 
-  let make hsc =
+  let make configuration =
     (fun (serial_name) () ->
       let main_title = (sprintf "FC:%s" serial_name) in
       Template.default ~title:main_title
         (Authentication.authorizes (`view `full_flowcell)
          >>= function
          | true ->
-           Template.Display_service.make_content ~hsc ~main_title
-             (one_flowcell ~serial_name hsc)
+           Template.make_content ~configuration ~main_title
+             (one_flowcell ~serial_name configuration)
          | false ->
-           Template.Authentication_error.make_content ~hsc ~main_title
+           Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf 
                          "You may not view the flowcell called %s."
                          serial_name])))
@@ -415,7 +415,7 @@ module Libraries_service = struct
     Hitscore_lwt.db_disconnect hsc dbh
     >>= fun _ ->
     let nb_rows = List.length rows in
-    return Template.Display_service.(
+    return Template.(
       content_section
         (ksprintf pcdata "Found %d librar%s:"
            nb_rows (if nb_rows = 1 then "y" else "ies"))
@@ -438,17 +438,17 @@ module Libraries_service = struct
               `head [pcdata "Note"];
             ] :: rows)))
 
-  let make hsc =
+  let make configuration =
     (fun (transpose, qualified_names) () ->
       let main_title = "Libraries" in
       Template.default ~title:main_title
         (Authentication.authorizes (`view `libraries)
          >>= function
          | true ->
-           Template.Display_service.make_content ~hsc ~main_title    
-             (libraries ~qualified_names ?transpose hsc);
+           Template.make_content ~configuration ~main_title    
+             (libraries ~qualified_names ?transpose configuration);
          | false ->
-           Template.Authentication_error.make_content ~hsc ~main_title
+           Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf "You may not view the libraries."])))
 
     
@@ -503,7 +503,7 @@ module Evaluations_service = struct
                 ]
         ])
       >>= fun rows ->
-      return Template.Display_service.(
+      return Template.(
         let tab = 
           content_table (
             [`head [pcdata "Flowcell"]; 
@@ -515,7 +515,7 @@ module Evaluations_service = struct
         in
         content_section (pcdataf "%s: %d" name (List.length b2fs)) tab))
     else
-      return (Template.Display_service.paragraph [])
+      return (Template.content_paragraph [])
 
   let evaluations configuration =
     let open Html5 in
@@ -535,30 +535,29 @@ module Evaluations_service = struct
     >>= bcl_to_fastq_section ~dbh ~configuration "Succeeded"
     >>= fun succeeded_b2fs ->
 
-    return Template.Display_service.(
+    return Template.(
       content_list [
         inserted_b2fs; started_b2fs; failed_b2fs; succeeded_b2fs;
       ])
     >>= fun b2f_content ->
     Hitscore_lwt.db_disconnect configuration dbh
     >>= fun _ ->
-    return Template.Display_service.(
+    return Template.(
       content_list [
         content_section (pcdataf "Bcl_to_fastq") b2f_content;
       ])
 
   let make ~configuration =
-    let hsc = configuration in
     (fun () () ->
       let main_title = "Function Evaluations" in
       Template.default ~title:main_title
         (Authentication.authorizes (`view `all_evaluations)
          >>= function
          | true ->
-           Template.Display_service.make_content ~hsc ~main_title    
-             (evaluations hsc);
+           Template.make_content ~configuration ~main_title    
+             (evaluations configuration);
          | false ->
-           Template.Authentication_error.make_content ~hsc ~main_title
+           Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf 
                          "You may not view the function evaluations."])))
 

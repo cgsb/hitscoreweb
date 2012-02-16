@@ -144,7 +144,7 @@ let view_layout ~configuration ~main_title ~types ~values =
       Html5.(span (List.map layout.LDSL.nodes node_link
                    |! interleave_list ~sep:(pcdata ", "))) 
     in 
-    let open Template.Display_service in
+    let open Template in
     let open Html5 in
     let open LDSL in
     let ul_opt l = 
@@ -157,7 +157,7 @@ let view_layout ~configuration ~main_title ~types ~values =
       >>= fun can_edit ->
       let editors_paragraph =
         if can_edit then
-          paragraph [
+          content_paragraph [
             pcdataf "Actions: ";
             ul_opt [
               (can_edit, fun () ->
@@ -183,7 +183,7 @@ let view_layout ~configuration ~main_title ~types ~values =
         begin match s with
         | Enumeration (name, values) ->
           content_section (span [pcdata "Enumeration "; codef "%s" name])
-            (paragraph 
+            (content_paragraph 
                (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
           |! return
         | Record (name, typed_values) ->
@@ -210,22 +210,17 @@ let view_layout ~configuration ~main_title ~types ~values =
       | None -> 
         return (
           content_section (span [pcdata "Element "; codef "%s" elt])
-            (paragraph [pcdataf "The element %S was not found" elt]))
+            (content_paragraph
+               [pcdataf "The element %S was not found" elt]))
     )
     >>= fun displayed_nodes ->
     Hitscore_lwt.db_disconnect configuration dbh >>= fun () -> 
-    return Template.Display_service.(
-      let open Html5 in
-      content_list (
-        [
-          content_section (pcdataf "The Layout")
-            (paragraph [nodes]); 
-        ] 
-        @ displayed_nodes
-      ))
+    return (content_list (
+      [content_section (pcdataf "The Layout") (content_paragraph [nodes]);] 
+      @ displayed_nodes
+    ))
   in
-  Template.Display_service.make_content ~hsc:configuration
-    ~main_title content 
+  Template.make_content ~configuration ~main_title content 
 
 let raw_update ~configuration ~table ~g_id ~fields =
   let query =
@@ -419,7 +414,7 @@ let add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit =
                 ~value:"Go" () in
             [
               h1 [pcdataf "%s" form_title];
-              Template.Display_service.(
+              Template.(
                 html_of_content
                   (content_table (values.Eliom_parameters.it f typed_values [])));
               div [submit]
@@ -447,7 +442,6 @@ let edit_layout ~configuration ~main_title ~types ~values =
   | _, _ -> error (`not_implemented "editing more than one 'thing'")
 
 let make ~configuration =
-  let hsc = configuration in
   (fun (action, (types, values)) () ->
     let main_title = "The Layout Navigaditor" in
     match action with
@@ -457,7 +451,7 @@ let make ~configuration =
          >>= function
          | true -> view_layout ~configuration ~main_title ~types ~values
          | false ->
-           Template.Authentication_error.make_content ~hsc ~main_title
+           Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf "You may not view the whole Layout."]))
     | "edit" ->
       Template.default ~title:main_title
@@ -465,7 +459,7 @@ let make ~configuration =
          >>= function
          | true -> edit_layout ~configuration ~main_title ~types ~values
          | false ->
-           Template.Authentication_error.make_content ~hsc ~main_title
+           Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf "You may not edit the Layout."]))
     | s ->
       Template.default ~title:main_title (error (`unknown_layout_action s)))

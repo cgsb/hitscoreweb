@@ -146,108 +146,97 @@ let default ?(title) content =
     |! Lwt.return
   in
   Lwt.bind html_result (function
-  | Ok html -> Lwt.return html
+  | Ok html -> 
+    Lwt.return html
   | Error e -> error_page (html_of_error e))
 
-module Display_service = struct
-
-
-  type table_cell_html5 = HTML5_types.flow5 Html5.elt list
-
-  type content =
-  | Description of
-      (HTML5_types.phrasing Html5.elt * HTML5_types.flow5 Html5.elt) list 
-  | Section of HTML5_types.phrasing Html5.elt * content 
-  | List of content list
-  | Table of [`head of table_cell_html5
-             |`text of table_cell_html5
-             |`number of table_cell_html5 ] list list
-  | Paragraph of HTML5_types.flow5 Html5.elt list
-
-  let description l = Description l
-  let description_opt l = Description (List.filter_opt l)
-  let content_section t c = Section (t, c)
-  let content_list l = List l
-  let content_table ?(transpose=false) l =
-    let t = function
-      | [] -> []
-      | hl :: tll ->
+type table_cell_html5 = HTML5_types.flow5 Html5.elt list
+  
+type content =
+| Description of
+    (HTML5_types.phrasing Html5.elt * HTML5_types.flow5 Html5.elt) list 
+| Section of HTML5_types.phrasing Html5.elt * content 
+| List of content list
+| Table of [`head of table_cell_html5
+           |`text of table_cell_html5
+           |`number of table_cell_html5 ] list list
+| Paragraph of HTML5_types.flow5 Html5.elt list
+    
+let content_description l = Description l
+let content_description_opt l = Description (List.filter_opt l)
+let content_section t c = Section (t, c)
+let content_list l = List l
+let content_table ?(transpose=false) l =
+  let t = function
+    | [] -> []
+    | hl :: tll ->
         (* let lgth = List.length hl in *)
-        List.mapi hl (fun i h ->
-          h :: (List.map tll (fun tl ->
-            Option.value ~default:(`text []) (List.nth tl i))))
-    in
-    Table (if transpose then t l else l)
-        
-  let paragraph l = Paragraph l
+      List.mapi hl (fun i h ->
+        h :: (List.map tll (fun tl ->
+          Option.value ~default:(`text []) (List.nth tl i))))
+  in
+  Table (if transpose then t l else l)
+    
+let content_paragraph l = Paragraph l
 
-  let rec html_of_content ?(section_level=2) content =
-    let open Html5 in
-    let h = function
-      | 2 -> h2
-      | 3 -> h3
-      | 4 -> h4
-      | 5 -> h5
-      | 6 -> h6
-      | _ -> span in
-    match content with
-    | Paragraph l -> div l
-    | Description desc ->
-      ul (List.map desc (fun (l, r) ->
-        li [strong [l]; pcdata ": "; r; pcdata "."]));
-    | Section (title, content) ->
-      div [h section_level [title];
-           html_of_content ~section_level:(section_level + 1) content]
-    | List cl ->
-      div (List.map cl (html_of_content ~section_level))
-    | Table [] -> div []
-    | Table (h :: t) ->
-      let make_cell = function
-        | `head c -> 
-          td ~a:[ a_style "border: 1px solid black; padding: 2px; color: red" ] c
-        | `text c ->
-          td  ~a:[ a_style "border: 1px  solid grey; padding: 2px; \
+let rec html_of_content ?(section_level=2) content =
+  let open Html5 in
+  let h = function
+    | 2 -> h2
+    | 3 -> h3
+    | 4 -> h4
+    | 5 -> h5
+    | 6 -> h6
+    | _ -> span in
+  match content with
+  | Paragraph l -> div l
+  | Description desc ->
+    ul (List.map desc (fun (l, r) ->
+      li [strong [l]; pcdata ": "; r; pcdata "."]));
+  | Section (title, content) ->
+    div [h section_level [title];
+         html_of_content ~section_level:(section_level + 1) content]
+  | List cl ->
+    div (List.map cl (html_of_content ~section_level))
+  | Table [] -> div []
+  | Table (h :: t) ->
+    let make_cell = function
+      | `head c -> 
+        td ~a:[
+          a_style "border: 1px solid black; padding: 2px; color: red" ] c
+      | `text c ->
+        td  ~a:[ a_style "border: 1px  solid grey; padding: 2px; \
                             max-width: 40em;" ] c
-        | `number c ->
-          td  ~a:[ a_style "border: 1px  solid grey; padding: 4px; \
+      | `number c ->
+        td  ~a:[ a_style "border: 1px  solid grey; padding: 4px; \
                             text-align: right;" ] c
-      in
-      div [
-        table
-          ~a:[ a_style "border: 3px  solid black; \
+    in
+    div [
+      table
+        ~a:[ a_style "border: 3px  solid black; \
                         border-collapse: collapse; " ]
-        (* ~caption:(caption [pcdata "bouh"]) *)
-        (* ~columns:[colgroup [col (); col ()]] *)
-          (tr (List.map h make_cell))
-          (List.map t (fun l -> 
-            tr (List.map l make_cell)))
-      ]
-
-  let make_content ~hsc ~main_title content =
-    let open Html5 in
-    content >>= fun content ->
-    return [
-      h1 [ksprintf pcdata "Gencore: %s" main_title];
-      html_of_content content]
-
-  let make ~hsc ~main_title content =
-    let html_content = make_content ~hsc ~main_title content in
-    default ~title:main_title html_content
-
-end
-
-
-module Authentication_error = struct
-
-  let make_content ~hsc ~main_title content =
-    let open Html5 in
-    content >>= fun content ->
-    return [
-      h1 [pcdataf "Authentication Error: %s" main_title];
-      div [
-        div content;
-        pcdata "Perhaps should you login? or maybe request more access rights?"
-      ];
+          (* ~caption:(caption [pcdata "bouh"]) *)
+          (* ~columns:[colgroup [col (); col ()]] *)
+        (tr (List.map h make_cell))
+        (List.map t (fun l -> 
+          tr (List.map l make_cell)))
     ]
 
-end
+let make_content ~configuration ~main_title content =
+  let open Html5 in
+  content >>= fun content ->
+  return [
+    h1 [ksprintf pcdata "Gencore: %s" main_title];
+    html_of_content content]
+    
+let make_authentication_error ~configuration ~main_title content =
+  let open Html5 in
+  content >>= fun content ->
+  return [
+    h1 [pcdataf "Authentication Error: %s" main_title];
+    div [
+      div content;
+      pcdata "Perhaps should you login? or maybe request more access rights?"
+    ];
+  ]
+
