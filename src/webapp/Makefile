@@ -126,6 +126,8 @@ distclean: clean.local
 
 depend: .depend
 .depend: ${SERVER_FILES} ${CLIENT_FILES}
+	$(ELIOMDEPSERVER) ${SERVER_INC} ${SERVER_FILES} > .depend
+	$(ELIOMDEPCLIENT) ${CLIENT_INC} ${CLIENT_FILES} >> .depend
 	ocaml ../../bin/fake_eliomdep.ml $(patsubst %.eliom,%,${COMMON_FILES}) >> .depend
 ## Warning: Dependencies towards *.eliom are not handled by eliomdep yet.
 
