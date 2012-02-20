@@ -84,3 +84,8 @@ let pg_raw_query ?with_log ~dbh ~query =
         error err
       | err -> error err)
 
+{client{
+let (|!) x f = f x
+let lwtunit (x: unit Lwt.t) = Pervasives.ignore x
+let ($) f x = f x
+}}
