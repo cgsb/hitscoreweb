@@ -1,5 +1,6 @@
+{shared{
 open Hitscoreweb_std
-
+}}
 
 let make f = 
   let content = ref None in
@@ -95,6 +96,14 @@ let debugf service fmt =
     fmt
 }}
 
+(* ********************************************************************** *)
+{client{
 
+(* This is still not perfect as it goes to the top of the page *)
+let reload () =
+  lwtunit $ Eliom_client.change_page
+    ~service: Eliom_services.void_coservice' () ()
+
+}}
 
 
