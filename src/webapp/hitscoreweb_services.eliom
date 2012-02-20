@@ -69,3 +69,32 @@ let register f =
                    ];
                  ])))
     ~service:(f ())
+
+
+(* ********************************************************************** *)
+(* Debug service *)
+{shared{
+  type debug_message = string deriving (Json)
+}}
+let debug_service =
+  make (Eliom_services.service 
+          ~path:["debug service"]
+          ~get_params:Eliom_parameters.(caml "param" Json.t<debug_message>))
+
+let debug_messages = ref []
+
+let init_debug () =
+  Eliom_output.Caml.register ~service:(debug_service ())
+    (fun param () ->
+      debug_messages := (Time.now (), param) :: !debug_messages;
+      Lwt.return ())
+{client{
+let debugf service fmt =
+  Printf.ksprintf
+    (fun msg -> ignore (Eliom_client.call_caml_service ~service msg ()))
+    fmt
+}}
+
+
+
+

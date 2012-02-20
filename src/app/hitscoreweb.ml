@@ -81,7 +81,8 @@ let global_hitscore_configuration = ref None
 
 
 let config
-    ?(authentication=`pam "login") ?(port=80) ~runtime_root ?conf_root
+    ?(authentication=`pam "login") ?(debug=false)
+    ?(port=80) ~runtime_root ?conf_root
     ~static_dir ?log_root kind output_string =
   let conf_dir = Option.value ~default:runtime_root conf_root in
   let log_dir = Option.value ~default:runtime_root log_root in
@@ -130,25 +131,32 @@ let config
   Hitscore_configuration.(Option.(
     !global_hitscore_configuration
     >>= fun c ->
-    db_host c >>= fun host ->
-    db_port c >>= fun port ->
-    db_username c >>= fun user ->
-    db_password c >>= fun pswd ->
-    db_database c >>= fun dbnm ->
-    root_directory c >>= fun rodi ->
-    ksprintf output_string "  <pghost>%s</pghost>\n" host;
-    ksprintf output_string "  <pgport>%d</pgport>\n" port;
-    ksprintf output_string "  <pgdb>%s</pgdb>\n" dbnm;
-    ksprintf output_string "  <pguser>%s</pguser>\n" user;
-    ksprintf output_string "  <pgpass>%s</pgpass>\n" pswd;
-    ksprintf output_string "  <root-directory>%s</root-directory>\n" rodi;
-    begin match authentication with
-    | `none -> ksprintf output_string "  <pam-authentication-service/>\n"
-    | `pam s -> 
-      ksprintf output_string
-        "  <pam-authentication-service>%s</pam-authentication-service>\n" s
-    end;
-    return None)) |! Pervasives.ignore;
+    (db_host c >>= fun host ->
+     db_port c >>= fun port ->
+     db_username c >>= fun user ->
+     db_password c >>= fun pswd ->
+     db_database c >>= fun dbnm ->
+     ksprintf output_string "  <pghost>%s</pghost>\n" host;
+     ksprintf output_string "  <pgport>%d</pgport>\n" port;
+     ksprintf output_string "  <pgdb>%s</pgdb>\n" dbnm;
+     ksprintf output_string "  <pguser>%s</pguser>\n" user;
+     ksprintf output_string "  <pgpass>%s</pgpass>\n" pswd;
+     return c)
+    >>= fun c ->
+    (root_directory c >>= fun rodi ->
+     ksprintf output_string "  <root-directory>%s</root-directory>\n" rodi;
+     return c)
+  )) |! Pervasives.ignore;
+  begin match authentication with
+  | `none -> ()
+  | `pam s -> 
+    ksprintf output_string
+      "  <pam-authentication-service>%s</pam-authentication-service>\n" s
+  end;
+  if debug then
+    output_string "<debug/>\n"
+  else
+    ();
   ksprintf output_string "</eliom>\n";
   ksprintf output_string "</host>\n";
 
@@ -165,7 +173,7 @@ let syscmdf fmt =
 
 let syscmd_exn s = syscmd s |> Result.raise_error
 
-let testing ?authentication ?(port=8080) kind =
+let testing ?authentication ?debug ?(port=8080) kind =
   let runtime_root = "/tmp/hitscoreweb" in
   let exec =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
@@ -175,7 +183,7 @@ let testing ?authentication ?(port=8080) kind =
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
   with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
-    ~f:(fun o -> config ?authentication ~static_dir:(runtime_root ^ "/static")
+    ~f:(fun o -> config ?authentication ?debug ~static_dir:(runtime_root ^ "/static")
       ~port ~runtime_root kind (output_string o));
   syscmdf "cp _build/hitscoreweb/hitscoreweb.js %s/static/" 
     runtime_root |! raise_error;
@@ -475,10 +483,10 @@ let () =
     global_hitscore_configuration := Some hitscore_config;
     begin match cmd_args with
     | [] -> printf "Nothing to do\n"
-    | "test" :: [] -> testing ~port:8080 ~authentication:`none `Ocsigen
+    | "test" :: [] -> testing ~port:8080 ~debug:true `Ocsigen
     | "static" :: [] -> testing ~port:8080 `Static
     | "test" :: p :: [] -> 
-      testing ~port:(Int.of_string p) ~authentication:`none `Ocsigen
+      testing ~port:(Int.of_string p) ~debug:true `Ocsigen
     | "static" :: p :: [] -> testing ~port:(Int.of_string p) `Static
     | "rpm" :: [] -> rpm_build ()
     | "rpm" :: release :: [] -> rpm_build ~release:(Int.of_string release) ()

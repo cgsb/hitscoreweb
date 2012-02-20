@@ -661,7 +661,7 @@ let () =
         let pgpass = ref None in
         let rodi = ref None in
         let pam_service = ref None in
-        let auth_disabled = ref None in
+        let debug_mode = ref false in
         let open Simplexmlparser in
         let rec go_through = function
           | Element ("pghost", [], [PCData h]) -> pghost := Some h
@@ -670,8 +670,8 @@ let () =
           | Element ("pguser", [], [PCData u]) -> pguser := Some u
           | Element ("pgpass", [], [PCData p]) -> pgpass := Some p
           | Element ("root-directory", [], [PCData p]) -> rodi := Some p
-          | Element ("pam-authentication-service", [], []) ->
-            auth_disabled := Some true;
+          | Element ("debug", [], []) ->
+            debug_mode := true;
           | Element ("pam-authentication-service", [], [PCData p]) ->
             pam_service := Some p;
           | Element (tag, atts, inside) ->
@@ -691,7 +691,8 @@ let () =
         let config =
           Hitscore_lwt.Configuration.configure
             ?root_directory:!rodi ?db_configuration () in
-        Authentication.init ?disabled:!auth_disabled ?pam_service:!pam_service config;
+        Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
+        if !debug_mode then Services.init_debug ();
         config
       in
 

@@ -1,7 +1,7 @@
 open Hitscoreweb_std
-
+{shared{
 module Services = Hitscoreweb_services
-
+}}
 module Authentication = Hitscoreweb_authentication
 
 
@@ -107,11 +107,25 @@ let html_of_error =
      @ [pcdata ":"; br ()]
      @ error_message)
 
-
-
 let default ?(title) content =
   let page page_title auth_state html_stuff =
+    let debug_service = Services.debug_service () in
+    Eliom_services.onload {{
+      Services.debugf %debug_service "Loading %S" %page_title;
+    }};
     Html5.(
+      let debug_bloc =
+        match !Services.debug_messages with
+        | [] -> div []
+        | l -> 
+          div [
+            hr ();
+            pcdataf "Debug Messages:";
+            br ();
+            ul (List.map l (fun (t, m) ->
+              li [pcdataf "[%s]: " (Time.to_string t);
+                  codef "%s" m]));
+          ] in
       html
         (head (title (pcdata page_title)) [])
         (body [
@@ -120,7 +134,8 @@ let default ?(title) content =
             div auth_state;
           ];
           hr ();
-          div html_stuff
+          div html_stuff;
+          debug_bloc;
         ]))
   in
   let html_result =
