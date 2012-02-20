@@ -109,10 +109,6 @@ let html_of_error =
 
 let default ?(title) content =
   let page page_title auth_state html_stuff =
-    let debug_service = Services.debug_service () in
-    Eliom_services.onload {{
-      Services.debugf %debug_service "Loading %S" %page_title;
-    }};
     Html5.(
       let debug_bloc =
         match !Services.debug_messages with
