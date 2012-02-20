@@ -24,7 +24,7 @@ SERVER_FILES := $(COMMON_FILES)
 
 ## Source files for the client part
 
-CLIENT_FILES := ${wildcard *.eliom}
+CLIENT_FILES := $(COMMON_FILES)
 
 ## Required binaries
 CAMLP4= 'camlp4o str.cma \
@@ -41,7 +41,7 @@ ELIOMOPT    := eliomopt -thread -pp $(CAMLP4) -I . -I ../src/simple_pam
 ELIOMDEPSERVER := eliomdep -server -pp $(CAMLP4) -I .
 ELIOMDEPCLIENT := eliomdep -client -pp $(CAMLP4) -I .
 
-JS_OF_ELIOM := js_of_eliom -pp $(CAMLP4) -I . -I ../src/simple_pam
+JS_OF_ELIOM := js_of_eliom -pp $(CAMLP4) -I _client/ -I . -I ../src/simple_pam
 
 ## Where to put intermediate object files.
 ## - ELIOM_{SERVER,CLIENT}_DIR must be distinct
@@ -101,7 +101,7 @@ CLIENT_OBJS := $(patsubst %.ml,${ELIOM_CLIENT_DIR}/%.cmo, ${CLIENT_OBJS})
 ${APP_NAME}.js: ${CLIENT_OBJS}
 	${JS_OF_ELIOM} -o $@ ${CLIENT_LIBS} $^
 
-${ELIOM_CLIENT_DIR}/%.cmi: %.mli
+${ELIOM_CLIENT_DIR}/%.cmi: %.eliom
 	${JS_OF_ELIOM} -c ${CLIENT_INC} $<
 
 ${ELIOM_CLIENT_DIR}/%.cmo: %.eliom
@@ -125,7 +125,7 @@ distclean: clean.local
 ## Dependencies
 
 depend: .depend
-.depend: ${SERVER_FILES} ${CLIENT_FILES}
+.depend:
 	$(ELIOMDEPSERVER) ${SERVER_INC} ${SERVER_FILES} > .depend
 	$(ELIOMDEPCLIENT) ${CLIENT_INC} ${CLIENT_FILES} >> .depend
 	ocaml ../../bin/fake_eliomdep.ml $(patsubst %.eliom,%,${COMMON_FILES}) >> .depend
