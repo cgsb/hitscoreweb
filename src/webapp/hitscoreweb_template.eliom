@@ -1,5 +1,5 @@
-open Hitscoreweb_std
 {shared{
+open Hitscoreweb_std
 module Services = Hitscoreweb_services
 }}
 module Authentication = Hitscoreweb_authentication
@@ -170,6 +170,7 @@ type content =
 | List of content list
 | Table of [`head of table_cell_html5
            |`text of table_cell_html5
+           |`sortable of string * table_cell_html5
            |`number of table_cell_html5 ] list list
 | Paragraph of HTML5_types.flow5 Html5.elt list
     
@@ -189,6 +190,36 @@ let content_table ?(transpose=false) l =
   Table (if transpose then t l else l)
     
 let content_paragraph l = Paragraph l
+
+let _global_table_ids = ref 0
+
+let td_on_click_to_sort do_something cell_id idx id =
+  let dbgsrv = Services.debug_service () in
+  {{
+    if %do_something then (
+      Services.debugf %dbgsrv "should reorder %s with %s (%d)" %id %cell_id %idx;
+      let tab =
+        Js.coerce_opt 
+          (Dom_html.document##getElementById (Js.string %id))
+          Dom_html.CoerceTo.table (fun _ -> assert false) in
+      let rows = tab##rows in
+          (*let compare_rows r1 r2 =
+            String.compare 
+            (r1##cells##item idx)##innerHTML (r2##cells##item idx)##innerHTML 
+            in*)
+      let get_cell r c = 
+        Js.Optdef.(bind rows##item(r) (fun row -> row##cells##item(c))) in
+      for i = 0 to rows##length - 1 do
+        Js.Optdef.iter (get_cell i 0) (fun cell ->
+          Services.debugf %dbgsrv "should: %s" (Js.to_string cell##title));
+      done;
+      tab##align <- Js.string "right";
+        (* Services.reload (); *)
+    ) else (
+      Services.debugf %dbgsrv "should not reorder with %s" %cell_id;
+      Services.reload ();
+    )    
+}}
 
 let rec html_of_content ?(section_level=2) content =
   let open Html5 in
@@ -211,26 +242,49 @@ let rec html_of_content ?(section_level=2) content =
     div (List.map cl (html_of_content ~section_level))
   | Table [] -> div []
   | Table (h :: t) ->
-    let make_cell = function
-      | `head c -> 
+    let dbgsrv = Services.debug_service () in
+    Eliom_services.onload {{
+      Services.debugf %dbgsrv "onloaded";
+    }};
+    let make_cell ?orderable idx cell =
+      let cell_id = incr _global_table_ids; sprintf "cell%d" !_global_table_ids in
+      (* let libraries = Services.libraries () in *)
+      let td_onclick =
+        Option.value_map orderable 
+          ~default:(td_on_click_to_sort false cell_id idx "")
+          ~f:(td_on_click_to_sort true cell_id idx)
+      in
+      eprintf "make cell: %d %s (%s)\n%!" idx cell_id (Option.value ~default:"notorder" orderable);
+      match cell with
+      | `head (c) -> 
         td ~a:[
+          a_id cell_id;
+          a_onclick td_onclick;
           a_style "border: 1px solid black; padding: 2px; color: red" ] c
-      | `text c ->
-        td  ~a:[ a_style "border: 1px  solid grey; padding: 2px; \
-                            max-width: 40em;" ] c
+      | `sortable (title, cell) ->
+        td  ~a:[ a_title title;
+                 a_onclick td_onclick;
+                 a_style "border: 1px  solid grey; padding: 2px; \
+                            max-width: 40em;" ] cell
+      | `text cell ->
+        td  ~a:[
+          a_onclick td_onclick;
+          a_style "border: 1px  solid grey; padding: 2px; \
+                            max-width: 40em;" ] cell
       | `number c ->
-        td  ~a:[ a_style "border: 1px  solid grey; padding: 4px; \
+        td  ~a:[
+          a_onclick td_onclick;
+          a_style "border: 1px  solid grey; padding: 4px; \
                             text-align: right;" ] c
     in
+    let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
     div [
-      table
-        ~a:[ a_style "border: 3px  solid black; \
+      table 
+        ~a:[ a_id id;
+             a_style "border: 3px  solid black; \
                         border-collapse: collapse; " ]
-          (* ~caption:(caption [pcdata "bouh"]) *)
-          (* ~columns:[colgroup [col (); col ()]] *)
-        (tr (List.map h make_cell))
-        (List.map t (fun l -> 
-          tr (List.map l make_cell)))
+        (tr (List.mapi h (make_cell ~orderable:id)))
+        (List.map t (fun l -> tr (List.mapi l (make_cell ?orderable:None))))
     ]
 
 let make_content ~configuration ~main_title content =

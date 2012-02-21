@@ -91,26 +91,27 @@ let generic_to_table type_info current_name r =
   let open Html5 in
   let rec display_typed s  =
     let open LDSL in
-    let text s = `text [pcdataf "%s" s] in
+    let text s = `sortable (s, [pcdataf "%s" s]) in
     let link s t =
-      `text [self_link (`view_one_value (t, Int.of_string s)) (pcdataf "%s" s)
-            ] in
+      `sortable (s, [self_link (`view_one_value (t, Int.of_string s)) (pcdataf "%s" s)]) in
     function
     | Bool 
     | Int
     | Real
     | String -> text s
     | Timestamp -> 
-      `text [ span ~a:[a_title s]
-                [pcdata 
-                    (Time.(of_string s |! to_local_date) |! Date.to_string)]]
+      `sortable (s,
+             [ span ~a:[a_title s]
+                 [pcdata 
+                     (Time.(of_string s |! to_local_date) |! Date.to_string)]])
     | Option o -> display_typed s o
     | Array (Record_name r) ->
       let ids = Array.to_list (Layout.PGOCaml.int32_array_of_string s)
                 |! List.map ~f:Int32.to_int_exn in
-      `text (List.map ids (fun i -> 
-        self_link (`view_one_value (sprintf "record_%s" r, i)) (pcdataf "%d" i))
-        |! interleave_list ~sep:(pcdata ", "))
+      `sortable (List.map ids (sprintf "%d") |! String.concat ~sep:",",
+        List.map ids (fun i -> 
+          self_link (`view_one_value (sprintf "record_%s" r, i)) (pcdataf "%d" i))
+          |! interleave_list ~sep:(pcdata ", "))
     | Array a -> text s
     | Record_name r -> link s (sprintf "record_%s" r)
     | Enumeration_name e -> text s
@@ -123,7 +124,7 @@ let generic_to_table type_info current_name r =
       List.map2_exn row type_info
         ~f:(fun sopt (n, t) ->
           Option.value_map sopt
-            ~default:(`text [codef "—"])
+            ~default:(`sortable ("",[codef "—"]))
             ~f:(fun s -> display_typed s t)))
   with
     e -> []
@@ -131,8 +132,8 @@ let generic_to_table type_info current_name r =
 let volume_to_table name toplevel rows =
   let open Html5 in
   List.map rows ~f:(List.map ~f:(Option.value_map
-                                   ~default:(`text [codef "—"])
-                                   ~f:(fun s -> `text [pcdataf "%s" s])))
+                                   ~default:(`sortable ("", [codef "—"]))
+                                   ~f:(fun s -> `sortable (s, [pcdataf "%s" s]))))
 
 
 let view_layout ~configuration ~main_title ~types ~values =
