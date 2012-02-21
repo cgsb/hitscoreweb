@@ -205,51 +205,63 @@ module Flowcell_service = struct
                       return (name, project))))
               >>= fun libs ->
               return Html5.(
-                let na = pcdata "—" in
-                let opt o f = Option.value_map ~default:na o ~f in
                 let pcf = (ksprintf pcdata "%.0f") in
                 let people_cell = 
-                  (List.map people (fun (f, l, e) ->
-                    [ 
-                      Services.(link persons)
-                        [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
-                      br () ]) |! List.flatten)
-                  @ [
-                    if List.length people > 1 then
-                      small [
-                        pcdata "(";
-                        Services.(link persons) [pcdata "all"]
-                          (None, List.map people (fun (f, l, e) -> e));
-                        pcdata ")"
-                      ]
-                    else
-                      span []
-                  ]
+                  let sortability =
+                    List.map people trd3 |! String.concat ~sep:", " in
+                  let cell = 
+                    (List.map people (fun (f, l, e) ->
+                      [ 
+                        Services.(link persons)
+                          [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
+                        br () ]) |! List.flatten)
+                    @ [
+                      if List.length people > 1 then
+                        small [
+                          pcdata "(";
+                          Services.(link persons) [pcdata "all"]
+                            (None, List.map people (fun (f, l, e) -> e));
+                          pcdata ")"
+                        ]
+                      else
+                        span []
+                    ]
+                  in
+                  (sortability, cell)
                 in
                 let libs_cell =
                   let qnames =
                     List.map libs (function (l, None) -> l
                     | (l, Some p) -> sprintf "%s.%s" p l) in
-                  (List.map qnames (fun qn ->
-                    Services.(link libraries) [pcdata qn] (Some true, [qn]))
-                    |! interleave_list ~sep:(pcdata ", "))
-                  @ [
-                    if List.length qnames > 1 then
-                      small [
-                        pcdata " (";
-                        Services.(link libraries) [pcdata "all"] (None, qnames);
-                        pcdata ")"
-                      ]
-                    else
-                      span []
-                  ]
+                  let sortability = String.concat ~sep:", " qnames in
+                  let cell =
+                    (List.map qnames (fun qn ->
+                      Services.(link libraries) [pcdata qn] (Some true, [qn]))
+                      |! interleave_list ~sep:(pcdata ", "))
+                    @ [
+                      if List.length qnames > 1 then
+                        small [
+                          pcdata " (";
+                          Services.(link libraries) [pcdata "all"] (None, qnames);
+                          pcdata ")"
+                        ]
+                      else
+                        span []
+                    ]
+                  in
+                  (sortability, cell)
                 in
+                let of_float_opt o =
+                  Option.value_map o ~default:(`sortable ("", [pcdata ""]))
+                    ~f:(fun f ->
+                      `sortable (Float.to_string f, [pcf f])) in
                 [
-                  `text   [ksprintf pcdata "Lane %d" !lane];
-                  `number [opt seeding_concentration_pM pcf];
-		  `text   [opt total_volume pcf];
-		  `text   people_cell;
-                  `text   libs_cell
+                  `sortable (Int.to_string !lane,
+                             [ksprintf pcdata "Lane %d" !lane]);
+                  of_float_opt seeding_concentration_pM;
+		  of_float_opt total_volume;
+		  `sortable people_cell;
+                  `sortable libs_cell
                 ]))))
       in
       lanes >>= fun lanes ->
