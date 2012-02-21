@@ -193,8 +193,10 @@ let content_paragraph l = Paragraph l
 
 let _global_table_ids = ref 0
 
-let td_on_click_to_sort do_something cell_id idx id =
+let td_on_click_to_sort do_something order cell_id idx id =
   let dbgsrv = Services.debug_service () in
+  let order_multiplier =
+    match order with `normal -> 1 | `reverse -> -1 in
   {{
     if %do_something then (
       Services.debugf %dbgsrv "should reorder %s with %s (%d)" %id %cell_id %idx;
@@ -203,18 +205,34 @@ let td_on_click_to_sort do_something cell_id idx id =
           (Dom_html.document##getElementById (Js.string %id))
           Dom_html.CoerceTo.table (fun _ -> assert false) in
       let rows = tab##rows in
-          (*let compare_rows r1 r2 =
-            String.compare 
-            (r1##cells##item idx)##innerHTML (r2##cells##item idx)##innerHTML 
-            in*)
-      let get_cell r c = 
-        Js.Optdef.(bind rows##item(r) (fun row -> row##cells##item(c))) in
-      for i = 0 to rows##length - 1 do
-        Js.Optdef.iter (get_cell i 0) (fun cell ->
-          Services.debugf %dbgsrv "should: %s" (Js.to_string cell##title));
+      let get_cell_title r c = 
+        Js.Optdef.(
+          let (>>=) = bind in
+          let opt =
+            rows##item(r)
+            >>= fun row ->
+            row##cells##item(c)
+            >>= fun cell ->
+            return (Js.to_string cell##title)
+          in
+          get opt (fun () -> "")
+        ) in
+      let array = Array.create (rows##length - 1) ("", Js.undefined) in
+      for i = 1 to rows##length - 1 do
+        array.(i - 1) <- (get_cell_title i %idx, rows##item(i));
       done;
-      tab##align <- Js.string "right";
-        (* Services.reload (); *)
+      Array.stable_sort (fun (x,_) (y,_) ->
+        %order_multiplier *
+          (try compare (int_of_string x) (int_of_string y)
+           with e ->
+             String.compare x y)) array;
+      for i = 1 to rows##length - 1 do
+        Js.Optdef.iter (snd array.(i - 1)) (fun row ->
+          tab##deleteRow(i);
+          tab##insertRow(i)##innerHTML <- row##innerHTML);
+      done;
+      
+      Services.debugf %dbgsrv "sort table";
     ) else (
       Services.debugf %dbgsrv "should not reorder with %s" %cell_id;
       Services.reload ();
@@ -242,38 +260,40 @@ let rec html_of_content ?(section_level=2) content =
     div (List.map cl (html_of_content ~section_level))
   | Table [] -> div []
   | Table (h :: t) ->
-    let dbgsrv = Services.debug_service () in
-    Eliom_services.onload {{
-      Services.debugf %dbgsrv "onloaded";
-    }};
     let make_cell ?orderable idx cell =
       let cell_id = incr _global_table_ids; sprintf "cell%d" !_global_table_ids in
-      (* let libraries = Services.libraries () in *)
-      let td_onclick =
+      let buttons =
         Option.value_map orderable 
-          ~default:(td_on_click_to_sort false cell_id idx "")
-          ~f:(td_on_click_to_sort true cell_id idx)
+          ~default:[]
+          ~f:(fun tableid ->
+            let td_onclick order =
+              td_on_click_to_sort true order cell_id idx tableid in
+            [
+              span ~a:[
+                a_onclick (td_onclick `normal);
+                a_style "color: black; background: yellow"; ]
+                [pcdataf "[sort:normal]"];
+              span ~a:[
+                a_onclick (td_onclick `reverse);
+                a_style "color: black; background: yellow"; ]
+                [pcdataf "[sort:reverse]"]; ])
       in
-      eprintf "make cell: %d %s (%s)\n%!" idx cell_id (Option.value ~default:"notorder" orderable);
       match cell with
       | `head (c) -> 
         td ~a:[
           a_id cell_id;
-          a_onclick td_onclick;
-          a_style "border: 1px solid black; padding: 2px; color: red" ] c
+          a_style "border: 1px solid black; padding: 2px; color: red" ] 
+          (buttons @ [div c])
       | `sortable (title, cell) ->
         td  ~a:[ a_title title;
-                 a_onclick td_onclick;
                  a_style "border: 1px  solid grey; padding: 2px; \
                             max-width: 40em;" ] cell
       | `text cell ->
         td  ~a:[
-          a_onclick td_onclick;
           a_style "border: 1px  solid grey; padding: 2px; \
                             max-width: 40em;" ] cell
       | `number c ->
         td  ~a:[
-          a_onclick td_onclick;
           a_style "border: 1px  solid grey; padding: 4px; \
                             text-align: right;" ] c
     in
