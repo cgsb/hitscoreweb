@@ -494,7 +494,7 @@ module Evaluations_service = struct
                  small [
                    pcdata " (";
                    a ~a:[ 
-                     ksprintf a_href "file://%s/%s/%s"
+                     a_hreff "file://%s/%s/%s"
                        (Option.value ~default:"$HSROOT" 
                           (Configuration.volumes_directory configuration))
                        vol_path csv_path] [pcdata "file"];
@@ -597,7 +597,7 @@ module Default_service = struct
           p [
             pcdata "This is Gencore's website; see also ";
             a ~a:[
-              a_href "https://docs.google.com/a/nyu.edu/?tab=co#folders/\
+              a_hreff "https://docs.google.com/a/nyu.edu/?tab=co#folders/\
                 0B6RMw3n537F2OTc3ZjZlMzktZTY2YS00MmI4LTk0MmQtZmZlYzQ3Nzk3YTRl"]
               [pcdata "GenCore FAQs and Presentations"];
             pcdata " on Google-Docs.";
