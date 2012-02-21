@@ -99,25 +99,28 @@ module Persons_service = struct
           else Html5.(
             let email_field =
               let style = if is_vip then "color: green" else "" in
-              `text [code ~a:[a_id email; a_style style] [pcdata email]]
+              `sortable (email, [code ~a:[a_id email; a_style style]
+                                    [pcdata email]])
             in
+            let text s = `sortable (s, [pcdata s]) in
+            let opttext o = opt text o in
             let default = [
-              `text [opt pcdata print_name];
-              `text [pcdata given_name];
-              `text [opt pcdata middle_name];
-              `text [pcdata family_name];
-              `text [opt pcdata nickname];
+              opttext print_name;
+              text given_name;
+              opttext middle_name;
+              text family_name;
+              opttext nickname;
               email_field;
               `text (array_to_list_intermap secondary_emails ~sep:(pcdata ", ")
                        ~f:(codef "%s\n"));
-              `text [code [opt pcdata login]];
+              opttext login;
             ] in
             let supplement = 
               if not full_view then [] else [
                 `text (array_to_list_intermap roles ~sep:(br ())
                          ~f:(fun s -> pcdataf "%s" 
                            (Layout.Enumeration_role.to_string s)));
-                `text [opt pcdata note];]
+                opttext note;]
             in
             return (Some (default @ supplement)))) in
       rows_m >>= fun rows ->
