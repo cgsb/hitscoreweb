@@ -516,25 +516,27 @@ module Evaluations_service = struct
         let fc_link = 
           Services.(link flowcell) [pcdata flowcell_name] (flowcell_name) in
         return [
-          `text [fc_link];
-          `text [pcdataf "%ld" mismatch];
-          `text [pcdataf "%s" version];
-          `text [codef "%s" (Option.value ~default:"" tiles)];
-          `text [pcdata
-                    (match kind with
-                    | `all_barcodes -> "All barcodes"
-                    | `specific_barcodes -> "Specific barcodes");
-                 small [
-                   pcdata " (";
-                   a ~a:[ 
-                     a_hreff "file://%s/%s/%s"
-                       (Option.value ~default:"$HSROOT" 
-                          (Configuration.volumes_directory configuration))
-                       vol_path csv_path] [pcdata "file"];
-                   pcdata ")"
-                 ];
-                ]
-        ])
+          `sortable (flowcell_name, [fc_link]);
+          `sortable (Int32.to_string mismatch, [pcdataf "%ld" mismatch]);
+          `sortable (version, [pcdataf "%s" version]);
+          (let tiles = (Option.value ~default:"" tiles) in
+          `sortable (tiles, [codef "%s"tiles]));
+          (let kind = (match kind with
+            | `all_barcodes -> "All barcodes"
+            | `specific_barcodes -> "Specific barcodes") in
+          `sortable (kind,
+                     [pcdata kind;
+                      small [
+                        pcdata " (";
+                        a ~a:[ 
+                          a_hreff "file://%s/%s/%s"
+                            (Option.value ~default:"$HSROOT" 
+                               (Configuration.volumes_directory configuration))
+                            vol_path csv_path] [pcdata "file"];
+                        pcdata ")"
+                      ];
+                     ]));
+          ])
       >>= fun rows ->
       return Template.(
         let tab = 
