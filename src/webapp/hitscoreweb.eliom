@@ -342,10 +342,6 @@ module Libraries_service = struct
                 p5, p7, note,
                 sample_name, org_name,
                 prep_email, protocol), submissions) ->
-        let opt f o = Option.value_map ~default:(pcdata "") ~f o in
-        let person e =
-          Services.(link persons) [ksprintf Html5.pcdata "%s" e] (Some true, [e])
-        in
         let submissions_cell = 
           let how_much =
             match List.length submissions with
@@ -353,19 +349,23 @@ module Libraries_service = struct
             | n -> sprintf "%d times: " n in
           let flowcells = 
             List.map submissions fst3 |! List.dedup in
-          (ksprintf pcdata "%s" how_much)
-          ::
-            interleave_list ~sep:(pcdata ", ")
-            (List.map flowcells (fun fcid ->
-              let lanes = 
-                List.filter submissions ~f:(fun (f,_,_) -> f = fcid)
-                |! List.length in
-              span [
-                Services.(link flowcell) [ksprintf pcdata "%s" fcid] fcid;
-                ksprintf pcdata " (%d lane%s)"
-                  lanes (if lanes > 1 then "s" else "");
-              ]))
-          @ [pcdata "."]
+          let sortability = List.length submissions |! sprintf "%d" in
+          let display =
+            (ksprintf pcdata "%s" how_much)
+            ::
+              interleave_list ~sep:(pcdata ", ")
+              (List.map flowcells (fun fcid ->
+                let lanes = 
+                  List.filter submissions ~f:(fun (f,_,_) -> f = fcid)
+                  |! List.length in
+                span [
+                  Services.(link flowcell) [ksprintf pcdata "%s" fcid] fcid;
+                  ksprintf pcdata " (%d lane%s)"
+                    lanes (if lanes > 1 then "s" else "");
+                ]))
+            @ [pcdata "."]
+          in
+          (sortability, display)
         in
         let barcodes_cell =
           let barcodes_list =
@@ -408,23 +408,41 @@ module Libraries_service = struct
                 | Error _ -> strong [pcdata "PARSING ERROR !!!"]
               )
           in
-          return (non_custom :: custom)
+          return (sprintf "%s%s" (Option.value ~default:"" bartype) barcodes_list,
+                  non_custom :: custom)
         in
         barcodes_cell >>= fun barcoding ->
+        let opt f o = Option.value_map ~default:(f "") ~f o in
+        let person e =
+          Services.(link persons) [ksprintf Html5.pcdata "%s" e] (Some true, [e])
+        in
+        let text s = `sortable (s, [pcdata s]) in
+        let opttext o = opt text o in
+        let valopt = Option.value ~default:"" in
+        let boolopt b =
+          Option.value_map b ~default:(`sortable ("", []))
+            ~f:(fun b ->
+              `sortable (Bool.to_string b, [pcdataf "%b" b])) in
+        let i32opt i32 =
+          Option.value_map i32 ~default:(`sortable ("", []))
+            ~f:(fun i ->
+              `sortable (Int32.to_string i, [pcdataf "%ld" i])) in
         return [
-          `text [opt pcdata name]; `text [opt pcdata project];
-          `text [opt pcdata desc];
-          `text submissions_cell;
-          `text [opt pcdata sample_name]; `text [opt pcdata org_name];
-          `text [opt person prep_email]; `text [opt pcdata protocol];
-          `text [opt pcdata app];
-          `text [opt (ksprintf pcdata "%b") stranded];
-          `text [opt (ksprintf pcdata "%b") truseq];
-          `text [opt pcdata rnaseq];
-          `text barcoding;
-          `text [opt (ksprintf pcdata "%ld") p5];
-          `text [opt (ksprintf pcdata "%ld") p7];
-          `text [opt pcdata note];
+          opttext name;
+          opttext project;
+          opttext desc;
+          `sortable submissions_cell;
+          opttext sample_name;
+          opttext org_name;
+          `sortable (valopt prep_email, [opt person prep_email]);
+          opttext protocol;
+          opttext app;
+          boolopt stranded;
+          boolopt truseq;
+          opttext rnaseq;
+          `sortable barcoding;
+          i32opt p5; i32opt p7;
+          opttext note;
         ])
     >>= fun rows ->
     Hitscore_lwt.db_disconnect hsc dbh
