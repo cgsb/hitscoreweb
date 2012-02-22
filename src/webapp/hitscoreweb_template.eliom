@@ -8,6 +8,7 @@ module Authentication = Hitscoreweb_authentication
 let html_of_error = 
   let open Html5 in
   function
+  | `non_https_login -> [pcdata "Login service not on HTTPS: FORBIDDEN"]
   | `eliom_404 -> [pcdataf "Error 404."]
   | `eliom_wrong_parameter -> [pcdataf "Error 404 (wrong parameter)."]
   | `eliom_typing_error _ -> [pcdataf "Error 404 (wrong parameter types)."]

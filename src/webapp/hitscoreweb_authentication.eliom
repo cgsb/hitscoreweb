@@ -171,7 +171,8 @@ let authorizes (cap:capability) =
 
 
 
-exception Authentication_error of [ `auth_state_exn of exn | `io_exn of exn ]
+exception Authentication_error of
+    [ `auth_state_exn of exn | `io_exn of exn | `non_https_login ]
 
 let login_coservice = 
   let coserv = ref None in
@@ -186,15 +187,19 @@ let login_coservice =
            The function Authentication.check handles the
            session-dependent stuff. *)
         Eliom_output.Action.register_post_coservice'
-        (* ~fallback:Services.(home ()) *)
-        ~post_params:Eliom_parameters.(string "user" ** string "pwd")
-        (fun () (user, pwd) ->
-          check (`pam (user,pwd))
-          >>= function
-          | Ok () ->
-            return ()
-          | Error e ->
-            Lwt.fail (Authentication_error e))
+          (* ~fallback:Services.(home ()) *)
+          (* ~https:true  --> Forces HTTPS *)
+          ~post_params:Eliom_parameters.(string "user" ** string "pwd")
+          (fun () (user, pwd) ->
+            if Eliom_request_info.get_ssl () then
+              (check (`pam (user,pwd))
+               >>= function
+               | Ok () ->
+                 return ()
+               | Error e ->
+                 Lwt.fail (Authentication_error e))
+            else
+              (Lwt.fail (Authentication_error `non_https_login)))
       in
       coserv := Some pam_handler;
       pam_handler
@@ -278,5 +283,14 @@ let display_state () =
           | `user_logged _ -> 
             [pcdata "; "; logout_form () ()]
           | _ -> 
-            [pcdata "; "; login_form ();]
+             if Eliom_request_info.get_ssl () then
+               [pcdata ". ";
+                login_form ()]
+             else
+               [pcdata ": ";
+                Eliom_output.Html5.a
+                  ~service:Eliom_services.https_void_coservice'
+                  [pcdata "Login with HTTPS"] ();
+               pcdata "."]
+             
           ))
