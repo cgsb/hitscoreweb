@@ -83,7 +83,7 @@ let global_hitscore_configuration = ref None
 let config
     ?(authentication=`pam "login") ?(debug=false)
     ?ssl
-    ?(port=80) ~runtime_root ?conf_root
+    ?(port=80) ~runtime_root ?conf_root ?ssl_dir
     ~static_dir ?log_root kind output_string =
   let out = output_string in
   let line out fmt = ksprintf out (fmt ^^ "\n") in
@@ -121,9 +121,10 @@ let config
   in
   line out "<ocsigen>\n  <server>\n    <port>%d</port>\n" port;
   Option.iter ssl (fun (cert, key) ->
+    let dir = Option.value ~default:conf_dir ssl_dir in
     line out "<port protocol=\"HTTPS\">%d</port>\n" (port - 80 + 443);
-    line out "<ssl><certificate>%s/%s</certificate>" conf_dir cert;
-    line out "     <privatekey>%s/%s</privatekey></ssl>" conf_dir key;
+    line out "<ssl><certificate>%s/%s</certificate>" dir cert;
+    line out "     <privatekey>%s/%s</privatekey></ssl>" dir key;
   );
   sprintf "    <user></user> <group></group>\n" |> output_string;
   sprintf "    <logdir>%s</logdir>\n" log_dir |> output_string;
@@ -181,7 +182,7 @@ let syscmdf fmt =
 
 let syscmd_exn s = syscmd s |> Result.raise_error
 
-let testing ?authentication ?debug ?ssl ?(port=8080) kind =
+let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
   let runtime_root = "/tmp/hitscoreweb" in
   let exec =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
@@ -191,7 +192,7 @@ let testing ?authentication ?debug ?ssl ?(port=8080) kind =
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
   with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
-    ~f:(fun o -> config ?authentication ?ssl
+    ~f:(fun o -> config ?authentication ?ssl ?ssl_dir
       ?debug ~static_dir:(runtime_root ^ "/static")
       ~port ~runtime_root kind (output_string o));
   syscmdf "cp _build/hitscoreweb/hitscoreweb.js %s/static/" 
@@ -493,36 +494,46 @@ let () =
     let port = ref 80 in 
     let rpm_release = ref 1 in
     let ssl_cert, ssl_key = ref "", ref "" in
+    let ssl_dir = ref None in
     let options = [
-      ("-port", Arg.Set_int port,
+      (`run, "-port", Arg.Set_int port,
        sprintf "p\n\tPort number (default: %d), \
               the HTTPS port is !port - 80 + 443 ;)" !port);
-      ("-rpm-release", Arg.Set_int rpm_release,
+      (`rpm, "-rpm-release", Arg.Set_int rpm_release,
        sprintf "n\n\tSet the RPM release number (default: %d)" !rpm_release);
-      ("-ssl", Arg.(Tuple [Set_string ssl_cert; Set_string ssl_key]),
+      (`run, "-ssl", Arg.(Tuple [Set_string ssl_cert; Set_string ssl_key]),
        sprintf "<cert> <key>\n\tSet an SSL certificate and a key, paths \
                 are relative to the directory where hitscoreweb.conf is.");
+      (`run, "-ssl-dir", Arg.String (fun s -> ssl_dir := Some s),
+       sprintf "<dir>\n\tDirectory of the SSL certificates and keys
+        (default is the same as the one used for hitscoreweb.conf)");
     ] in
     let anon_args = ref [] in
     let anon s = anon_args := s :: !anon_args in
     let usage = 
       sprintf "Usage:" in
     let cmdline = Array.of_list (cmd_args) in
+    let cmd = List.hd_exn cmd_args in
     begin 
-      try Arg.parse_argv cmdline options anon usage;
+      try
+        let actual_options =
+          List.filter_map options (function
+          | (`run, x,y,z) when cmd = "test" || cmd = "static" -> Some (x,y,z)
+          | (`rpm, x,y,z) when cmd = "rpm" -> Some (x,y,z)
+          | _ -> None) in
+        Arg.parse_argv cmdline actual_options anon usage;
       with
-      | Arg.Bad b -> eprintf "Error wrong argument %s\n" b
-      | Arg.Help h -> eprintf "Help: %s\n" h
+      | Arg.Bad b -> eprintf "Error wrong argument %s\n" b; exit 1
+      | Arg.Help h -> eprintf "Help: %s\n" h; exit 0
     end;
 
     let ssl = match !ssl_cert, !ssl_key with
       | "", "" -> None
       | c, k -> Some (c,k) in
-    begin match cmd_args with
-    | [] -> printf "Nothing to do\n"
-    | "test" :: _ -> testing ~port:!port ?ssl ~debug:true `Ocsigen
-    | "static" :: _ -> testing ~port:!port ?ssl `Static
-    | "rpm" :: [] -> rpm_build ~release:!rpm_release ()
-    | "sysv" :: _ -> sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
-    | not_found :: _ -> eprintf "Unknown command: %s.\n" not_found
+    begin match cmd with
+    | "test"  -> testing ~port:!port ?ssl ?ssl_dir:!ssl_dir ~debug:true `Ocsigen
+    | "static" -> testing ~port:!port ?ssl ?ssl_dir:!ssl_dir `Static
+    | "rpm" -> rpm_build ~release:!rpm_release ()
+    | "sysv" -> sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
+    | not_found -> eprintf "Unknown command: %s.\n" not_found
     end
