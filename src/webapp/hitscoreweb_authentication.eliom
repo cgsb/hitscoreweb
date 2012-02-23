@@ -64,7 +64,7 @@ type authentication_state = [
 ]
 
 let authentication_history =
-  Eliom_references.eref 
+  Eliom_references.eref ~secure:true
     ~scope:Eliom_common.session ([]: authentication_state list)
    
 let authentication_configuration = 
