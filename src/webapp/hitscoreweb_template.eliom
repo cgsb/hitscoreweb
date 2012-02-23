@@ -195,12 +195,10 @@ let content_paragraph l = Paragraph l
 let _global_table_ids = ref 0
 
 let td_on_click_to_sort do_something order cell_id idx id =
-  let dbgsrv = debug_service () in
   let order_multiplier =
     match order with `normal -> 1 | `reverse -> -1 in
   {{
     if %do_something then (
-      debugf %dbgsrv "should reorder %s with %s (%d)" %id %cell_id %idx;
       let tab =
         Js.coerce_opt 
           (Dom_html.document##getElementById (Js.string %id))
@@ -232,12 +230,7 @@ let td_on_click_to_sort do_something order cell_id idx id =
           tab##deleteRow(i);
           tab##insertRow(i)##innerHTML <- row##innerHTML);
       done;
-      
-      debugf %dbgsrv "sort table";
-    ) else (
-      debugf %dbgsrv "should not reorder with %s" %cell_id;
-      reload ();
-    )    
+    )   
 }}
 
 let rec html_of_content ?(section_level=2) content =
