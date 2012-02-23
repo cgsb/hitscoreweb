@@ -329,7 +329,7 @@ exit 0
   output_string esac
 
 
-let rpm_build ?(release=1) () =
+let rpm_build ?(release=1) ?ssl ?ssl_dir () =
   let () =
     match Unix.system 
       "test \"`ocamlfind list | grep batteries | grep 1.4 | wc -l`\" -eq 0"
@@ -374,7 +374,7 @@ let rpm_build ?(release=1) () =
     ~f:(fun o -> output_string o (mime_types));
 
   with_file conf_tmp ~f:(fun o -> 
-    config ~port:80 ~runtime_root ~conf_root ~static_dir 
+    config ~port:80 ~runtime_root ~conf_root ?ssl ?ssl_dir ~static_dir 
       ~log_root:log_dir `Static (output_string o));
   
   with_file sysv_tmp ~f:(fun o ->
@@ -501,10 +501,9 @@ let () =
               the HTTPS port is !port - 80 + 443 ;)" !port);
       (`rpm, "-rpm-release", Arg.Set_int rpm_release,
        sprintf "n\n\tSet the RPM release number (default: %d)" !rpm_release);
-      (`run, "-ssl", Arg.(Tuple [Set_string ssl_cert; Set_string ssl_key]),
-       sprintf "<cert> <key>\n\tSet an SSL certificate and a key, paths \
-                are relative to the directory where hitscoreweb.conf is.");
-      (`run, "-ssl-dir", Arg.String (fun s -> ssl_dir := Some s),
+      (`all, "-ssl", Arg.(Tuple [Set_string ssl_cert; Set_string ssl_key]),
+       sprintf "<cert> <key>\n\tSet an SSL certificate and a key filenames.");
+      (`all, "-ssl-dir", Arg.String (fun s -> ssl_dir := Some s),
        sprintf "<dir>\n\tDirectory of the SSL certificates and keys
         (default is the same as the one used for hitscoreweb.conf)");
     ] in
@@ -518,6 +517,7 @@ let () =
       try
         let actual_options =
           List.filter_map options (function
+          | (`all, x,y,z) -> Some (x,y,z)
           | (`run, x,y,z) when cmd = "test" || cmd = "static" -> Some (x,y,z)
           | (`rpm, x,y,z) when cmd = "rpm" -> Some (x,y,z)
           | _ -> None) in
@@ -533,7 +533,7 @@ let () =
     begin match cmd with
     | "test"  -> testing ~port:!port ?ssl ?ssl_dir:!ssl_dir ~debug:true `Ocsigen
     | "static" -> testing ~port:!port ?ssl ?ssl_dir:!ssl_dir `Static
-    | "rpm" -> rpm_build ~release:!rpm_release ()
+    | "rpm" -> rpm_build ~release:!rpm_release ?ssl ?ssl_dir:!ssl_dir ()
     | "sysv" -> sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
     | not_found -> eprintf "Unknown command: %s.\n" not_found
     end
