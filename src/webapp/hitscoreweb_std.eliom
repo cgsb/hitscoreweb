@@ -92,3 +92,50 @@ let (|!) x f = f x
 let lwtunit (x: unit Lwt.t) = Pervasives.ignore x
 let ($) f x = f x
 }}
+
+
+let make_delayed f = 
+  let content = ref None in
+  fun () ->
+    match !content with
+    | None -> 
+      let s = f () in          
+      content := Some s;
+      s
+    | Some s -> s
+      
+
+(* ********************************************************************** *)
+(* Debug service *)
+{shared{
+  type debug_message = string deriving (Json)
+}}
+let debug_service =
+  make_delayed (Eliom_services.service 
+          ~path:["debug service"]
+          ~get_params:Eliom_parameters.(caml "param" Json.t<debug_message>))
+
+let debug_messages = ref []
+
+let init_debug () =
+  Eliom_output.Caml.register ~service:(debug_service ())
+    (fun param () ->
+      debug_messages := (Time.now (), param) :: !debug_messages;
+      Lwt.return ())
+{client{
+let debugf service fmt =
+  Printf.ksprintf
+    (fun msg -> ignore (Eliom_client.call_caml_service ~service msg ()))
+    fmt
+}}
+
+(* ********************************************************************** *)
+{client{
+
+(* This is still not perfect as it goes to the top of the page *)
+let reload () =
+  lwtunit $ Eliom_client.change_page
+    ~service: Eliom_services.void_coservice' () ()
+
+}}
+

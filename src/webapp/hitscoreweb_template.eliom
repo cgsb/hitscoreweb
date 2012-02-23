@@ -112,7 +112,7 @@ let default ?(title) content =
   let page page_title auth_state html_stuff =
     Html5.(
       let debug_bloc =
-        match !Services.debug_messages with
+        match !debug_messages with
         | [] -> div []
         | l -> 
           div [
@@ -195,12 +195,12 @@ let content_paragraph l = Paragraph l
 let _global_table_ids = ref 0
 
 let td_on_click_to_sort do_something order cell_id idx id =
-  let dbgsrv = Services.debug_service () in
+  let dbgsrv = debug_service () in
   let order_multiplier =
     match order with `normal -> 1 | `reverse -> -1 in
   {{
     if %do_something then (
-      Services.debugf %dbgsrv "should reorder %s with %s (%d)" %id %cell_id %idx;
+      debugf %dbgsrv "should reorder %s with %s (%d)" %id %cell_id %idx;
       let tab =
         Js.coerce_opt 
           (Dom_html.document##getElementById (Js.string %id))
@@ -233,10 +233,10 @@ let td_on_click_to_sort do_something order cell_id idx id =
           tab##insertRow(i)##innerHTML <- row##innerHTML);
       done;
       
-      Services.debugf %dbgsrv "sort table";
+      debugf %dbgsrv "sort table";
     ) else (
-      Services.debugf %dbgsrv "should not reorder with %s" %cell_id;
-      Services.reload ();
+      debugf %dbgsrv "should not reorder with %s" %cell_id;
+      reload ();
     )    
 }}
 

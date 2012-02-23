@@ -727,7 +727,7 @@ let () =
           Hitscore_lwt.Configuration.configure
             ?root_directory:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
-        if !debug_mode then Services.init_debug ();
+        if !debug_mode then init_debug ();
         config
       in
 
