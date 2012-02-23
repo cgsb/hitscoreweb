@@ -1,4 +1,6 @@
+{shared{
 open Hitscoreweb_std
+}}
 
 module Services = Hitscoreweb_services
 
@@ -226,13 +228,35 @@ let logout_coservice =
 
 let login_form () =
   let open Html5 in
+  let form_span_id = "span_login_form" in
+  let message_span_id = "span_login_message" in
   Eliom_output.Html5.post_form ~service:(login_coservice ())
     (fun (name, pwd) ->
-      [span [pcdata "NetID: ";
+      [
+        span ~a:[ a_id message_span_id; a_style "visibility: hidden" ] [];
+        span ~a:[ a_id form_span_id;]
+          [pcdata "NetID: ";
           Eliom_output.Html5.string_input ~input_type:`Text ~name ();
           pcdata " Password: ";
           Eliom_output.Html5.string_input ~input_type:`Password ~name:pwd ();
-          Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Login" ();
+          Eliom_output.Html5.string_input
+            ~a:[
+              (* The onclick seems to work also when the user types <enter>
+                 but onsubmit does not seem to to anything (?)
+                 a_onsubmit {{debugf %dbgsrv "onsubmit!"}}; *)
+              a_onclick {{
+                let form_span =
+                    Dom_html.document##getElementById (Js.string %form_span_id) in
+                let message_span =
+                    Dom_html.document##getElementById (Js.string %message_span_id) in
+                Js.Opt.iter form_span (fun span ->
+                  span##style##visibility  <- Js.string "hidden";);
+                Js.Opt.iter message_span (fun span ->
+                  span##style##visibility  <- Js.string "visible";
+                  span##innerHTML <- Js.string "<b>Processing …</b>";);
+              }};
+            ]
+            ~input_type:`Submit ~value:"Login" ();
          ];
       ]) () 
 
