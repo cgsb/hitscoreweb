@@ -124,7 +124,9 @@ let default ?(title) content =
                   codef "%s" m]));
           ] in
       html
-        (head (title (pcdata page_title)) [])
+        (head (title (pcdata page_title)) [
+          link ~rel:[`Stylesheet] ~href:(uri_of_string "hitscoreweb.css") ();
+        ])
         (body [
           div [
             Services.(link default) [pcdata "Home"] ();

@@ -8,7 +8,7 @@ SERVER_PACKAGES := hitscoregen threads core hitscore
 
 ## Packages to be linked in the client part
 
-CLIENT_PACKAGES :=
+CLIENT_PACKAGES := oclosure
 
 ## Source files for the server part
 COMMON_FILES := \
@@ -19,6 +19,8 @@ COMMON_FILES := \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_layout_service.eliom \
   hitscoreweb.eliom
+
+CLOSURE_CSS_NAMES= common dialog
 
 SERVER_FILES := $(COMMON_FILES)
 
@@ -90,6 +92,11 @@ ${ELIOM_SERVER_DIR}/%.cmx: %.eliom
 %.cmxs: %.cmxa
 	$(ELIOMOPT) -shared -linkall -o $@ $<
 
+OCLOSURE_CSS_DIR=$(shell ocamlfind query oclosure)/closure/goog/css
+CLOSURE_CSS_FILES := $(patsubst %, ${OCLOSURE_CSS_DIR}/%.css,${CLOSURE_CSS_NAMES})
+${APP_NAME}.css: ${CLOSURE_CSS_FILES}
+	cat ${CLOSURE_CSS_FILES} > $@
+
 ##### Client side compilation ####
 
 CLIENT_LIBS := ${addprefix -package ,${CLIENT_PACKAGES}}
@@ -98,8 +105,14 @@ CLIENT_INC  := ${addprefix -package ,${CLIENT_PACKAGES}}
 CLIENT_OBJS := $(patsubst %.eliom,${ELIOM_CLIENT_DIR}/%.cmo, ${CLIENT_FILES})
 CLIENT_OBJS := $(patsubst %.ml,${ELIOM_CLIENT_DIR}/%.cmo, ${CLIENT_OBJS})
 
-${APP_NAME}.js: ${CLIENT_OBJS}
+${APP_NAME}_tmp.js: ${CLIENT_OBJS}
 	${JS_OF_ELIOM} -o $@ ${CLIENT_LIBS} $^
+
+${APP_NAME}_tmp_oclosure.js: ${APP_NAME}_tmp.js
+	oclosure_req $<
+
+${APP_NAME}.js: ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js
+	cat  ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js > $@
 
 ${ELIOM_CLIENT_DIR}/%.cmi: %.eliom
 	${JS_OF_ELIOM} -c ${CLIENT_INC} $<
