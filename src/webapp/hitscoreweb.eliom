@@ -752,5 +752,8 @@ let () =
       Services.(register layout) 
         Layout_service.(make ~configuration:hitscore_configuration);
 
+      Services.(register_css stylesheet)
+        Template.(css_service_handler ~configuration:hitscore_configuration);
+
     )
 

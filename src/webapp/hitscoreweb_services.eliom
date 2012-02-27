@@ -42,6 +42,11 @@ let layout =
           ~get_params:Eliom_parameters.(string "action" 
                                         ** set string "type" ** set int "value"))
 
+let stylesheet =
+  make (Eliom_services.service
+          ~path:["gencore_stylesheet"]
+          ~get_params: Eliom_parameters.unit)
+    
 let link service =
   Eliom_output.Html5.a ~service:(service ())
 
@@ -64,3 +69,6 @@ let register f =
     ~service:(f ())
 
 
+let register_css f =
+  Eliom_output.CssText.register 
+    ~service:(f ())

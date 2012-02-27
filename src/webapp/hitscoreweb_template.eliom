@@ -4,6 +4,14 @@ module Services = Hitscoreweb_services
 }}
 module Authentication = Hitscoreweb_authentication
 
+let css_service_handler ~configuration () () =
+  let open Lwt in
+  let css = Buffer.create 42 in
+  let out fmt = ksprintf (fun s -> return (Buffer.add_string css s)) fmt in
+  let side_margins = "5%" in
+  out "body { font-family: sans-serif; margin-left: %s; margin-right: %s; }"
+    side_margins side_margins >>= fun () ->
+  Lwt.return (Buffer.contents css)
 
 let html_of_error = 
   let open Html5 in
@@ -126,6 +134,8 @@ let default ?(title) content =
       html
         (head (title (pcdata page_title)) [
           link ~rel:[`Stylesheet] ~href:(uri_of_string "hitscoreweb.css") ();
+          link ~rel:[`Stylesheet] ~href:(Eliom_output.Html5.make_uri
+                                           ~service:Services.(stylesheet ()) ()) ();
         ])
         (body [
           div [
