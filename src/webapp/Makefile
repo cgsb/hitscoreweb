@@ -19,14 +19,10 @@ COMMON_FILES := \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_layout_service.eliom \
   hitscoreweb.eliom
+SERVER_FILES := $(COMMON_FILES)
+CLIENT_FILES := $(COMMON_FILES)
 
 CLOSURE_CSS_NAMES= common dialog
-
-SERVER_FILES := $(COMMON_FILES)
-
-## Source files for the client part
-
-CLIENT_FILES := $(COMMON_FILES)
 
 ## Required binaries
 CAMLP4= 'camlp4o str.cma \
