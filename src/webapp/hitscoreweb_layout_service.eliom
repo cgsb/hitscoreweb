@@ -1,4 +1,6 @@
+{shared{
 open Hitscoreweb_std
+}}
 
 module Queries = Hitscoreweb_queries
 
@@ -271,6 +273,20 @@ let one_time_post_coservice () =
     ~fallback:Services.(home ())
     ~post_params:Eliom_parameters.(list "field" (string "str"))
     
+let check_and_transform_input_value v t =
+  (* WORK-IN-PROGRESS *)
+  match v with
+  | "" -> None
+  | s ->
+    begin match t with
+    | LDSL.Array (LDSL.Enumeration_name enum) ->
+      eprintf "it is an array: %s\n%!" s;
+      Some ("("
+            ^ String.concat ~sep:" " (String.split ~on:',' s)
+            ^ ")")
+    | _ -> Some s
+    end
+      
 let editing_post_coservice ~configuration ~name ~value current_typed_values =
   (fun () fields ->
     let can_edit_m = Authentication.authorizes (`edit `layout) in
@@ -283,7 +299,7 @@ let editing_post_coservice ~configuration ~name ~value current_typed_values =
             let n =
               List.map2_exn current_typed_values fields (fun (n,t,v1) v2 ->
                 eprintf "replacing with value: %S\n%!" v2;
-                let v = match v2 with "" -> None | s -> Some s in
+                let v = check_and_transform_input_value v2 t in
                 if n = "g_id" then (
                   g_id := Option.value_exn v1; None
                 ) else 
@@ -320,8 +336,8 @@ let adding_post_coservice ~configuration ~name all_typed =
             let n =
               List.map2_exn all_typed fields (fun (n,t) v2 ->
                 eprintf "writing value: %S\n%!" v2;
-                let v = match v2 with "" -> None | s -> Some s in
-                if n = "g_id" then None else Some (n,t,v))
+                let v_transformed_back = check_and_transform_input_value v2 t in
+                if n = "g_id" then None else Some (n,t,v_transformed_back))
               |! List.filter_opt in
             Lwt.return n
           with 
@@ -401,6 +417,32 @@ let add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit =
                   [[ `head [pcdata msg];
                      `text [string_select ~name
                                (selectable h) (List.map t selectable)];]]
+                | _ -> 
+                  [[ `head [pcdata msg];
+                     `text [styled_input ~input_type:`Text ~name ?value ()];]]
+                end
+              | LDSL.Array (LDSL.Enumeration_name enum) ->
+                begin match find_enumeration_values enum with
+                | Some values ->
+                  let dbg = debug_service () in
+                  let id = unique_id "input" in
+                  Eliom_services.onload {{
+                    Js.Opt.iter (Dom_html.document##getElementById (Js.string %id))
+                    (fun input ->
+                      let values_array = Array.of_list %values in
+                      let basic_autocomplete =
+                        jsnew Goog.Ui.AutoComplete.basic(
+                          Js.array values_array,
+                          input,
+                          Js.some Js._true,
+                          Js.some Js._true) in
+                      debugf %dbg "onload for %S -- after goog" %id;
+                      ignore basic_autocomplete
+                    )
+                  }};
+                  [[ `head [pcdata msg];
+                     `text [string_input ~a:[ a_id id]
+                               ~input_type:`Text ~name ?value ()];]]
                 | _ -> 
                   [[ `head [pcdata msg];
                      `text [styled_input ~input_type:`Text ~name ?value ()];]]

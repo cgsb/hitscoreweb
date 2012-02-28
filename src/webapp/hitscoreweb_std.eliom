@@ -105,6 +105,11 @@ let make_delayed f =
     | Some s -> s
       
 
+let unique_id =
+  let i = ref 0 in
+  (fun s -> incr i; sprintf "%s_%d" s !i)
+
+  
 (* ********************************************************************** *)
 (* Debug service *)
 {shared{
