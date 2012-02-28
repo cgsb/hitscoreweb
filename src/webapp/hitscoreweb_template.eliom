@@ -4,13 +4,47 @@ module Services = Hitscoreweb_services
 }}
 module Authentication = Hitscoreweb_authentication
 
+
 let css_service_handler ~configuration () () =
   let open Lwt in
   let css = Buffer.create 42 in
-  let out fmt = ksprintf (fun s -> return (Buffer.add_string css s)) fmt in
+  let out fmt = ksprintf (fun s -> (Buffer.add_string css s)) fmt in
   let side_margins = "5%" in
   out "body { font-family: sans-serif; margin-left: %s; margin-right: %s; }"
-    side_margins side_margins >>= fun () ->
+    side_margins side_margins;
+
+  out ".sort_normal_button, .sort_reverse_button {
+	height: 10px;
+	width: 20px;
+	background-color: #ddd;
+	position: relative;
+        float: left;
+        margin: 2px;
+}
+";
+  out ".sort_normal_button:after {
+	content: ' ';
+	height: 0;
+	position: absolute;
+	width: 0;
+	border: 10px solid transparent;
+	border-top-color: #333;
+	top: 0px;
+	left: 0px;
+}
+";
+  out ".sort_reverse_button:after {
+	content: ' ';
+	height: 0;
+	position: absolute;
+	width: 0;
+	border: 10px solid transparent;
+	border-bottom-color: #333;
+	top: -10px;
+	left: 0px;
+}
+";
+  
   Lwt.return (Buffer.contents css)
 
 let html_of_error = 
@@ -275,21 +309,23 @@ let rec html_of_content ?(section_level=2) content =
             let td_onclick order =
               td_on_click_to_sort true order cell_id idx tableid in
             [
-              span ~a:[
-                a_onclick (td_onclick `normal);
-                a_style "color: black; background: yellow"; ]
-                [pcdataf "[sort:normal]"];
-              span ~a:[
-                a_onclick (td_onclick `reverse);
-                a_style "color: black; background: yellow"; ]
-                [pcdataf "[sort:reverse]"]; ])
+              div ~a:[
+                a_title "sort:normal";
+                a_class ["sort_normal_button"];
+                a_onclick (td_onclick `normal);]
+                [];
+              div ~a:[
+                a_title "sort:reverse";
+                a_class ["sort_reverse_button"];
+                a_onclick (td_onclick `reverse);]
+                [pcdataf ""]; ])
       in
       match cell with
       | `head (c) -> 
         td ~a:[
           a_id cell_id;
           a_style "border: 1px solid black; padding: 2px; color: red" ] 
-          (buttons @ [div c])
+          ([div c] @ buttons)
       | `sortable (title, cell) ->
         td  ~a:[ a_title title;
                  a_style "border: 1px  solid grey; padding: 2px; \
