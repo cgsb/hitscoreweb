@@ -4,6 +4,22 @@ module Services = Hitscoreweb_services
 }}
 module Authentication = Hitscoreweb_authentication
 
+let css_triangle_arrow ~css_class ?(height_px=10) ?(background="#ddd")
+    ?(margin="2px") ?(color="#333") (direction : [ `up | `down ]) =
+  let buf = Buffer.create 42 in
+  let out fmt = ksprintf (fun s -> (Buffer.add_string buf s)) fmt in
+  out ".%s {\n" css_class;
+  out " height: %dpx; width: %dpx;" height_px (height_px * 2);
+  out "background-color: %s;\n" background;
+  out "position: relative; float: left; margin: %s;\n}\n" margin;
+  out ".%s:after {\n" css_class;
+  out " content: ' '; height: 0; position: absolute; width: 0;\n";
+  out " border: %dpx solid transparent;" height_px;
+  out "border-%s-color: %s;\n"
+    (match direction with `up -> "top" | `down -> "bottom") color;
+  out " top: %dpx; left: 0px;}\n"
+    (match direction with `up -> 0 | `down -> - height_px);
+  Buffer.contents buf
 
 let css_service_handler ~configuration () () =
   let open Lwt in
@@ -13,37 +29,8 @@ let css_service_handler ~configuration () () =
   out "body { font-family: sans-serif; margin-left: %s; margin-right: %s; }"
     side_margins side_margins;
 
-  out ".sort_normal_button, .sort_reverse_button {
-	height: 10px;
-	width: 20px;
-	background-color: #ddd;
-	position: relative;
-        float: left;
-        margin: 2px;
-}
-";
-  out ".sort_normal_button:after {
-	content: ' ';
-	height: 0;
-	position: absolute;
-	width: 0;
-	border: 10px solid transparent;
-	border-top-color: #333;
-	top: 0px;
-	left: 0px;
-}
-";
-  out ".sort_reverse_button:after {
-	content: ' ';
-	height: 0;
-	position: absolute;
-	width: 0;
-	border: 10px solid transparent;
-	border-bottom-color: #333;
-	top: -10px;
-	left: 0px;
-}
-";
+  out "%s" (css_triangle_arrow ~css_class:"sort_normal_button" `up);
+  out "%s" (css_triangle_arrow ~css_class:"sort_reverse_button" `down);
   
   Lwt.return (Buffer.contents css)
 
@@ -318,7 +305,7 @@ let rec html_of_content ?(section_level=2) content =
                 a_title "sort:reverse";
                 a_class ["sort_reverse_button"];
                 a_onclick (td_onclick `reverse);]
-                [pcdataf ""]; ])
+                []; ])
       in
       match cell with
       | `head (c) -> 
