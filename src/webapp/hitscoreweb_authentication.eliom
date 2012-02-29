@@ -16,6 +16,7 @@ type capability = [
            | `full_persons
            | `full_flowcell]
 | `edit of [`layout]
+| `perform of [`pools_submission]
 ]
 
 let roles_allow ?person roles cap =
@@ -42,7 +43,9 @@ let roles_allow ?person roles cap =
         | _ -> false
       else
         false
-
+  | `perform `pools_submission ->
+     List.exists roles (fun c -> c = `administrator || c = `user)
+       
 type user_logged = {
   id: string;
   person: Layout.Record_person.pointer option;

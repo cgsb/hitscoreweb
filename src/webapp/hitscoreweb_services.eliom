@@ -47,6 +47,11 @@ let stylesheet =
           ~path:["gencore_stylesheet"]
           ~get_params: Eliom_parameters.unit)
     
+let pools_submission =
+  make (Eliom_services.service
+          ~path:["pools_submission"]
+          ~get_params: Eliom_parameters.unit)
+    
 let link service =
   Eliom_output.Html5.a ~service:(service ())
 

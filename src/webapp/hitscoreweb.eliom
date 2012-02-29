@@ -621,8 +621,9 @@ module Default_service = struct
           potential_li (`view `all_evaluations)
             [Services.(link evaluations) [pcdata "Function evaluations"] ()];
           potential_li (`view `layout)
-            [Layout_service.self_link (`default) (pcdata "Layout Navigaditor")]
-
+            [Layout_service.self_link (`default) (pcdata "Layout Navigaditor")];
+          potential_li (`perform `pools_submission)
+            [Services.(link pools_submission) [pcdata "Submit pools of libraries"] ()];
         ] >>= fun ul_opt ->
         let header = [
           h1 [pcdata "Gencore Home"];
@@ -752,6 +753,9 @@ let () =
       Services.(register layout) 
         Layout_service.(make ~configuration:hitscore_configuration);
 
+      Services.(register pools_submission) 
+        Hitscoreweb_pools_submission.(make ~configuration:hitscore_configuration);
+      
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);
 
