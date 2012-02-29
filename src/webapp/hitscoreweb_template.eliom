@@ -288,9 +288,13 @@ let rec html_of_content ?(section_level=2) content =
   | Table [] -> div []
   | Table (h :: t) ->
     let make_cell ?orderable idx cell =
+      let really_orderable =
+        (* Really orderable: if there is some sortable element in that column. *)
+        List.exists (List.map t (fun l -> List.nth l idx))
+          ~f:(function Some (`sortable _) -> true | _ -> false) in
       let cell_id = incr _global_table_ids; sprintf "cell%d" !_global_table_ids in
       let buttons =
-        Option.value_map orderable 
+        Option.value_map (if really_orderable then orderable else None)
           ~default:[]
           ~f:(fun tableid ->
             let td_onclick order =
