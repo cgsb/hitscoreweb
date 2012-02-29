@@ -1,4 +1,4 @@
-
+.PHONY: mount_hitscoreweb build all install static
 all: build
 
 
