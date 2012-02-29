@@ -440,6 +440,11 @@ let add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit =
                       ignore basic_autocomplete
                     )
                   }};
+                  let value =
+                    Option.map value ~f:(fun s ->
+                      let a =
+                        List.t_of_sexp String.t_of_sexp (Sexp.of_string s) in
+                      String.concat ~sep:", " a) in
                   [[ `head [pcdata msg];
                      `text [string_input ~a:[ a_id id]
                                ~input_type:`Text ~name ?value ()];]]
