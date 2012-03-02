@@ -753,6 +753,9 @@ let () =
       Services.(register layout) 
         Layout_service.(make ~configuration:hitscore_configuration);
 
+      Hitscoreweb_pools_submission.init_submission_caml_service
+        ~configuration:hitscore_configuration ();
+
       Services.(register pools_submission) 
         Hitscoreweb_pools_submission.(make ~configuration:hitscore_configuration);
       

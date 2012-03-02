@@ -147,7 +147,7 @@ let default ?(title) content =
           div [
             hr ();
             pcdataf "Debug Messages:";
-            br ();
+            br ~a:[ a_id "client_debug_messages" ] ();
             ul (List.map l (fun (t, m) ->
               li [pcdataf "[%s]: " (Time.to_string t);
                   codef "%s" m]));

@@ -1,8 +1,10 @@
 include Core.Std
 (* include Lwt *)
-
+{client{
+  include Printf
+}}
 let (|>) x f = f x
-
+{shared{
 module Html5 = struct
   include Eliom_pervasives.HTML5.M
     
@@ -11,9 +13,8 @@ module Html5 = struct
   let codef fmt = ksprintf (fun s -> code [pcdata s]) fmt
 
   let a_hreff fmt = ksprintf (fun s -> a_href (XML.uri_of_string s)) fmt
-
-
 end
+}}
 module Output_app =
   Eliom_output.Eliom_appl (struct
     let application_name = "hitscoreweb"
@@ -104,11 +105,11 @@ let make_delayed f =
       s
     | Some s -> s
       
-
+{shared{
 let unique_id =
   let i = ref 0 in
   (fun s -> incr i; sprintf "%s_%d" s !i)
-
+}}
   
 (* ********************************************************************** *)
 (* Debug service *)

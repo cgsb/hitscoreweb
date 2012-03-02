@@ -23,7 +23,7 @@ COMMON_FILES := \
 SERVER_FILES := $(COMMON_FILES)
 CLIENT_FILES := $(COMMON_FILES)
 
-CLOSURE_CSS_NAMES= common dialog autocomplete
+CLOSURE_CSS_NAMES= common dialog autocomplete menu menuitem menuseparator
 
 ## Required binaries
 CAMLP4= 'camlp4o str.cma \
