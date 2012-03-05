@@ -168,7 +168,8 @@ module Persons_service = struct
 end
 
 module Flowcell_service = struct
-  let one_flowcell hsc ~serial_name =
+    
+  let flowcell_lanes_table hsc ~serial_name =
     Hitscore_lwt.db_connect hsc
     >>= fun dbh ->
     Layout.Search.record_flowcell_by_serial_name ~dbh serial_name
@@ -269,7 +270,7 @@ module Flowcell_service = struct
       >>= fun _ ->
       return Template.(Html5.(
         content_section 
-          (ksprintf pcdata "Flowcell %s" serial_name)
+          (ksprintf pcdata "Lanes of %s" serial_name)
           (content_table 
              ([ `head [pcdata "Lane Nb"]; 
 	        `head [pcdata "Seeding C."];
@@ -283,16 +284,69 @@ module Flowcell_service = struct
       error (`layout_inconsistency (`record_flowcell, 
                                     `more_than_one_flowcell_called serial_name))
 
+  let hiseq_raw_info ~configuration ~serial_name =
+    let open Html5 in
+    let open Template in
+    Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
+      Layout.Search.record_hiseq_raw_by_flowcell_name ~dbh serial_name
+      >>= fun dirs ->
+      of_list_sequential dirs ~f:(fun d ->
+        let m =
+          Hitscore_lwt.Common.check_hiseq_raw_availability ~dbh ~hiseq_raw:d in
+        double_bind m
+          ~error:(fun e -> 
+            match e with
+            | `hiseq_dir_deleted -> return false
+            |  `pg_exn _ | `io_exn _ | `layout_inconsistency (_, _)
+            | `no_flowcell_named _ as e -> error e)
+          ~ok:(fun _ -> return true)
+        >>= fun available ->
+        if available then 
+          Layout.Record_hiseq_raw.(
+            get ~dbh d
+            >>= fun {read_length_1; read_length_index; read_length_2; 
+                     run_date; host; hiseq_dir_name; with_intensities} ->
+            let section =
+              content_section
+                (pcdataf "%s Run" (run_date |! Time.to_local_date |! Date.to_string))
+                (content_paragraph [
+                  ul [            
+                    li [ strong [pcdataf "Host:" ]; pcdataf " %s" host; ];
+                    li [ strong [pcdataf "Path: "]; codef "%s" hiseq_dir_name];
+                    li [ strong [pcdataf "Run-type: "]; 
+                         pcdataf "%ld%s%s."
+                           read_length_1
+                           (Option.value_map ~default:""
+                              ~f:(sprintf " x %ld") read_length_index)
+                           (Option.value_map ~default:""
+                              ~f:(sprintf " x %ld") read_length_2) ];
+                    li [ strong [pcdataf "With Intensities: "];
+                         codef "%b" with_intensities ];
+                  ]]) in
+          return (Some section))
+        else
+          return None)
+      >>= fun l ->
+      return
+        (content_section (pcdataf "Hiseq-raw director%s"
+                            (if List.length l = 1 then "y" else "ies"))
+           (content_list (List.filter_opt l))))
+
 
   let make configuration =
+    let open Template in
     (fun (serial_name) () ->
       let main_title = (sprintf "FC:%s" serial_name) in
       Template.default ~title:main_title
         (Authentication.authorizes (`view `full_flowcell)
          >>= function
          | true ->
-           Template.make_content ~configuration ~main_title
-             (one_flowcell ~serial_name configuration)
+           flowcell_lanes_table ~serial_name configuration
+           >>= fun tab_section ->
+           hiseq_raw_info ~configuration ~serial_name
+           >>= fun hr_section ->
+           let content = return (content_list [tab_section; hr_section]) in
+           make_content ~configuration ~main_title content
          | false ->
            Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf 

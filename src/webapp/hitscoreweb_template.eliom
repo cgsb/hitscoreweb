@@ -131,6 +131,8 @@ let html_of_error =
         [ksprintf pcdata "There are more than one flowcells called %s" s]
       | `insert_did_not_return_one_id (s, l) ->
         [pcdataf "Insert in %s did not return one id but %d." s (List.length l)]
+      | `no_last_modified_timestamp _ ->
+        [pcdataf "Missing last-modified information."]
     in
     ([pcdata "Layout Inconsistency in "]
      @ place_presentation
