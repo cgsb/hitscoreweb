@@ -76,6 +76,8 @@ let html_of_error =
         name (List.length not_one_row);]
   | `wrong_layout_typing name ->
     [pcdataf "The record %S is not well typed w.r.t the official Layout." name;]
+  | `raw_data_path_not_configured ->
+    [pcdataf "The path to the raw data has not been configured."]
   | `layout_edit_coservice_error e ->
     [pcdata "Error while editing: ";
      match e with

@@ -138,24 +138,20 @@ let config
   ksprintf output_string "<host hostfilter=\"*\">\n <static dir=\"%s/\" /> %s\n"
     static_dir hitscore_module;
   Hitscore_configuration.(Option.(
-    !global_hitscore_configuration
-    >>= fun c ->
-    (db_host c >>= fun host ->
-     db_port c >>= fun port ->
-     db_username c >>= fun user ->
-     db_password c >>= fun pswd ->
-     db_database c >>= fun dbnm ->
-     ksprintf output_string "  <pghost>%s</pghost>\n" host;
-     ksprintf output_string "  <pgport>%d</pgport>\n" port;
-     ksprintf output_string "  <pgdb>%s</pgdb>\n" dbnm;
-     ksprintf output_string "  <pguser>%s</pguser>\n" user;
-     ksprintf output_string "  <pgpass>%s</pgpass>\n" pswd;
-     return c)
-    >>= fun c ->
-    (root_directory c >>= fun rodi ->
-     ksprintf output_string "  <root-directory>%s</root-directory>\n" rodi;
-     return c)
-  )) |! Pervasives.ignore;
+    let (>>) x f = iter x ~f in
+    !global_hitscore_configuration >> (fun c ->
+      db_host c     >> ksprintf output_string "  <pghost>%s</pghost>\n";
+      db_port c     >> ksprintf output_string "  <pgport>%d</pgport>\n";
+      db_username c >> ksprintf output_string "  <pgdb>%s</pgdb>\n";
+      db_password c >> ksprintf output_string "  <pguser>%s</pguser>\n";
+      db_database c >> ksprintf output_string "  <pgpass>%s</pgpass>\n";
+      root_directory c >>
+        ksprintf output_string "  <root-directory>%s</root-directory>\n";
+      volumes_directory c >>
+        ksprintf output_string "  <volumes-directory>%s</volumes-directory>\n";
+      raw_data_path c >> ksprintf output_string "  <raw-path>%s</raw-path>\n";
+      ksprintf output_string "  <hiseq-dir>%s</hiseq-dir>\n" (hiseq_directory c);
+    )));
   begin match authentication with
   | `none -> ()
   | `pam s -> 

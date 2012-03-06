@@ -286,6 +286,7 @@ module Flowcell_service = struct
 
   let get_clusters_info ~configuration path =
     let xml_read1 = Filename.concat path "Data/reports/Summary/read1.xml" in
+    eprintf "Accessing %s\n%!" xml_read1;
     read_file xml_read1 >>= fun xml_s ->
     let xml =
       Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
@@ -334,7 +335,9 @@ module Flowcell_service = struct
             get ~dbh d
             >>= fun {read_length_1; read_length_index; read_length_2; 
                      run_date; host; hiseq_dir_name; with_intensities} ->
-            double_bind (get_clusters_info ~configuration hiseq_dir_name)
+            Hitscore_lwt.Common.hiseq_raw_full_path ~configuration hiseq_dir_name
+            >>= fun hsdata_path ->
+            double_bind (get_clusters_info ~configuration hsdata_path)
               ~ok:(fun tab ->
                 return (content_section (pcdataf "Clusters Info") tab))
               ~error:(fun e ->
@@ -787,6 +790,9 @@ let () =
         let pguser = ref None in
         let pgpass = ref None in
         let rodi = ref None in
+        let vols = ref None in
+        let raw = ref None in
+        let hsd = ref None in
         let pam_service = ref None in
         let debug_mode = ref false in
         let open Simplexmlparser in
@@ -797,6 +803,9 @@ let () =
           | Element ("pguser", [], [PCData u]) -> pguser := Some u
           | Element ("pgpass", [], [PCData p]) -> pgpass := Some p
           | Element ("root-directory", [], [PCData p]) -> rodi := Some p
+          | Element ("volumes-directory", [], [PCData p]) -> vols := Some p
+          | Element ("raw-path", [], [PCData p]) -> raw := Some p
+          | Element ("hiseq-dir", [], [PCData p]) -> hsd := Some p
           | Element ("debug", [], []) ->
             debug_mode := true;
           | Element ("pam-authentication-service", [], [PCData p]) ->
@@ -817,6 +826,7 @@ let () =
         in
         let config =
           Hitscore_lwt.Configuration.configure
+            ?vol:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
             ?root_directory:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
         if !debug_mode then init_debug ();
