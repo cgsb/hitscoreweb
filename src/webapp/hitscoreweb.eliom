@@ -284,6 +284,34 @@ module Flowcell_service = struct
       error (`layout_inconsistency (`record_flowcell, 
                                     `more_than_one_flowcell_called serial_name))
 
+  let get_clusters_info ~configuration path =
+    let xml_read1 = Filename.concat path "Data/reports/Summary/read1.xml" in
+    read_file xml_read1 >>= fun xml_s ->
+    let xml =
+      Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
+    Hitscore_lwt.Hiseq_raw.clusters_summary (snd xml) |! of_result
+    >>= fun ci_om ->
+    let open Html5 in
+    let open Template in
+    let column_names = [
+      "Lane"; "clusters_raw"; "clusters_raw_sd"; "clusters_pf";
+      "clusters_pf_sd"; "prc_pf_clusters"; "prc_pf_clusters_sd"; ] in
+    let first_row = List.map column_names (fun s -> `head [pcdata s]) in
+    let other_rows =
+      List.mapi (Array.to_list ci_om) (fun i cio ->
+        let open Hitscore_interfaces.Hiseq_raw_information in
+        let f g = Option.(value_map ~default:"" ~f:Float.to_string (map cio ~f:g)) in
+        let r s = [codef "%s" s] in
+        [ `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
+          (let s = f (fun x -> x.clusters_raw      ) in `sortable (s, r s));  
+          (let s = f (fun x -> x.clusters_raw_sd   ) in `sortable (s, r s));     
+          (let s = f (fun x -> x.clusters_pf       ) in `sortable (s, r s));  
+          (let s = f (fun x -> x.clusters_pf_sd    ) in `sortable (s, r s));    
+          (let s = f (fun x -> x.prc_pf_clusters   ) in `sortable (s, r s));     
+          (let s = f (fun x -> x.prc_pf_clusters_sd) in `sortable (s, r s)); ])
+    in
+    return (content_table (first_row :: other_rows))
+
   let hiseq_raw_info ~configuration ~serial_name =
     let open Html5 in
     let open Template in
@@ -306,24 +334,34 @@ module Flowcell_service = struct
             get ~dbh d
             >>= fun {read_length_1; read_length_index; read_length_2; 
                      run_date; host; hiseq_dir_name; with_intensities} ->
+            double_bind (get_clusters_info ~configuration hiseq_dir_name)
+              ~ok:(fun tab ->
+                return (content_section (pcdataf "Clusters Info") tab))
+              ~error:(fun e ->
+                return
+                  (content_section (pcdataf "Clusters Info")
+                     (content_paragraph [strong [codef "not available"]])))
+            >>= fun cluster_stats_subsection ->
+            let intro_paragraph =
+              content_paragraph [
+                ul [            
+                  li [ strong [pcdataf "Host:" ]; pcdataf " %s" host; ];
+                  li [ strong [pcdataf "Path: "]; codef "%s" hiseq_dir_name];
+                  li [ strong [pcdataf "Run-type: "]; 
+                       pcdataf "%ld%s%s."
+                         read_length_1
+                         (Option.value_map ~default:""
+                            ~f:(sprintf " x %ld") read_length_index)
+                         (Option.value_map ~default:""
+                            ~f:(sprintf " x %ld") read_length_2) ];
+                  li [ strong [pcdataf "With Intensities: "];
+                       codef "%b" with_intensities ];
+                ]] in
             let section =
               content_section
                 (pcdataf "%s Run" (run_date |! Time.to_local_date |! Date.to_string))
-                (content_paragraph [
-                  ul [            
-                    li [ strong [pcdataf "Host:" ]; pcdataf " %s" host; ];
-                    li [ strong [pcdataf "Path: "]; codef "%s" hiseq_dir_name];
-                    li [ strong [pcdataf "Run-type: "]; 
-                         pcdataf "%ld%s%s."
-                           read_length_1
-                           (Option.value_map ~default:""
-                              ~f:(sprintf " x %ld") read_length_index)
-                           (Option.value_map ~default:""
-                              ~f:(sprintf " x %ld") read_length_2) ];
-                    li [ strong [pcdataf "With Intensities: "];
-                         codef "%b" with_intensities ];
-                  ]]) in
-          return (Some section))
+                (content_list [intro_paragraph; cluster_stats_subsection]) in
+            return (Some section))
         else
           return None)
       >>= fun l ->

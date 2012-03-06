@@ -34,7 +34,7 @@ module Lwt_config = struct
 
   let write_string_to_file s f =
     Lwt_io.(
-      with_file ~mode:output s (fun o ->
+      with_file ~mode:output f (fun o ->
         output_string o s))
 
 end
@@ -45,7 +45,17 @@ module Configuration = Hitscore_lwt.Configuration
 
 include Hitscore_lwt.Result_IO
 
+module Xml_tree = struct
+  include Xmlm
+  let in_tree i = 
+    let el tag childs = `E (tag, childs)  in
+    let data d = `D d in
+    input_doc_tree ~el ~data i
+end
+let read_file file =
+  wrap_io Lwt_io.(fun () -> with_file ~mode:input file (fun i -> read i)) ()
 
+    
 let rec interleave_list ~sep = function
   | [] -> []
   | [one] -> [one]
