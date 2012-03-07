@@ -267,7 +267,9 @@ let td_on_click_to_sort do_something order cell_id idx id =
         %order_multiplier *
           (try compare (int_of_string x) (int_of_string y)
            with e ->
-             String.compare x y)) array;
+             try compare (float_of_string x) (float_of_string y)
+             with e ->
+               String.compare x y)) array;
       for i = 1 to rows##length - 1 do
         Js.Optdef.iter (snd array.(i - 1)) (fun row ->
           tab##deleteRow(i);
