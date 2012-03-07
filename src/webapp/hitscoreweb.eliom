@@ -626,7 +626,7 @@ module Evaluations_service = struct
                         a ~a:[ 
                           a_hreff "file://%s/%s/%s"
                             (Option.value ~default:"$HSROOT" 
-                               (Configuration.volumes_directory configuration))
+                               (Configuration.vol_path configuration))
                             vol_path csv_path] [pcdata "file"];
                         pcdata ")"
                       ];
@@ -802,8 +802,8 @@ let () =
           | Element ("pgdb", [], [PCData d]) -> pgdb := Some d
           | Element ("pguser", [], [PCData u]) -> pguser := Some u
           | Element ("pgpass", [], [PCData p]) -> pgpass := Some p
-          | Element ("root-directory", [], [PCData p]) -> rodi := Some p
-          | Element ("volumes-directory", [], [PCData p]) -> vols := Some p
+          | Element ("root-path", [], [PCData p]) -> rodi := Some p
+          | Element ("vol-directory", [], [PCData p]) -> vols := Some p
           | Element ("raw-path", [], [PCData p]) -> raw := Some p
           | Element ("hiseq-dir", [], [PCData p]) -> hsd := Some p
           | Element ("debug", [], []) ->
@@ -826,8 +826,8 @@ let () =
         in
         let config =
           Hitscore_lwt.Configuration.configure
-            ?vol:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
-            ?root_directory:!rodi ?db_configuration () in
+            ?vol_directory:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
+            ?root_path:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
         if !debug_mode then init_debug ();
         config

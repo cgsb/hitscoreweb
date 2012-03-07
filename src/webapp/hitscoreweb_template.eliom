@@ -78,6 +78,12 @@ let html_of_error =
     [pcdataf "The record %S is not well typed w.r.t the official Layout." name;]
   | `raw_data_path_not_configured ->
     [pcdataf "The path to the raw data has not been configured."]
+  | `bcl_to_fastq_succeeded_without_result b2f ->
+    [pcdataf "Layout problem: B2F succeeded without result"]
+  | `root_directory_not_configured ->
+    [pcdataf "The root directory is not configured"]
+  | `wrong_unaligned_volume _ ->
+    [pcdataf "Unaligned/ virtual volume does not have the expected structure"]
   | `layout_edit_coservice_error e ->
     [pcdata "Error while editing: ";
      match e with

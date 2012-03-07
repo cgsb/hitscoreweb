@@ -145,10 +145,10 @@ let config
       db_username c >> ksprintf output_string "  <pgdb>%s</pgdb>\n";
       db_password c >> ksprintf output_string "  <pguser>%s</pguser>\n";
       db_database c >> ksprintf output_string "  <pgpass>%s</pgpass>\n";
-      root_directory c >>
-        ksprintf output_string "  <root-directory>%s</root-directory>\n";
-      volumes_directory c >>
-        ksprintf output_string "  <volumes-directory>%s</volumes-directory>\n";
+      root_path c >>
+        ksprintf output_string "  <root-path>%s</root-path>\n";
+      ksprintf output_string "  <vol-directory>%s</vol-directory>\n"
+        (vol_directory c);
       raw_data_path c >> ksprintf output_string "  <raw-path>%s</raw-path>\n";
       ksprintf output_string "  <hiseq-dir>%s</hiseq-dir>\n" (hiseq_directory c);
     )));
