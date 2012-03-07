@@ -300,33 +300,36 @@ module Flowcell_service = struct
                                     `more_than_one_flowcell_called serial_name))
 
   let get_clusters_info ~configuration path =
-    let xml_read1 = Filename.concat path "Data/reports/Summary/read1.xml" in
-    eprintf "Accessing %s\n%!" xml_read1;
-    read_file xml_read1 >>= fun xml_s ->
-    let xml =
-      Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
-    Hitscore_lwt.Hiseq_raw.clusters_summary (snd xml) |! of_result
-    >>= fun ci_om ->
-    let open Html5 in
-    let open Template in
-    let column_names = [
-      "Lane"; "clusters_raw"; "clusters_raw_sd"; "clusters_pf";
-      "clusters_pf_sd"; "prc_pf_clusters"; "prc_pf_clusters_sd"; ] in
-    let first_row = List.map column_names (fun s -> `head [pcdata s]) in
-    let other_rows =
-      List.mapi (Array.to_list ci_om) (fun i cio ->
-        let open Hitscore_interfaces.Hiseq_raw_information in
-        let f g = Option.(value_map ~default:"" ~f:Float.to_string (map cio ~f:g)) in
-        let r s = [codef "%s" s] in
-        [ `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
-          (let s = f (fun x -> x.clusters_raw      ) in `sortable (s, r s));  
-          (let s = f (fun x -> x.clusters_raw_sd   ) in `sortable (s, r s));     
-          (let s = f (fun x -> x.clusters_pf       ) in `sortable (s, r s));  
-          (let s = f (fun x -> x.clusters_pf_sd    ) in `sortable (s, r s));    
-          (let s = f (fun x -> x.prc_pf_clusters   ) in `sortable (s, r s));     
-          (let s = f (fun x -> x.prc_pf_clusters_sd) in `sortable (s, r s)); ])
+    let make file = 
+      read_file file >>= fun xml_s ->
+      let xml =
+        Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
+      Hitscore_lwt.Hiseq_raw.clusters_summary (snd xml) |! of_result
+      >>= fun ci_om ->
+      let open Html5 in
+      let open Template in
+      let column_names = [
+        "Lane"; "clusters_raw"; "clusters_raw_sd"; "clusters_pf";
+        "clusters_pf_sd"; "prc_pf_clusters"; "prc_pf_clusters_sd"; ] in
+      let first_row = List.map column_names (fun s -> `head [pcdata s]) in
+      let other_rows =
+        List.mapi (Array.to_list ci_om) (fun i cio ->
+          let open Hitscore_interfaces.Hiseq_raw_information in
+          let f g =
+            Option.(value_map ~default:"" ~f:(sprintf "%.2f") (map cio ~f:g)) in
+          let r s = [codef "%s" s] in
+          [ `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
+            (let s = f (fun x -> x.clusters_raw      ) in `sortable (s, r s));  
+            (let s = f (fun x -> x.clusters_raw_sd   ) in `sortable (s, r s));     
+            (let s = f (fun x -> x.clusters_pf       ) in `sortable (s, r s));  
+            (let s = f (fun x -> x.clusters_pf_sd    ) in `sortable (s, r s));    
+            (let s = f (fun x -> x.prc_pf_clusters   ) in `sortable (s, r s));     
+            (let s = f (fun x -> x.prc_pf_clusters_sd) in `sortable (s, r s)); ])
+      in
+      return (content_table (first_row :: other_rows))
     in
-    return (content_table (first_row :: other_rows))
+    let xml_read1 = Filename.concat path "Data/reports/Summary/read1.xml" in
+    Cache.get make xml_read1
 
   let hiseq_raw_info ~configuration ~serial_name =
     let open Html5 in
@@ -388,6 +391,128 @@ module Flowcell_service = struct
                             (if List.length l = 1 then "y" else "ies"))
            (content_list (List.filter_opt l))))
 
+  let get_demux_stats ~configuration path =
+    (* eprintf "demux: %s\n%!" dmux_sum; *)
+    let make dmux_sum =
+      read_file dmux_sum >>= fun xml_s ->
+      let xml =
+        Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
+      Hitscore_lwt.B2F_unaligned.flowcell_demux_summary (snd xml) |! of_result
+      >>= fun ls_la ->
+      let open Html5 in
+      let open Template in
+      let column_names = [
+        "Lane";
+        "name";
+        "yield";
+        "yield_q30";
+        "cluster_count";
+        "cluster_count_m0";
+        "cluster_count_m1";
+        "quality_score_sum";
+      ] in
+      let first_row = List.map column_names (fun s -> `head [pcdata s]) in
+      let other_rows =
+        List.mapi (Array.to_list ls_la) (fun i ls_l ->
+          List.map ls_l (fun ls ->
+            let open Hitscore_interfaces.B2F_unaligned_information in
+            let f2s f = 
+              let s = sprintf "%.0f" f in
+              let rec f s =
+                if String.(length s) > 3 then
+                  String.(f (drop_suffix s 3) ^ " " ^ suffix s 3)
+                else
+                  s in
+              let prefix s =
+                let length = 18 - String.(length s) in
+                sprintf "%s%s"
+                  (String.concat ~sep:"" (List.init length (fun _ -> " "))) s
+              in
+              (prefix (f s)) in
+            let s f =
+              `sortable (Float.to_string f,
+                         [div
+                             ~a:[a_style "text-align:right; font-family: monospace"]
+                             [pcdata (f2s f)]]) in
+            [ `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
+              `sortable (ls.name, [ pcdata ls.name ]);
+              s ls.yield;
+              s ls.yield_q30;
+              s ls.cluster_count;
+              s ls.cluster_count_m0;
+              s ls.cluster_count_m1;
+              s ls.quality_score_sum;
+            ]))
+      in
+      return (content_table (first_row :: List.flatten other_rows))
+    in
+    let dmux_sum = Filename.concat path "Flowcell_demux_summary.xml" in
+    Cache.get make dmux_sum
+      
+  let demux_info ~configuration ~serial_name =
+    let open Template in
+    let open Html5 in
+    Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
+      Layout.Function_bcl_to_fastq.(
+        get_all_succeeded ~dbh >>= fun successes ->
+        of_list_sequential successes ~f:(fun b2f ->
+          get ~dbh b2f >>= fun b2f_eval ->
+          Layout.Record_hiseq_raw.(
+            get ~dbh b2f_eval.raw_data >>| fun x -> x.flowcell_name)
+          >>= fun b2f_fcid ->
+          if b2f_fcid <> serial_name then
+            return None
+          else
+            begin
+            Layout.Record_bcl_to_fastq_unaligned.(
+              match b2f_eval.g_result with
+              | None -> error (`bcl_to_fastq_succeeded_without_result b2f)
+              | Some r ->
+                get ~dbh r >>= fun {directory} ->
+                Hitscore_lwt.Common.paths_of_volume ~configuration ~dbh directory
+                >>= function
+                | [one] -> return one
+                | _ -> error (`wrong_unaligned_volume directory))
+            >>= fun unaligned_path ->
+            let stat_path =
+              Filename.concat unaligned_path
+                (sprintf "Basecall_Stats_%s" serial_name)
+            in
+            double_bind (get_demux_stats ~configuration stat_path)
+              ~ok:(fun tab ->
+                return (content_section (pcdataf "Stats") tab))
+              ~error:(fun e ->
+                return
+                  (content_section (pcdataf "Stats Not Available")
+                     (content_paragraph [])))
+            >>= fun stats ->
+            let optmap f x = Option.value_map ~default:"—" ~f x in
+            let opt x = Option.value ~default:"—" x in
+            let title = codef "Bcl_to_fastq %ld" b2f_eval.g_id in
+            let intro = content_paragraph [
+              pcdata "Ran from ";
+              strong [codef "%s" (optmap Time.to_string b2f_eval.g_started)];
+              pcdata " to ";
+              strong [codef "%s" (optmap Time.to_string b2f_eval.g_completed)];
+              pcdata ".";
+              br ();
+              strong [pcdataf "Mismatch: "]; pcdataf "%ld, " b2f_eval.mismatch;
+              strong [pcdataf "Version: "]; pcdataf "%s, " b2f_eval.version;
+              strong [pcdataf "Tiles: "]; pcdataf "%s, " (opt b2f_eval.tiles);
+            ] in
+            let section =
+              content_section title (content_list (intro :: stats :: [])) in
+            return (Some section)
+              end
+        )
+        >>| List.filter_opt >>= fun b2f_evals ->
+        let title =
+          match b2f_evals with
+          | [] -> "Never Demultiplexed"
+          | [one] -> "Demultiplexing"
+          | more -> "Demultiplexings" in
+        return (content_section (pcdata title)
+                  (content_list b2f_evals))))
 
   let make configuration =
     let open Template in
@@ -401,7 +526,9 @@ module Flowcell_service = struct
            >>= fun tab_section ->
            hiseq_raw_info ~configuration ~serial_name
            >>= fun hr_section ->
-           let content = return (content_list [tab_section; hr_section]) in
+           demux_info ~configuration ~serial_name >>= fun demux_info ->
+           let content =
+             return (content_list [tab_section; hr_section; demux_info]) in
            make_content ~configuration ~main_title content
          | false ->
            Template.make_authentication_error ~configuration ~main_title
