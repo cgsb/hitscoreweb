@@ -169,6 +169,21 @@ end
 
 module Flowcell_service = struct
     
+  module Cache = struct
+
+    module String_map = Map.Make(String)
+
+    let _the_cache = ref (String_map.empty: Template.content String_map.t)
+      
+    let get f s =
+      match String_map.find !_the_cache s with
+      | Some r -> return r
+      | None ->
+        f s >>= fun res ->
+        _the_cache := String_map.add ~key:s ~data:res !_the_cache;
+        return res
+  end
+    
   let flowcell_lanes_table hsc ~serial_name =
     Hitscore_lwt.db_connect hsc
     >>= fun dbh ->
