@@ -40,6 +40,8 @@ let css_service_handler ~configuration () () =
   out ".top_banner a:link {color : #F1C900; }\n";
   out ".top_banner a:visited {color :#DA9302; }\n";
   out ".top_banner form { display: inline; }";
+  out ".top_banner .main_menu {margin: 0px; padding: 0px; display: inline; }\n";
+  out ".top_banner li.main_menu:before {content : ' ☀ '; }\n";
   out ".main_page { position: absolute; top: 100px; }";
   Lwt.return (Buffer.contents css)
 
@@ -156,8 +158,36 @@ let html_of_error =
      @ [pcdata ":"; br ()]
      @ error_message)
 
+let menu_ul () =
+  let open Html5 in
+  let real_li s = return (Some (li ~a:[ a_class ["main_menu"]] s)) in
+  let potential_li cap s = 
+    Authentication.authorizes cap
+    >>= function
+    | true ->  real_li s
+    | false -> return None
+  in
+  map_sequential ~f:return [
+    potential_li (`view `all_flowcells) 
+      [Services.(link flowcells) [pcdata "Flowcells"] ()];
+    potential_li (`view `persons)
+      [Services.(link persons) [pcdata "Persons"] (None, [])];
+    potential_li (`view `libraries)
+      [Services.(link libraries) [pcdata "Libraries"] (None, [])];
+    potential_li (`view `all_evaluations)
+      [Services.(link evaluations) [pcdata "Function evaluations"] ()];
+    potential_li (`view `layout)
+      [Services.(link layout) [ pcdata "Layout Navigaditor" ] ("view", ([], []))]
+  ]
+  >>= fun ul_opt ->
+  match List.filter_opt ul_opt with
+  | [] -> return (span [])
+  | items -> return (ul ~a:[ a_class ["main_menu"] ] items)
+
+
+    
 let default ?(title) content =
-  let page page_title auth_state html_stuff =
+  let page page_title main_menu auth_state html_stuff =
     Html5.(
       let debug_bloc =
         match !debug_messages with
@@ -180,6 +210,7 @@ let default ?(title) content =
         (body [
           div ~a:[ a_class ["top_banner"] ] [
             Services.(link default) [pcdata "Home"] ();
+            main_menu;
             div auth_state;
             hr ();
           ];
@@ -195,11 +226,12 @@ let default ?(title) content =
     >>= fun auth_state ->
     content
     >>= fun good_content ->
-    return (page page_title auth_state good_content)
+    menu_ul () >>= fun main_menu ->
+    return (page page_title main_menu auth_state good_content)
   in
   let open Html5 in
   let error_page msg =
-    page "Error" [] [
+    page "Error" (span []) [] [
       h1 [ksprintf pcdata "Gencore: Error Page"];
       p [ksprintf pcdata "An error occurred on %s:"
             Time.(now () |> to_string)];
