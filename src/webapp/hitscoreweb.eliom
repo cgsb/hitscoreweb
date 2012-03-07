@@ -424,7 +424,7 @@ module Flowcell_service = struct
                 else
                   s in
               let prefix s =
-                let length = 18 - String.(length s) in
+                let length = max 0 (18 - String.(length s)) in
                 sprintf "%s%s"
                   (String.concat ~sep:"" (List.init length (fun _ -> " "))) s
               in
