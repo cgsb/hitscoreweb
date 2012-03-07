@@ -317,7 +317,7 @@ module Flowcell_service = struct
           let open Hitscore_interfaces.Hiseq_raw_information in
           let f g =
             Option.(value_map ~default:"" ~f:(sprintf "%.2f") (map cio ~f:g)) in
-          let r s = [codef "%s" s] in
+          let r s = [div ~a:[ a_style "text-align:right"] [codef "%s" s]] in
           [ `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
             (let s = f (fun x -> x.clusters_raw      ) in `sortable (s, r s));  
             (let s = f (fun x -> x.clusters_raw_sd   ) in `sortable (s, r s));     
