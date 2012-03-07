@@ -25,13 +25,22 @@ let css_service_handler ~configuration () () =
   let open Lwt in
   let css = Buffer.create 42 in
   let out fmt = ksprintf (fun s -> (Buffer.add_string css s)) fmt in
-  let side_margins = "5%" in
-  out "body { font-family: sans-serif; margin-left: %s; margin-right: %s; }"
+  let side_margins = 5 in
+  out "body { font-family: sans-serif; margin-left: %d%%; margin-right: %d%%; }"
     side_margins side_margins;
 
   out "%s" (css_triangle_arrow ~css_class:"sort_normal_button" `up);
   out "%s" (css_triangle_arrow ~css_class:"sort_reverse_button" `down);
-  
+
+  out ".top_banner {position: fixed; top:0px; width: %d%%; z-index: 100; \
+                    padding: 5px; color: white; font-weight: bold; \
+                    background-color: #5C2079; background-opacity: 1;  }"
+    (100 - 2 * side_margins);
+  out ".top_banner a {text-decoration: underline thin; color: white; }\n";
+  out ".top_banner a:link {color : #F1C900; }\n";
+  out ".top_banner a:visited {color :#DA9302; }\n";
+  out ".top_banner form { display: inline; }";
+  out ".main_page { position: absolute; top: 100px; }";
   Lwt.return (Buffer.contents css)
 
 let html_of_error = 
@@ -169,12 +178,12 @@ let default ?(title) content =
                                            ~service:Services.(stylesheet ()) ()) ();
         ])
         (body [
-          div [
+          div ~a:[ a_class ["top_banner"] ] [
             Services.(link default) [pcdata "Home"] ();
             div auth_state;
+            hr ();
           ];
-          hr ();
-          div html_stuff;
+          div ~a:[ a_class ["main_page"]] html_stuff;
           debug_bloc;
         ]))
   in
