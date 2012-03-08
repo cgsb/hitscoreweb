@@ -75,11 +75,13 @@ module Persons_service = struct
       >>= fun { given_name; family_name; email; _ } ->
       return (given_name, family_name, email))
 
-  let person_link dbh person_t =
+  let person_link ?(style=`full_name) dbh person_t =
     person_essentials dbh person_t >>= fun (f, l, e) ->
-    return (Services.(link persons)
-              [ksprintf Html5.pcdata "%s %s" f l]
-              (Some true, [e]))
+    let content =
+      match style with
+      | `full_name -> ksprintf Html5.pcdata "%s %s" f l
+      | `family_name -> ksprintf Html5.pcdata "%s" l in
+    return (Services.(link persons) [content] (Some true, [e]))
 
 
   let persons ~full_view ?(transpose=false) ?(highlight=[]) hsc =
@@ -838,6 +840,52 @@ end
 
 
 module Hiseq_runs_service = struct
+    
+  let flowcell_cell ~dbh fc_p =
+    let open Html5 in
+    Layout.Record_flowcell.(
+      get ~dbh fc_p >>= fun fc ->
+      let lane_nb = ref 0 in
+      of_list_sequential (Array.to_list fc.lanes) ~f:(fun lane_p ->
+        Layout.Record_lane.(
+          get ~dbh lane_p >>= fun lane ->
+          of_list_sequential (Array.to_list lane.contacts)
+            ~f:(Persons_service.person_link ~style:`family_name dbh)
+          >>= fun links ->
+          incr lane_nb;
+          return (Array.to_list lane.contacts,
+                  (!lane_nb, links,
+                  lane.requested_read_length_1, lane.requested_read_length_2))))
+      >>= fun lanes_info -> 
+      let keys =
+        List.filter lanes_info ~f:(fun x -> fst x <> []) 
+        |! List.sort ~cmp:compare |! List.map ~f:fst |! List.dedup ~compare in
+      let lanes_of l =
+        List.map l ~f:(fun (lane, _, _, _) -> sprintf "%d" lane)
+        |! String.concat ~sep:", " in
+      let links_of l =
+        let (_, links,_ ,_) = List.hd_exn l in
+        interleave_list ~sep:(pcdata ", ") links in
+      let info_on_lanes =
+        interleave_list ~sep:[ br () ]
+          (List.map keys ~f:(fun k ->
+            let vals = List.find_all lanes_info ~f:(fun a -> fst a = k) in
+            let plural = if List.length vals = 1 then "" else "s" in
+            pcdataf "Lane%s %s: " plural (List.map vals snd |! lanes_of)
+            :: (List.map vals snd |! links_of))) in
+      let run_type =
+        let (_, (_, _, r1 ,r2o)) =
+          List.find_exn lanes_info ~f:(fun a -> fst a = List.hd_exn keys) in
+        match r2o with
+        | None -> sprintf "SE %ld" r1
+        | Some r2 -> sprintf "PE %ldx%ld" r1 r2 in
+      let link =
+        Services.(link flowcell) [strong [pcdataf "%s" fc.serial_name]]
+          fc.serial_name in
+      return (`sortable (fc.serial_name,
+                         [link; pcdataf " — %s" run_type; br ()]
+                         @ (List.flatten info_on_lanes))))
+      
   let hiseq_runs ~configuration =
     let open Html5 in
     let open Template in
@@ -849,16 +897,12 @@ module Hiseq_runs_service = struct
           Layout.Record_flowcell.(
             let sfc =
               Option.value_map ~default:(return (`text [pcdataf "—"]))
-                ~f:(fun f ->
-                  get ~dbh f >>= fun fc ->
-                  let link =
-                    Services.(link flowcell) [pcdataf "%s" fc.serial_name]
-                      fc.serial_name in
-                  return (`sortable (fc.serial_name, [link])))
-            in
+                ~f:(flowcell_cell ~dbh) in
             let date_cell =
               `sortable (Time.to_string date,
-                         [pcdata (Time.to_local_date date |! Date.to_string)]) in
+                         [strong [
+                           pcdata (Time.to_local_date date |! Date.to_string)]])
+            in
             sfc flowcell_a >>= fun fca ->
             sfc flowcell_b >>= fun fcb ->
             return ([date_cell ; fca; fcb]))))
