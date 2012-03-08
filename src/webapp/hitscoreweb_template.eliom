@@ -171,8 +171,6 @@ let menu_ul () =
   map_sequential ~f:return [
     potential_li (`view `all_flowcells) 
       [Services.(link hiseq_runs) [pcdata "HiSeq 2000 Runs"] ()];
-    potential_li (`view `all_flowcells) 
-      [Services.(link flowcells) [pcdata "Flowcells"] ()];
     potential_li (`view `persons)
       [Services.(link persons) [pcdata "Persons"] (None, [])];
     potential_li (`view `libraries)

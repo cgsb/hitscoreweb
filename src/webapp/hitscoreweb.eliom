@@ -11,63 +11,6 @@ module Template = Hitscoreweb_template
 module Layout_service = Hitscoreweb_layout_service
 
 
-module Flowcells_service = struct
-  let flowcells hsc =
-    let open Html5 in
-    Hitscore_lwt.db_connect hsc
-    >>= fun dbh ->
-    Layout.Record_flowcell.(
-      get_all ~dbh
-      >>= fun flowcells ->
-      of_list_sequential flowcells ~f:(fun f ->
-        get ~dbh f >>= fun {serial_name; lanes} ->
-        Layout.Search.record_hiseq_raw_by_flowcell_name ~dbh serial_name
-        >>= fun dirs ->
-        of_list_sequential dirs ~f:(fun d ->
-          Layout.Record_hiseq_raw.(
-            get ~dbh d
-            >>= fun {read_length_1; read_length_index; read_length_2; 
-                     run_date; host; hiseq_dir_name} ->
-            return (li [
-              ksprintf pcdata "Ran on %s, " (run_date |! 
-                  Time.to_local_date |! Date.to_string);
-              code [pcdata (Filename.basename hiseq_dir_name)];
-              ksprintf pcdata " (%ld%s%s)."
-                read_length_1
-                (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_index)
-                (Option.value_map ~default:"" ~f:(sprintf "x%ld") read_length_2)
-            ])))
-        >>= fun l ->
-        return Template.(
-          content_paragraph [
-            strong [
-              Services.(link flowcell) [pcdata serial_name] serial_name;
-              pcdata ":"];
-            if List.length l = 0 then span [pcdata " Never run."] else ul l
-          ]))
-      >>= fun ul ->
-      Hitscore_lwt.db_disconnect hsc dbh
-      >>= fun _ ->
-      return Template.(
-        content_section
-          (ksprintf pcdata "Found %d Flowcells" (List.length ul))
-          (content_list ul)
-      ))
-
-  let make configuration =
-    (fun () () ->
-      Template.default ~title:"Flowcells"
-        (Authentication.authorizes (`view `all_flowcells)
-         >>= function
-         | true ->
-           Template.make_content ~configuration
-             ~main_title:"Flowcells" (flowcells configuration)
-         | false ->
-           Template.make_authentication_error ~configuration
-             ~main_title:"Flowcells" 
-             (return [Html5.pcdataf "You may not view all the flowcells."])))
-end
-
 module Persons_service = struct
   let person_essentials dbh person_t =
     Layout.Record_person.(
@@ -944,8 +887,6 @@ module Default_service = struct
       let content = 
         map_sequential ~f:return [
           potential_li (`view `all_flowcells) 
-            [Services.(link flowcells) [pcdata "Flowcells"] ()];
-          potential_li (`view `all_flowcells) 
             [Services.(link hiseq_runs) [pcdata "HiSeq 2000 Runs"] ()];
           potential_li (`view `persons)
             [Services.(link persons) [pcdata "Persons"] (None, [])];
@@ -1075,9 +1016,6 @@ let () =
 
       Services.(register home) (Default_service.make hitscore_configuration);
       
-      Services.(register flowcells)
-        Flowcells_service.(make hitscore_configuration);
-
       Services.(register hiseq_runs)
         Hiseq_runs_service.(make hitscore_configuration);
       
