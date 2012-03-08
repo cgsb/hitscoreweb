@@ -13,6 +13,10 @@ let flowcells =
   make
     (Eliom_services.service ~path:["flowcells"] ~get_params:Eliom_parameters.unit)
 
+let hiseq_runs =
+  make
+    (Eliom_services.service ~path:["hiseq_runs"] ~get_params:Eliom_parameters.unit)
+
 let flowcell =
   make
     (Eliom_services.service ~path:["flowcell"]

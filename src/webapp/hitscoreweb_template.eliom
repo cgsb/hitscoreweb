@@ -138,6 +138,7 @@ let html_of_error =
       | `record_key_value                    -> [r; codef "key_value "]
       | `record_log                          -> [r; codef "log "]
       | `record_protocol                     -> [r; codef "protocol "]
+      | `record_hiseq_run                    -> [r; codef "hiseq_run "]
     in
     let error_message =
       match problem with
@@ -168,6 +169,8 @@ let menu_ul () =
     | false -> return None
   in
   map_sequential ~f:return [
+    potential_li (`view `all_flowcells) 
+      [Services.(link hiseq_runs) [pcdata "HiSeq 2000 Runs"] ()];
     potential_li (`view `all_flowcells) 
       [Services.(link flowcells) [pcdata "Flowcells"] ()];
     potential_li (`view `persons)

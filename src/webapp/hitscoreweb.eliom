@@ -836,6 +836,56 @@ module Evaluations_service = struct
 
 end
 
+
+module Hiseq_runs_service = struct
+  let hiseq_runs ~configuration =
+    let open Html5 in
+    let open Template in
+    Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
+      Layout.Record_hiseq_run.(
+        get_all ~dbh >>= fun hiseq_runs ->
+        of_list_sequential hiseq_runs ~f:(fun hsr ->
+          get ~dbh hsr >>= fun {date; flowcell_a; flowcell_b} ->
+          Layout.Record_flowcell.(
+            let sfc =
+              Option.value_map ~default:(return (`text [pcdataf "—"]))
+                ~f:(fun f ->
+                  get ~dbh f >>= fun fc ->
+                  let link =
+                    Services.(link flowcell) [pcdataf "%s" fc.serial_name]
+                      fc.serial_name in
+                  return (`sortable (fc.serial_name, [link])))
+            in
+            let date_cell =
+              `sortable (Time.to_string date,
+                         [pcdata (Time.to_local_date date |! Date.to_string)]) in
+            sfc flowcell_a >>= fun fca ->
+            sfc flowcell_b >>= fun fcb ->
+            return ([date_cell ; fca; fcb]))))
+      >>= fun rows ->
+      let sorted =
+        List.sort ~cmp:(fun l1 l2 ->
+          compare (List.hd_exn l1) (List.hd_exn l2) * -1) rows in
+      return (content_table 
+                ([ `head [pcdata "Run date"];
+                   `head [pcdata "Flowcell A"];
+                   `head [pcdata "Flowcell B"]; ]
+                 :: sorted)))
+
+  let make configuration =
+    (fun () () ->
+      Template.default ~title:"HiSeq 2000 Runs"
+        (Authentication.authorizes (`view `all_flowcells)
+         >>= function
+         | true ->
+           Template.make_content ~configuration
+             ~main_title:"HiSeq 2000 Runs" (hiseq_runs configuration)
+         | false ->
+           Template.make_authentication_error ~configuration
+             ~main_title:"HiSeq 2000 Runs" 
+             (return [Html5.pcdataf "You may not view all the flowcells."])))
+end
+
 module Default_service = struct
   let make hsc =
     (fun () () ->
@@ -851,6 +901,8 @@ module Default_service = struct
         map_sequential ~f:return [
           potential_li (`view `all_flowcells) 
             [Services.(link flowcells) [pcdata "Flowcells"] ()];
+          potential_li (`view `all_flowcells) 
+            [Services.(link hiseq_runs) [pcdata "HiSeq 2000 Runs"] ()];
           potential_li (`view `persons)
             [Services.(link persons) [pcdata "Persons"] (None, [])];
           potential_li (`view `libraries)
@@ -982,6 +1034,9 @@ let () =
       Services.(register flowcells)
         Flowcells_service.(make hitscore_configuration);
 
+      Services.(register hiseq_runs)
+        Hiseq_runs_service.(make hitscore_configuration);
+      
       Services.(register persons) Persons_service.(make hitscore_configuration);
       
       Services.(register libraries) 
