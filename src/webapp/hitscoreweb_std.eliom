@@ -101,6 +101,14 @@ let pg_raw_query ?with_log ~dbh ~query =
 let (|!) x f = f x
 let lwtunit (x: unit Lwt.t) = Pervasives.ignore x
 let ($) f x = f x
+  
+let float_of_string s =
+  (* imitate ocaml's runtime: *)
+  let f = float_of_string s in
+  match classify_float f with
+  | FP_infinite | FP_nan -> failwith "float_of_string"
+  | _ -> f
+
 }}
 
 
