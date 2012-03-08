@@ -877,30 +877,13 @@ module Default_service = struct
   let make hsc =
     (fun () () ->
       let open Html5 in
-      let real_li s = return (Some (li s)) in
-      let potential_li cap s = 
-        Authentication.authorizes cap
-        >>= function
-        | true ->  real_li s
-        | false -> return None
-      in
       let content = 
-        map_sequential ~f:return [
-          potential_li (`view `all_flowcells) 
-            [Services.(link hiseq_runs) [pcdata "HiSeq 2000 Runs"] ()];
-          potential_li (`view `persons)
-            [Services.(link persons) [pcdata "Persons"] (None, [])];
-          potential_li (`view `libraries)
-            [Services.(link libraries) [pcdata "Libraries"] (None, [])];
-          potential_li (`view `all_evaluations)
-            [Services.(link evaluations) [pcdata "Function evaluations"] ()];
-          potential_li (`view `layout)
-            [Layout_service.self_link (`default) (pcdata "Layout Navigaditor")]
-
-        ] >>= fun ul_opt ->
-        let header = [
-          h1 [pcdata "Gencore Home"];
-        ] in
+        Template.menu_ul () 
+        >>= fun ul_menu ->
+        let header = [h1 [pcdata "Gencore Home"];] in
+        let menu =
+          Option.value_map ul_menu ~default:[]
+            ~f:(fun ul -> [h2 [pcdata "Menu"]; ul]) in
         let welcome = [
           h2 [pcdata "Welcome"];
           p [
@@ -912,17 +895,7 @@ module Default_service = struct
             pcdata " on Google-Docs.";
           ];
         ] in
-        let display_section =
-          match List.filter_opt ul_opt with
-          | [] -> [
-            pcdata "There are no services to display.";
-          ]
-          | items -> [
-            h2 [pcdata "Services"];
-            ul items;
-          ]
-        in
-        return (header @ welcome @ display_section)
+        return (header @ welcome @ menu)
       in
       Template.default ~title:"Home" content)
 

@@ -182,8 +182,8 @@ let menu_ul () =
   ]
   >>= fun ul_opt ->
   match List.filter_opt ul_opt with
-  | [] -> return (span [])
-  | items -> return (ul ~a:[ a_class ["main_menu"] ] items)
+  | [] -> return None
+  | items -> return (Some (ul ~a:[ a_class ["main_menu"] ] items))
 
 
     
@@ -211,7 +211,7 @@ let default ?(title) content =
         (body [
           div ~a:[ a_class ["top_banner"] ] [
             Services.(link default) [pcdata "Home"] ();
-            main_menu;
+            Option.value ~default:(span []) main_menu;
             div auth_state;
             hr ();
           ];
@@ -223,16 +223,14 @@ let default ?(title) content =
     let page_title = 
       Option.value_map title ~default:"Gencore" ~f:(sprintf "Gencore: %s")
     in
-    Authentication.display_state ()
-    >>= fun auth_state ->
-    content
-    >>= fun good_content ->
+    Authentication.display_state () >>= fun auth_state ->
+    content >>= fun good_content ->
     menu_ul () >>= fun main_menu ->
     return (page page_title main_menu auth_state good_content)
   in
   let open Html5 in
   let error_page msg =
-    page "Error" (span []) [] [
+    page "Error" None [] [
       h1 [ksprintf pcdata "Gencore: Error Page"];
       p [ksprintf pcdata "An error occurred on %s:"
             Time.(now () |> to_string)];
