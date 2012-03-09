@@ -34,14 +34,27 @@ let css_service_handler ~configuration () () =
 
   out ".top_banner {position: fixed; top:0px; width: %d%%; z-index: 100; \
                     padding: 5px; color: white; font-weight: bold; \
+                    border-radius: 7px; box-shadow: 2px 2px 3px #000;\
+                    border:1px solid #421857; \
+                    border-bottom:2px solid #7F1DAF; \
+                    border-top:1px solid #421857; \
                     background-color: #5C2079; background-opacity: 1;  }"
     (100 - 2 * side_margins);
-  out ".top_banner a {text-decoration: underline thin; color: white; }\n";
+  out ".top_banner a {
+                    text-decoration: none;
+                    padding: 4px; margin-left: 10px;
+                    border-radius: 5px;
+                    border:1px solid #421857;
+                    border-bottom:2px solid #7F1DAF;
+                    border-top:1px solid #421857;
+        }\n";
+  out ".top_banner .top_menu { margin-bottom: 10px; }\n";
   out ".top_banner a:link {color : #F1C900; }\n";
+  out ".top_banner a:hover {background-color : #7F1DAF; }\n";
+  out ".top_banner a:active {background-color : #421857; }\n";
   out ".top_banner a:visited {color :#DA9302; }\n";
-  out ".top_banner form { display: inline; }";
-  out ".top_banner .main_menu {margin: 0px; padding: 0px; display: inline; }\n";
-  out ".top_banner li.main_menu:before {content : ' ☀ '; }\n";
+  out ".top_banner form { display: inline; padding: 10px; }";
+  out ".top_banner .main_menu { padding: 0px; display: inline; }\n";
   out ".main_page { position: absolute; top: 100px; }";
   Lwt.return (Buffer.contents css)
 
@@ -210,10 +223,10 @@ let default ?(title) content =
         ])
         (body [
           div ~a:[ a_class ["top_banner"] ] [
-            Services.(link default) [pcdata "Home"] ();
-            Option.value ~default:(span []) main_menu;
+            div ~a:[ a_class ["top_menu"] ] [
+              Services.(link default) [pcdata "Home"] ();
+              Option.value ~default:(span []) main_menu];
             div auth_state;
-            hr ();
           ];
           div ~a:[ a_class ["main_page"]] html_stuff;
           debug_bloc;

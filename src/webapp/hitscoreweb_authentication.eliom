@@ -280,8 +280,8 @@ let display_state () =
         pcdata "User: ";
         begin match u.person with
         | Some t -> 
-          Services.(link persons) [codef "%s" u.id] (Some true, [u.id])
-        | None -> codef "[%s]" u.id
+          Services.(link persons) [pcdataf "%s" u.id] (Some true, [u.id])
+        | None -> pcdataf "[%s]" u.id
         end;
         pcdataf " (%s)"
           (String.concat ~sep:", " (List.map u.roles 
