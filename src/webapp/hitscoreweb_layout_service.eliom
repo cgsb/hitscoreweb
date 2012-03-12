@@ -26,15 +26,15 @@ let node_name =
 
 let self_link = function
   | `default ->
-    fun html -> Services.(link layout) [html] ("view", ([], [])) 
+    fun html -> Template.a_link Services.layout [html] ("view", ([], [])) 
   | `view_one_type t ->
-    fun html -> Services.(link layout) [html] ("view", ([t], [])) 
+    fun html -> Template.a_link Services.layout [html] ("view", ([t], [])) 
   | `view_one_value (t, n) ->
-    fun html -> Services.(link layout) [html] ("view", ([t], [n])) 
+    fun html -> Template.a_link Services.layout [html] ("view", ([t], [n])) 
   | `add_one_value t ->
-    fun html -> Services.(link layout) [html] ("edit", ([t], [])) 
+    fun html -> Template.a_link Services.layout [html] ("edit", ([t], [])) 
   | `edit_one_value (t, n) ->
-    fun html -> Services.(link layout) [html] ("edit", ([t], [n])) 
+    fun html -> Template.a_link Services.layout [html] ("edit", ([t], [n])) 
 
 let node_link n = 
   let name = node_name n in

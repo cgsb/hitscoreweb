@@ -226,7 +226,7 @@ let logout_coservice =
       handler
 
 
-let login_form () =
+let login_form ?set_visibility_to () =
   let open Html5 in
   let form_span_id = "span_login_form" in
   let message_span_id = "span_login_message" in
@@ -254,6 +254,11 @@ let login_form () =
                 Js.Opt.iter message_span (fun span ->
                   span##style##visibility  <- Js.string "visible";
                   span##innerHTML <- Js.string "<b>Processing …</b>";);
+                begin match %set_visibility_to with
+                | Some s ->
+                  (get_element_exn s)##style##visibility <- Js.string "visible";
+                | None -> ()
+                end
               }};
             ]
             ~input_type:`Submit ~value:"Login" ();
@@ -268,7 +273,7 @@ let logout_form () =
         Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Logout" ()
       ]])
 
-let display_state () =
+let display_state ?in_progress_element () =
   let open Html5 in
   get_state ()
   >>= fun s ->
@@ -280,7 +285,8 @@ let display_state () =
         pcdata "User: ";
         begin match u.person with
         | Some t -> 
-          Services.(link persons) [pcdataf "%s" u.id] (Some true, [u.id])
+          Eliom_output.Html5.a ~service:(Services.persons ())
+            [pcdataf "%s" u.id] (Some true, [u.id])
         | None -> pcdataf "[%s]" u.id
         end;
         pcdataf " (%s)"
@@ -309,7 +315,7 @@ let display_state () =
           | _ -> 
              if Eliom_request_info.get_ssl () then
                [pcdata ". ";
-                login_form ()]
+                login_form ?set_visibility_to:in_progress_element ()]
              else
                [pcdata ": ";
                 Eliom_output.Html5.a

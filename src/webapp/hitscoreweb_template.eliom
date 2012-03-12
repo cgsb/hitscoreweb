@@ -21,6 +21,23 @@ let css_triangle_arrow ~css_class ?(height_px=10) ?(background="#ddd")
     (match direction with `up -> 0 | `down -> - height_px);
   Buffer.contents buf
 
+let in_progress_animation_id = unique_id "in_progress_animation"
+let in_progress_animation_div () =
+  let open Html5 in
+  div ~a:[ a_style "position: fixed; width: 100%; height: 100%; top: 0px; left: 0px;
+                    padding-top: 100px; padding-left: 45%;
+                    visibility: hidden; z-index:200;
+                    background-color: rgba(200, 200, 200, 0.5);";
+           a_id in_progress_animation_id ]
+    [ img 
+        ~src:(uri_of_string "images/violet_loader.gif")
+        ~alt:"in progress notification" () ]
+
+let in_progress_animation_handler () = {{
+  (get_element_exn %in_progress_animation_id)
+    ##style##visibility <- Js.string "visible";
+}}
+  
 let css_service_handler ~configuration () () =
   let open Lwt in
   let css = Buffer.create 42 in
@@ -181,6 +198,10 @@ let html_of_error =
      @ [pcdata ":"; br ()]
      @ error_message)
 
+let a_link ?(a=[]) service content args =
+  Html5.span ~a:[ Html5.a_onclick (in_progress_animation_handler ())]
+    [Eliom_output.Html5.a ~a ~service:(service ()) content args]
+
 let menu_ul () =
   let open Html5 in
   let real_li s = return (Some (li ~a:[ a_class ["main_menu"]] s)) in
@@ -192,15 +213,15 @@ let menu_ul () =
   in
   map_sequential ~f:return [
     potential_li (`view `all_flowcells) 
-      [Services.(link hiseq_runs) [pcdata "HiSeq 2000 Runs"] ()];
+      [a_link Services. hiseq_runs [pcdata "HiSeq 2000 Runs"] ()];
     potential_li (`view `persons)
-      [Services.(link persons) [pcdata "Persons"] (None, [])];
-    potential_li (`view `libraries)
-      [Services.(link libraries) [pcdata "Libraries"] (None, [])];
+      [a_link Services.persons [pcdata "Persons"] (None, [])];
+    potential_li (`view `libraries) [
+      a_link Services.libraries [pcdata "Libraries"] (None, []); ];
     potential_li (`view `all_evaluations)
-      [Services.(link evaluations) [pcdata "Function evaluations"] ()];
+      [a_link Services.evaluations [pcdata "Function evaluations"] ()];
     potential_li (`view `layout)
-      [Services.(link layout) [ pcdata "Layout Navigaditor" ] ("view", ([], []))]
+      [a_link Services.layout [ pcdata "Layout Navigaditor" ] ("view", ([], []))]
   ]
   >>= fun ul_opt ->
   match List.filter_opt ul_opt with
@@ -231,9 +252,10 @@ let default ?(title) content =
                                            ~service:Services.(stylesheet ()) ()) ();
         ])
         (body [
+          in_progress_animation_div ();
           div ~a:[ a_class ["top_banner"] ] [
             div ~a:[ a_class ["top_menu"] ] [
-              Services.(link default) [pcdata "Home"] ();
+              a_link Services.default [pcdata "Home"] ();
               Option.value ~default:(span []) main_menu];
             div auth_state;
           ];
@@ -245,7 +267,8 @@ let default ?(title) content =
     let page_title = 
       Option.value_map title ~default:"Gencore" ~f:(sprintf "Gencore: %s")
     in
-    Authentication.display_state () >>= fun auth_state ->
+    Authentication.display_state ~in_progress_element:in_progress_animation_id ()
+    >>= fun auth_state ->
     content >>= fun good_content ->
     menu_ul () >>= fun main_menu ->
     return (page page_title main_menu auth_state good_content)

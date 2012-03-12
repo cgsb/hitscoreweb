@@ -108,6 +108,13 @@ let float_of_string s =
   match classify_float f with
   | FP_infinite | FP_nan -> failwith "float_of_string"
   | _ -> f
+    
+let get_element_exn s =
+  Js.Opt.get (Dom_html.document##getElementById (Js.string s))
+    (fun _ -> Printf.ksprintf failwith "Getting %S -> ERROR " s)
+  
+let get_element s =
+  Js.Opt.to_option (Dom_html.document##getElementById (Js.string s))
 
 }}
 

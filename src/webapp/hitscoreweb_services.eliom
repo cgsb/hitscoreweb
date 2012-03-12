@@ -47,9 +47,6 @@ let stylesheet =
           ~path:["gencore_stylesheet"]
           ~get_params: Eliom_parameters.unit)
     
-let link service =
-  Eliom_output.Html5.a ~service:(service ())
-
 
 let register f =
   Output_app.register 

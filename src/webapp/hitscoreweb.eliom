@@ -24,7 +24,7 @@ module Persons_service = struct
       match style with
       | `full_name -> ksprintf Html5.pcdata "%s %s" f l
       | `family_name -> ksprintf Html5.pcdata "%s" l in
-    return (Services.(link persons) [content] (Some true, [e]))
+    return (Template.a_link Services.persons [content] (Some true, [e]))
 
 
   let persons ~full_view ?(transpose=false) ?(highlight=[]) hsc =
@@ -173,14 +173,14 @@ module Flowcell_service = struct
                   let cell = 
                     (List.map people (fun (f, l, e) ->
                       [ 
-                        Services.(link persons)
+                        Template.a_link Services.persons
                           [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
                         br () ]) |! List.flatten)
                     @ [
                       if List.length people > 1 then
                         small [
                           pcdata "(";
-                          Services.(link persons) [pcdata "all"]
+                          Template.a_link Services.persons [pcdata "all"]
                             (None, List.map people (fun (f, l, e) -> e));
                           pcdata ")"
                         ]
@@ -197,13 +197,13 @@ module Flowcell_service = struct
                   let sortability = String.concat ~sep:", " qnames in
                   let cell =
                     (List.map qnames (fun qn ->
-                      Services.(link libraries) [pcdata qn] (Some true, [qn]))
+                      Template.a_link Services.libraries [pcdata qn] (Some true, [qn]))
                       |! interleave_list ~sep:(pcdata ", "))
                     @ [
                       if List.length qnames > 1 then
                         small [
                           pcdata " (";
-                          Services.(link libraries) [pcdata "all"] (None, qnames);
+                          Template.a_link Services.libraries [pcdata "all"] (None, qnames);
                           pcdata ")"
                         ]
                       else
@@ -541,7 +541,7 @@ module Libraries_service = struct
                   List.filter submissions ~f:(fun (f,_,_) -> f = fcid)
                   |! List.length in
                 span [
-                  Services.(link flowcell) [ksprintf pcdata "%s" fcid] fcid;
+                  Template.a_link Services.flowcell [ksprintf pcdata "%s" fcid] fcid;
                   ksprintf pcdata " (%d lane%s)"
                     lanes (if lanes > 1 then "s" else "");
                 ]))
@@ -596,7 +596,7 @@ module Libraries_service = struct
         barcodes_cell >>= fun barcoding ->
         let opt f o = Option.value_map ~default:(f "") ~f o in
         let person e =
-          Services.(link persons) [ksprintf Html5.pcdata "%s" e] (Some true, [e])
+          Template.a_link Services.persons [ksprintf Html5.pcdata "%s" e] (Some true, [e])
         in
         let text s = `sortable (s, [pcdata s]) in
         let opttext o = opt text o in
@@ -696,7 +696,7 @@ module Evaluations_service = struct
           | _ -> error (`sample_sheet_should_a_lonely_file sample_sheet))
         >>= fun (vol_path, csv_path) -> 
         let fc_link = 
-          Services.(link flowcell) [pcdata flowcell_name] (flowcell_name) in
+          Template.a_link Services.flowcell [pcdata flowcell_name] (flowcell_name) in
         return [
           `sortable (flowcell_name, [fc_link]);
           `sortable (Int32.to_string mismatch, [pcdataf "%ld" mismatch]);
@@ -823,7 +823,7 @@ module Hiseq_runs_service = struct
         | None -> sprintf "SE %ld" r1
         | Some r2 -> sprintf "PE %ldx%ld" r1 r2 in
       let link =
-        Services.(link flowcell) [strong [pcdataf "%s" fc.serial_name]]
+        Template.a_link Services.flowcell [strong [pcdataf "%s" fc.serial_name]]
           fc.serial_name in
       return (`sortable (fc.serial_name,
                          [link; pcdataf " — %s" run_type; br ()]
