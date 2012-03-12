@@ -26,7 +26,9 @@ let css_service_handler ~configuration () () =
   let css = Buffer.create 42 in
   let out fmt = ksprintf (fun s -> (Buffer.add_string css s)) fmt in
   let side_margins = 5 in
-  out "body { font-family: sans-serif; margin-left: %d%%; margin-right: %d%%; }"
+  out "body {font:13px Helvetica,arial,freesans,clean,sans-serif;
+           line-height:1.4;
+           margin-left: %d%%; margin-right: %d%%; }"
     side_margins side_margins;
 
   out "%s" (css_triangle_arrow ~css_class:"sort_normal_button" `up);
@@ -34,13 +36,13 @@ let css_service_handler ~configuration () () =
 
   out ".top_banner {position: fixed; top:0px; width: %d%%; z-index: 100; \
                     padding: 5px; color: white; font-weight: bold; \
-                    border-radius: 7px; box-shadow: 2px 2px 3px #000;\
+                    border-radius: 7px; /* box-shadow: 2px 2px 3px #000; */
                     border:1px solid #421857; \
                     border-bottom:2px solid #7F1DAF; \
                     border-top:1px solid #421857; \
                     background-color: #5C2079; background-opacity: 1;  }"
     (100 - 2 * side_margins);
-  out ".top_banner a {
+  out ".top_banner .top_menu a {
                     text-decoration: none;
                     padding: 4px; margin-left: 10px;
                     border-radius: 5px;
@@ -49,13 +51,20 @@ let css_service_handler ~configuration () () =
                     border-top:1px solid #421857;
         }\n";
   out ".top_banner .top_menu { margin-bottom: 10px; }\n";
-  out ".top_banner a:link {color : #F1C900; }\n";
+  out ".top_banner a:link {color : #fff; }\n";
   out ".top_banner a:hover {background-color : #7F1DAF; }\n";
   out ".top_banner a:active {background-color : #421857; }\n";
-  out ".top_banner a:visited {color :#DA9302; }\n";
+  out ".top_banner a:visited {color : #ddd; }\n";
   out ".top_banner form { display: inline; padding: 10px; }";
   out ".top_banner .main_menu { padding: 0px; display: inline; }\n";
   out ".main_page { position: absolute; top: 100px; }";
+  out ".main_page a:link {color : #960F00; }\n";
+  out ".main_page a:hover {background-color : #ECD5F4; }\n";
+  out ".main_page a:visited {color : #480007; }\n";
+  out ".main_page h1 {font-weight: 900; color : #30053F;
+           font-variant: small-caps; font-size: 200%% }\n";
+  out ".main_page h2 {font-weight: 900; color : #30053F;
+                      font-size: 150%% }\n";
   Lwt.return (Buffer.contents css)
 
 let html_of_error = 
