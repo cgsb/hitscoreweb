@@ -194,6 +194,11 @@ let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
     runtime_root |! raise_error;
   syscmdf "cp _build/hitscoreweb/hitscoreweb.css %s/static/" 
     runtime_root |! raise_error;
+  begin match Option.bind !global_hitscore_configuration
+      Hitscore_configuration.root_path with
+  | Some rp -> syscmdf "cp -r %s/www/* %s/static/" rp runtime_root |! raise_error
+  | None -> failwithf "Root path not configured" ()
+  end;
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
 
@@ -366,6 +371,13 @@ let rpm_build ?(release=1) ?ssl ?ssl_dir () =
   let css_target =
     sprintf "%s/hitscoreweb.css" static_dir in
   
+  let static_source =
+    match Option.bind !global_hitscore_configuration
+      Hitscore_configuration.root_path with
+      | Some rp -> sprintf "%s/www/*" rp
+      | None -> failwithf "Root path not configured" ()
+  in
+  
   let open Out_channel in
 
   List.iter [ "BUILD"; "SPECS"; "RPMS"; "SOURCES"; "SRPMS" ]
@@ -432,6 +444,7 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" javascript_tmp static_dir;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" css_tmp static_dir;
+    fprintf o "cp %s/* $RPM_BUILD_ROOT/%s\n" static_source static_dir;
     output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
