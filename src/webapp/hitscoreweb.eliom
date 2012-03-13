@@ -10,6 +10,51 @@ module Template = Hitscoreweb_template
 
 module Layout_service = Hitscoreweb_layout_service
 
+    
+module Cache = struct
+
+  module String_map = Map.Make(String)
+
+  let _run_param_cache =
+    ref (String_map.empty:
+           Hitscore_interfaces.Hiseq_raw_information.clusters_info option array
+           String_map.t)
+      
+  let get_clusters_info path =
+    let make file = 
+      read_file file >>= fun xml_s ->
+      let xml =
+        Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
+      Hitscore_lwt.Hiseq_raw.clusters_summary (snd xml) |! of_result
+    in
+    match String_map.find !_run_param_cache path with
+    | Some r -> return r
+    | None ->
+      make path >>= fun res ->
+      _run_param_cache := String_map.add ~key:path ~data:res !_run_param_cache;
+      return res
+        
+  let _demux_summary_cache =
+    ref (String_map.empty:
+           Hitscore_interfaces.B2F_unaligned_information.demux_summary String_map.t)
+      
+  let get_demux_summary path =
+    let make file = 
+      read_file file >>= fun xml_s ->
+      let xml =
+        Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
+      Hitscore_lwt.B2F_unaligned.flowcell_demux_summary (snd xml)
+      |! of_result
+    in
+    match String_map.find !_demux_summary_cache path with
+    | Some r -> return r
+    | None ->
+      make path >>= fun res ->
+      _demux_summary_cache :=
+        String_map.add ~key:path ~data:res !_demux_summary_cache;
+      return res
+        
+end
 
 module Persons_service = struct
   let person_essentials dbh person_t =
@@ -113,21 +158,6 @@ module Persons_service = struct
 end
 
 module Flowcell_service = struct
-    
-  module Cache = struct
-
-    module String_map = Map.Make(String)
-
-    let _the_cache = ref (String_map.empty: Template.content String_map.t)
-      
-    let get f s =
-      match String_map.find !_the_cache s with
-      | Some r -> return r
-      | None ->
-        f s >>= fun res ->
-        _the_cache := String_map.add ~key:s ~data:res !_the_cache;
-        return res
-  end
     
   let flowcell_lanes_table hsc ~serial_name =
     Hitscore_lwt.db_connect hsc
@@ -246,11 +276,7 @@ module Flowcell_service = struct
 
   let get_clusters_info ~configuration path =
     let make file = 
-      read_file file >>= fun xml_s ->
-      let xml =
-        Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
-      Hitscore_lwt.Hiseq_raw.clusters_summary (snd xml) |! of_result
-      >>= fun ci_om ->
+      Cache.get_clusters_info file >>= fun ci_om ->
       let open Html5 in
       let open Template in
       let column_names = [
@@ -274,7 +300,7 @@ module Flowcell_service = struct
       return (content_table (first_row :: other_rows))
     in
     let xml_read1 = Filename.concat path "Data/reports/Summary/read1.xml" in
-    Cache.get make xml_read1
+    make xml_read1
 
   let hiseq_raw_info ~configuration ~serial_name =
     let open Html5 in
@@ -339,11 +365,7 @@ module Flowcell_service = struct
   let get_demux_stats ~configuration path =
     (* eprintf "demux: %s\n%!" dmux_sum; *)
     let make dmux_sum =
-      read_file dmux_sum >>= fun xml_s ->
-      let xml =
-        Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
-      Hitscore_lwt.B2F_unaligned.flowcell_demux_summary (snd xml) |! of_result
-      >>= fun ls_la ->
+      Cache.get_demux_summary dmux_sum >>= fun ls_la ->
       let open Html5 in
       let open Template in
       let column_names = [
@@ -396,7 +418,7 @@ module Flowcell_service = struct
       return (content_table (first_row :: List.flatten other_rows))
     in
     let dmux_sum = Filename.concat path "Flowcell_demux_summary.xml" in
-    Cache.get make dmux_sum
+    make dmux_sum
       
   let demux_info ~configuration ~serial_name =
     let open Template in
