@@ -806,7 +806,7 @@ module Hiseq_runs_service = struct
       >>= fun lanes_info -> 
       let keys =
         List.filter lanes_info ~f:(fun x -> fst x <> []) 
-        |! List.sort ~cmp:compare |! List.map ~f:fst |! List.dedup ~compare in
+        |! List.map ~f:fst |! List.dedup in
       let lanes_of l =
         List.map l ~f:(fun (lane, _, _, _) -> sprintf "%d" lane)
         |! String.concat ~sep:", " in
@@ -818,8 +818,11 @@ module Hiseq_runs_service = struct
           (List.map keys ~f:(fun k ->
             let vals = List.find_all lanes_info ~f:(fun a -> fst a = k) in
             let plural = if List.length vals = 1 then "" else "s" in
-            pcdataf "Lane%s %s: " plural (List.map vals snd |! lanes_of)
-            :: (List.map vals snd |! links_of))) in
+            let lanes = List.map vals snd |! lanes_of in
+            (* Put lane numbers first to allow sorting and then removing them *)
+            (lanes, pcdataf "Lane%s %s: " plural lanes
+              :: (List.map vals snd |! links_of)))
+            |! List.sort ~cmp:compare |! List.map ~f:snd) in
       let run_type =
         let (_, (_, _, r1 ,r2o)) =
           List.find_exn lanes_info ~f:(fun a -> fst a = List.hd_exn keys) in
