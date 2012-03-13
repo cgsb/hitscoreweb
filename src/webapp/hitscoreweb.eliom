@@ -159,6 +159,55 @@ end
 
 module Flowcell_service = struct
     
+
+  let sortable_people_cell people =
+    let open Html5 in
+    let sortability =
+      List.map people trd3 |! String.concat ~sep:", " in
+    let cell = 
+      (List.map people (fun (f, l, e) ->
+        [ 
+          Template.a_link Services.persons
+            [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
+          br () ]) |! List.flatten)
+      @ [
+        if List.length people > 1 then
+          small [
+            pcdata "(";
+            Template.a_link Services.persons [pcdata "all"]
+              (None, List.map people (fun (f, l, e) -> e));
+            pcdata ")"
+          ]
+        else
+          span []
+      ]
+    in
+    (sortability, cell)
+
+      
+  let sortable_libraries_cell libs =
+    let open Html5 in
+    let qnames =
+      List.map libs (function (l, None) -> l
+      | (l, Some p) -> sprintf "%s.%s" p l) in
+    let sortability = String.concat ~sep:", " qnames in
+    let cell =
+      (List.map qnames (fun qn ->
+        Template.a_link Services.libraries [pcdata qn] (Some true, [qn]))
+        |! interleave_list ~sep:(pcdata ", "))
+      @ [
+        if List.length qnames > 1 then
+          small [
+            pcdata " (";
+            Template.a_link Services.libraries [pcdata "all"] (None, qnames);
+            pcdata ")"
+          ]
+        else
+          span []
+      ]
+    in
+    (sortability, cell)
+
   let flowcell_lanes_table hsc ~serial_name =
     Hitscore_lwt.db_connect hsc
     >>= fun dbh ->
@@ -197,51 +246,6 @@ module Flowcell_service = struct
               >>= fun libs ->
               return Html5.(
                 let pcf = (ksprintf pcdata "%.0f") in
-                let people_cell = 
-                  let sortability =
-                    List.map people trd3 |! String.concat ~sep:", " in
-                  let cell = 
-                    (List.map people (fun (f, l, e) ->
-                      [ 
-                        Template.a_link Services.persons
-                          [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
-                        br () ]) |! List.flatten)
-                    @ [
-                      if List.length people > 1 then
-                        small [
-                          pcdata "(";
-                          Template.a_link Services.persons [pcdata "all"]
-                            (None, List.map people (fun (f, l, e) -> e));
-                          pcdata ")"
-                        ]
-                      else
-                        span []
-                    ]
-                  in
-                  (sortability, cell)
-                in
-                let libs_cell =
-                  let qnames =
-                    List.map libs (function (l, None) -> l
-                    | (l, Some p) -> sprintf "%s.%s" p l) in
-                  let sortability = String.concat ~sep:", " qnames in
-                  let cell =
-                    (List.map qnames (fun qn ->
-                      Template.a_link Services.libraries [pcdata qn] (Some true, [qn]))
-                      |! interleave_list ~sep:(pcdata ", "))
-                    @ [
-                      if List.length qnames > 1 then
-                        small [
-                          pcdata " (";
-                          Template.a_link Services.libraries [pcdata "all"] (None, qnames);
-                          pcdata ")"
-                        ]
-                      else
-                        span []
-                    ]
-                  in
-                  (sortability, cell)
-                in
                 let of_float_opt o =
                   Option.value_map o ~default:(`sortable ("", [pcdata ""]))
                     ~f:(fun f ->
@@ -251,8 +255,8 @@ module Flowcell_service = struct
                              [ksprintf pcdata "Lane %d" !lane]);
                   of_float_opt seeding_concentration_pM;
 		  of_float_opt total_volume;
-		  `sortable people_cell;
-                  `sortable libs_cell
+		  `sortable (sortable_people_cell people);
+                  `sortable (sortable_libraries_cell libs);
                 ]))))
       in
       lanes >>= fun lanes ->
