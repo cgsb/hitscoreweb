@@ -348,21 +348,19 @@ module Flowcell_service = struct
       let open Template in
       let column_names = [
         "Lane";
-        "name";
-        "yield";
-        "yield_q30";
-        "cluster_count";
-        "cluster_count_m0";
-        "cluster_count_m1";
-        "quality_score_sum";
+        "Lib ID";
+        "# Reads";
+        "% 0 mismatch";
+        "% bases ≥ Q30";
+        "Mean QS (PF)";
       ] in
       let first_row = List.map column_names (fun s -> `head [pcdata s]) in
       let other_rows =
         List.mapi (Array.to_list ls_la) (fun i ls_l ->
           List.map ls_l (fun ls ->
             let open Hitscore_interfaces.B2F_unaligned_information in
-            let f2s f = 
-              let s = sprintf "%.0f" f in
+            let f2s ?(soff=sprintf "%.0f") f = 
+              let s = soff f in
               let rec f s =
                 if String.(length s) > 3 then
                   String.(f (drop_suffix s 3) ^ " " ^ suffix s 3)
@@ -373,20 +371,26 @@ module Flowcell_service = struct
                 sprintf "%s%s"
                   (String.concat ~sep:"" (List.init length (fun _ -> " "))) s
               in
-              (prefix (f s)) in
-            let s f =
+              match String.split s ~on:'.' with
+              | [] | [_] -> prefix (f s)
+              | one :: more ->
+                sprintf "%s.%s" (prefix (f one)) (String.concat ~sep:"" more)
+            in
+            let s ?soff f =
               `sortable (Float.to_string f,
                          [div
                              ~a:[a_style "text-align:right; font-family: monospace"]
-                             [pcdata (f2s f)]]) in
+                             [pcdata (f2s ?soff f)]]) in
+            let soff = sprintf "%.2f" in
             [ `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
               `sortable (ls.name, [ pcdata ls.name ]);
-              s ls.yield;
-              s ls.yield_q30;
               s ls.cluster_count;
-              s ls.cluster_count_m0;
-              s ls.cluster_count_m1;
-              s ls.quality_score_sum;
+              s ~soff (100. *. ls.cluster_count_m0 /. ls.cluster_count);
+              s ~soff (100. *. ls.yield_q30 /. ls.yield);
+              s ~soff (ls.quality_score_sum /. ls.yield);
+            (*   s ls.yield; s ls.yield_q30; s ls.cluster_count;
+                 s ls.cluster_count_m0; s ls.cluster_count_m1;
+                 s ls.quality_score_sum; *)
             ]))
       in
       return (content_table (first_row :: List.flatten other_rows))
