@@ -48,11 +48,16 @@ let css_service_handler ~configuration () () =
            margin-left: %d%%; margin-right: %d%%; }"
     side_margins side_margins;
 
-  out "%s" (css_triangle_arrow ~css_class:"sort_normal_button" `up);
-  out "%s" (css_triangle_arrow ~css_class:"sort_reverse_button" `down);
+  let light_grey = "#eee" in
+
+  let () =
+    let background = light_grey in
+    out "%s" (css_triangle_arrow ~background ~css_class:"sort_normal_button" `up);
+    out "%s" (css_triangle_arrow ~background ~css_class:"sort_reverse_button" `down);
+  in
 
   out ".top_banner {position: fixed; top:0px; width: %d%%; z-index: 100; \
-                    padding: 5px; color: white; font-weight: bold; \
+                    padding: 5px; color: white; font-weight: 900;\
                     border-radius: 7px; /* box-shadow: 2px 2px 3px #000; */
                     border:1px solid #421857; \
                     border-bottom:2px solid #7F1DAF; \
@@ -68,10 +73,10 @@ let css_service_handler ~configuration () () =
                     border-top:1px solid #421857;
         }\n";
   out ".top_banner .top_menu { margin-bottom: 10px; }\n";
-  out ".top_banner a:link {color : #fff; }\n";
+  out ".top_banner a:link {color : #FFC800; }\n";
   out ".top_banner a:hover {background-color : #7F1DAF; }\n";
   out ".top_banner a:active {background-color : #421857; }\n";
-  out ".top_banner a:visited {color : #ddd; }\n";
+  out ".top_banner a:visited {color : #FFC800;}\n";
   out ".top_banner form { display: inline; padding: 10px; }";
   out ".top_banner .main_menu { padding: 0px; display: inline; }\n";
   out ".main_page { position: absolute; top: 100px; }";
@@ -82,6 +87,11 @@ let css_service_handler ~configuration () () =
            font-variant: small-caps; font-size: 200%% }\n";
   out ".main_page h2 {font-weight: 900; color : #30053F;
                       font-size: 150%% }\n";
+  out ".content_table_head { color: #960F00; font-size: 110%%;
+          background-color: %s; }\n" light_grey;
+  out ".content_table_head,.content_table_text {
+          max-width: 40em;
+          border: 1px solid black; padding: 3px; }"; 
   Lwt.return (Buffer.contents css)
 
 let html_of_error = 
@@ -410,22 +420,14 @@ let rec html_of_content ?(section_level=2) content =
       in
       match cell with
       | `head (c) -> 
-        td ~a:[
-          a_id cell_id;
-          a_style "border: 1px solid black; padding: 2px; color: red" ] 
+        td ~a:[a_id cell_id; a_class ["content_table_head"] ]
           ([div c] @ buttons)
       | `sortable (title, cell) ->
-        td  ~a:[ a_title title;
-                 a_style "border: 1px  solid grey; padding: 2px; \
-                            max-width: 40em;" ] cell
+        td  ~a:[ a_title title; a_class ["content_table_text"] ] cell
       | `text cell ->
-        td  ~a:[
-          a_style "border: 1px  solid grey; padding: 2px; \
-                            max-width: 40em;" ] cell
+        td  ~a:[ a_class ["content_table_text"] ] cell
       | `number c ->
-        td  ~a:[
-          a_style "border: 1px  solid grey; padding: 4px; \
-                            text-align: right;" ] c
+        td  ~a:[ a_class ["content_table_text"]; a_style "text-align: right" ] c
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
     div [
