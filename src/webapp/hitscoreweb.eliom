@@ -516,6 +516,80 @@ end
 
 module Libraries_service = struct
 
+
+  let barcodes_cell ~dbh bartype barcodes bartoms =
+    let open Html5 in
+    let barcodes_list =
+      String.concat ~sep:"," 
+        (List.map ~f:(sprintf "%ld") 
+           (Array.to_list (Option.value ~default:[| |] barcodes))) in
+    let custom_barcodes =
+      match bartoms with
+      | None | Some [| |] -> return [pcdata ""]
+      | Some a -> 
+        let l = Array.to_list a in
+        Layout.Record_custom_barcode.(
+          of_list_sequential l (fun id ->
+            get ~dbh (unsafe_cast id)
+            >>= fun {position_in_r1; position_in_r2; 
+                     position_in_index; sequence} ->
+            return [ br ();
+                     ksprintf pcdata "%s(%s)"
+                       sequence
+                       (["R1", position_in_r1; 
+                         "I", position_in_index; "R2", position_in_r2]
+                        |! List.filter_map ~f:(function
+                          | _, None -> None
+                          | t, Some i -> Some (sprintf "%s:%ld" t i))
+                                       |! String.concat ~sep:",")]))
+        >>= fun pcdatas ->
+        return (List.flatten pcdatas)
+    in
+    custom_barcodes >>= fun custom ->
+    let non_custom =
+      Option.value_map bartype
+        ~default:(pcdata "NO BARCODE TYPE!") ~f:(fun t ->
+          match Layout.Enumeration_barcode_provider.of_string t with
+          | Ok `none -> pcdata ""
+          | Ok `bioo -> ksprintf pcdata "BIOO[%s]" barcodes_list
+          | Ok `bioo_96 -> ksprintf pcdata "BIOO-96[%s]" barcodes_list
+          | Ok `illumina -> ksprintf pcdata "ILLUMINA[%s]" barcodes_list
+          | Ok `nugen -> ksprintf pcdata "NUGEN[%s]" barcodes_list
+          | Ok `custom -> strong [pcdata "CUSTOM"]
+          | Error _ -> strong [pcdata "PARSING ERROR !!!"]
+        )
+    in
+    return (sprintf "%s%s" (Option.value ~default:"" bartype) barcodes_list,
+            non_custom :: custom)
+
+
+  let submissions_cell submissions = 
+    let open Html5 in
+    let how_much =
+      match List.length submissions with
+      | 0 -> "Never" | 1 -> "Once: " | 2 -> "Twice: " 
+      | n -> sprintf "%d times: " n in
+    let flowcells = 
+      List.map submissions fst3 |! List.dedup in
+    let sortability = List.length submissions |! sprintf "%d" in
+    let display =
+      (ksprintf pcdata "%s" how_much)
+      ::
+        interleave_list ~sep:(pcdata ", ")
+        (List.map flowcells (fun fcid ->
+          let lanes = 
+            List.filter submissions ~f:(fun (f,_,_) -> f = fcid)
+            |! List.length in
+          span [
+            Template.a_link Services.flowcell [ksprintf pcdata "%s" fcid] fcid;
+            ksprintf pcdata " (%d lane%s)"
+              lanes (if lanes > 1 then "s" else "");
+          ]))
+      @ [pcdata "."]
+    in
+    return (sortability, display)
+      
+      
   let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
     let open Html5 in
     Hitscore_lwt.db_connect hsc
@@ -554,76 +628,9 @@ module Libraries_service = struct
                 p5, p7, note,
                 sample_name, org_name,
                 prep_email, protocol), submissions) ->
-        let submissions_cell = 
-          let how_much =
-            match List.length submissions with
-            | 0 -> "Never" | 1 -> "Once: " | 2 -> "Twice: " 
-            | n -> sprintf "%d times: " n in
-          let flowcells = 
-            List.map submissions fst3 |! List.dedup in
-          let sortability = List.length submissions |! sprintf "%d" in
-          let display =
-            (ksprintf pcdata "%s" how_much)
-            ::
-              interleave_list ~sep:(pcdata ", ")
-              (List.map flowcells (fun fcid ->
-                let lanes = 
-                  List.filter submissions ~f:(fun (f,_,_) -> f = fcid)
-                  |! List.length in
-                span [
-                  Template.a_link Services.flowcell [ksprintf pcdata "%s" fcid] fcid;
-                  ksprintf pcdata " (%d lane%s)"
-                    lanes (if lanes > 1 then "s" else "");
-                ]))
-            @ [pcdata "."]
-          in
-          (sortability, display)
-        in
-        let barcodes_cell =
-          let barcodes_list =
-            String.concat ~sep:"," 
-              (List.map ~f:(sprintf "%ld") 
-                 (Array.to_list (Option.value ~default:[| |] barcodes))) in
-          let custom_barcodes =
-            match bartoms with
-            | None | Some [| |] -> return [pcdata ""]
-            | Some a -> 
-              let l = Array.to_list a in
-              Layout.Record_custom_barcode.(
-                of_list_sequential l (fun id ->
-                  get ~dbh (unsafe_cast id)
-                  >>= fun {position_in_r1; position_in_r2; 
-                           position_in_index; sequence} ->
-                  return [ br ();
-                           ksprintf pcdata "%s(%s)"
-                             sequence
-                             (["R1", position_in_r1; 
-                               "I", position_in_index; "R2", position_in_r2]
-                              |! List.filter_map ~f:(function
-                                | _, None -> None
-                                | t, Some i -> Some (sprintf "%s:%ld" t i))
-                                             |! String.concat ~sep:",")]))
-              >>= fun pcdatas ->
-              return (List.flatten pcdatas)
-          in
-          custom_barcodes >>= fun custom ->
-          let non_custom =
-            Option.value_map bartype
-              ~default:(pcdata "NO BARCODE TYPE!") ~f:(fun t ->
-                match Layout.Enumeration_barcode_provider.of_string t with
-                | Ok `none -> pcdata ""
-                | Ok `bioo -> ksprintf pcdata "BIOO[%s]" barcodes_list
-                | Ok `bioo_96 -> ksprintf pcdata "BIOO-96[%s]" barcodes_list
-                | Ok `illumina -> ksprintf pcdata "ILLUMINA[%s]" barcodes_list
-                | Ok `nugen -> ksprintf pcdata "NUGEN[%s]" barcodes_list
-                | Ok `custom -> strong [pcdata "CUSTOM"]
-                | Error _ -> strong [pcdata "PARSING ERROR !!!"]
-              )
-          in
-          return (sprintf "%s%s" (Option.value ~default:"" bartype) barcodes_list,
-                  non_custom :: custom)
-        in
-        barcodes_cell >>= fun barcoding ->
+        submissions_cell submissions >>= fun submissions_cell ->
+        barcodes_cell ~dbh bartype barcodes bartoms
+        >>= fun barcoding ->
         let opt f o = Option.value_map ~default:(f "") ~f o in
         let person e =
           Template.a_link Services.persons [ksprintf Html5.pcdata "%s" e] (Some true, [e])
