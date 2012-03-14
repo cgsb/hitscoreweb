@@ -42,11 +42,8 @@ let css_service_handler ~configuration () () =
   let open Lwt in
   let css = Buffer.create 42 in
   let out fmt = ksprintf (fun s -> (Buffer.add_string css s)) fmt in
-  let side_margins = 5 in
   out "body {font:13px Helvetica,arial,freesans,clean,sans-serif;
-           line-height:1.4;
-           margin-left: %d%%; margin-right: %d%%; }"
-    side_margins side_margins;
+           left: 2px; right: 2px; line-height:1.4;}";
 
   let light_grey = "#eee" in
 
@@ -56,14 +53,14 @@ let css_service_handler ~configuration () () =
     out "%s" (css_triangle_arrow ~background ~css_class:"sort_reverse_button" `down);
   in
 
-  out ".top_banner {position: fixed; top:0px; width: %d%%; z-index: 100; \
-                    padding: 5px; color: white; font-weight: 900;\
+  out ".top_banner {position: fixed; top:0px; \
+                    right: 1%%; left: 1%%; z-index: 100; \
+                    padding: 4px; color: white; font-weight: 900;\
                     border-radius: 7px; /* box-shadow: 2px 2px 3px #000; */
                     border:1px solid #421857; \
                     border-bottom:2px solid #7F1DAF; \
                     border-top:1px solid #421857; \
-                    background-color: #5C2079; background-opacity: 1;  }"
-    (100 - 2 * side_margins);
+                    background-color: #5C2079; background-opacity: 1;  }";
   out ".top_banner .top_menu a {
                     text-decoration: none;
                     padding: 4px; margin-left: 10px;
