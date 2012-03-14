@@ -1034,7 +1034,6 @@ let () =
             ?vol_directory:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
             ?root_path:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
-        if !debug_mode then init_debug ();
         config
       in
 

@@ -424,7 +424,6 @@ let add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit =
               | LDSL.Array (LDSL.Enumeration_name enum) ->
                 begin match find_enumeration_values enum with
                 | Some values ->
-                  let dbg = debug_service () in
                   let id = unique_id "input" in
                   Eliom_services.onload {{
                     Js.Opt.iter (Dom_html.document##getElementById (Js.string %id))
@@ -436,7 +435,6 @@ let add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit =
                           input,
                           Js.some Js._true,
                           Js.some Js._true) in
-                      debugf %dbg "onload for %S -- after goog" %id;
                       ignore basic_autocomplete
                     )
                   }};

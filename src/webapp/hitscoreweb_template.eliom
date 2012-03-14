@@ -240,18 +240,6 @@ let menu_ul () =
 let default ?(title) content =
   let page page_title main_menu auth_state html_stuff =
     Html5.(
-      let debug_bloc =
-        match !debug_messages with
-        | [] -> div []
-        | l -> 
-          div [
-            hr ();
-            pcdataf "Debug Messages:";
-            br ();
-            ul (List.map l (fun (t, m) ->
-              li [pcdataf "[%s]: " (Time.to_string t);
-                  codef "%s" m]));
-          ] in
       html
         (head (title (pcdata page_title)) [
           link ~rel:[`Stylesheet] ~href:(uri_of_string "hitscoreweb.css") ();
@@ -267,7 +255,6 @@ let default ?(title) content =
             div auth_state;
           ];
           div ~a:[ a_class ["main_page"]] html_stuff;
-          debug_bloc;
         ]))
   in
   let html_result =
