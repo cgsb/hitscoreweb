@@ -193,13 +193,13 @@ module Flowcell_service = struct
     let sortability = String.concat ~sep:", " qnames in
     let cell =
       (List.map qnames (fun qn ->
-        Template.a_link Services.libraries [pcdata qn] (Some true, [qn]))
+        Template.a_link Services.libraries [pcdata qn] ([`basic], [qn]))
         |! interleave_list ~sep:(pcdata ", "))
       @ [
         if List.length qnames > 1 then
           small [
             pcdata " (";
-            Template.a_link Services.libraries [pcdata "all"] (None, qnames);
+            Template.a_link Services.libraries [pcdata "all"] ([`basic], qnames);
             pcdata ")"
           ]
         else
@@ -589,11 +589,7 @@ module Libraries_service = struct
     in
     return (sortability, display)
       
-      
-  let libraries ?(transpose=false) ?(qualified_names=[]) hsc =
-    let open Html5 in
-    Hitscore_lwt.db_connect hsc
-    >>= fun dbh ->
+  let fetch_and_filter_libs ~dbh qualified_names =
     Queries.full_libraries dbh >>= fun library_list ->
     of_list_sequential library_list ~f:(fun result_item ->
       let  (idopt, name, project, desc, app, stranded, truseq, rnaseq,
@@ -620,7 +616,9 @@ module Libraries_service = struct
         >>= function
         | true -> return (Some (result_item, submissions))
         | false -> return None))
-    >>= fun libs_filtered ->
+
+  let make_libs_table ~dbh ~showing libs_filtered =
+    let open Html5 in
     of_list_sequential (List.filter_opt libs_filtered)
       ~f:(fun ((idopt, name, project, desc, app, 
                 stranded, truseq, rnaseq,
@@ -629,11 +627,11 @@ module Libraries_service = struct
                 sample_name, org_name,
                 prep_email, protocol), submissions) ->
         submissions_cell submissions >>= fun submissions_cell ->
-        barcodes_cell ~dbh bartype barcodes bartoms
-        >>= fun barcoding ->
+        barcodes_cell ~dbh bartype barcodes bartoms >>= fun barcoding ->
         let opt f o = Option.value_map ~default:(f "") ~f o in
         let person e =
-          Template.a_link Services.persons [ksprintf Html5.pcdata "%s" e] (Some true, [e])
+          Template.a_link Services.persons
+            [ksprintf Html5.pcdata "%s" e] (Some true, [e])
         in
         let text s = `sortable (s, [pcdata s]) in
         let opttext o = opt text o in
@@ -646,59 +644,74 @@ module Libraries_service = struct
           Option.value_map i32 ~default:(`sortable ("", []))
             ~f:(fun i ->
               `sortable (Int32.to_string i, [pcdataf "%ld" i])) in
-        return [
-          opttext name;
-          opttext project;
-          opttext desc;
-          `sortable submissions_cell;
-          opttext sample_name;
-          opttext org_name;
-          `sortable (valopt prep_email, [opt person prep_email]);
-          opttext protocol;
-          opttext app;
-          boolopt stranded;
-          boolopt truseq;
-          opttext rnaseq;
-          `sortable barcoding;
-          i32opt p5; i32opt p7;
-          opttext note;
-        ])
+        let mandatory_stuff = [opttext name; opttext project] in
+        let basic_stuff =
+          if List.exists showing ((=) `basic)
+          then [opttext desc; opttext sample_name; opttext org_name;
+                `sortable submissions_cell; opttext app;]
+          else [] in
+        let stock_stuff =
+          if List.exists showing ((=) `stock)
+          then [`sortable barcoding; i32opt p5; i32opt p7; opttext protocol;
+                boolopt stranded; boolopt truseq; opttext rnaseq;
+                `sortable (valopt prep_email, [opt person prep_email]);
+                opttext note; ]
+          else [] in
+        return (mandatory_stuff @ basic_stuff @ stock_stuff))
     >>= fun rows ->
-    Hitscore_lwt.db_disconnect hsc dbh
-    >>= fun _ ->
-    let nb_rows = List.length rows in
+    let mandatory_columns = [`head [pcdata "Name"]; `head [pcdata "Project"]] in
+    let basic_columns = [ `head [pcdata "Description"];
+      `head [pcdata "Sample-name"]; `head [pcdata "Organism"];
+      `head [pcdata "Submitted"]; `head [pcdata "Application"];] in
+    let stock_columns = [`head [pcdata "Barcoding"];
+      `head [pcdata "P5 Adapter Length"]; `head [pcdata "P7 Adapter Length"];
+      `head [pcdata "Protocol"]; `head [pcdata "Stranded"];
+      `head [pcdata "Truseq-control"]; `head [pcdata "RNASeq-control"];
+      `head [pcdata "Preparator"]; `head [pcdata "Note"];] in
+    let header_row =
+      mandatory_columns
+      @ (if List.exists showing ((=) `basic) then basic_columns else [])
+      @ (if List.exists showing ((=) `stock) then stock_columns else [])
+    in
+    return (header_row :: rows)
+
+  let intro_paragraph ~showing ~qualified_names =
+    let open Html5 in
+    let make_link (shwg, name) =
+      Template.a_link Services.libraries [pcdata name]
+        (shwg, qualified_names) in
+    let links =
+      List.map [ [`basic], "Basic";
+                 [`basic;`stock], "Full" ] make_link
+      |! interleave_list ~sep:(pcdata ", ") in
+    [pcdata "Choose view: ";] @ links @ [pcdata "."]
+    
+      
+  let libraries ~showing ?(qualified_names=[]) hsc =
+    let open Html5 in
+    Hitscore_lwt.with_database hsc (fun ~dbh ->
+      fetch_and_filter_libs ~dbh qualified_names >>= fun libs_filtered ->
+      make_libs_table ~dbh ~showing libs_filtered)
+    >>= fun main_table ->
+    let nb_rows = List.length main_table in
     return Template.(
       content_section
         (ksprintf pcdata "Found %d librar%s:"
-           nb_rows (if nb_rows = 1 then "y" else "ies"))
-        (content_table ~transpose
-           ([ `head [pcdata "Name"]; 
-	      `head [pcdata "Project"];
-              `head [pcdata "Description"];
-              `head [pcdata "Submitted"];
-              `head [pcdata "Sample-name"];
-              `head [pcdata "Organism"];
-              `head [pcdata "Preparator"];
-              `head [pcdata "Protocol"];
-              `head [pcdata "Application"];
-              `head [pcdata "Stranded"];
-              `head [pcdata "Truseq-control"];
-              `head [pcdata "RNASeq-control"];
-              `head [pcdata "Barcoding"];
-              `head [pcdata "P5 Adapter Length"];
-              `head [pcdata "P7 Adapter Length"];
-              `head [pcdata "Note"];
-            ] :: rows)))
+           nb_rows (if nb_rows = 2 then "y" else "ies"))
+        (content_list [
+          content_paragraph (intro_paragraph ~showing ~qualified_names);
+          content_table ~transpose:(nb_rows = 2) main_table;
+        ]))
 
   let make configuration =
-    (fun (transpose, qualified_names) () ->
+    (fun (showing, qualified_names) () ->
       let main_title = "Libraries" in
       Template.default ~title:main_title
         (Authentication.authorizes (`view `libraries)
          >>= function
          | true ->
            Template.make_content ~configuration ~main_title    
-             (libraries ~qualified_names ?transpose configuration);
+             (libraries ~qualified_names ~showing configuration);
          | false ->
            Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf "You may not view the libraries."])))

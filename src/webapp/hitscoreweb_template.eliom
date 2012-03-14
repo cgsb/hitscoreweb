@@ -227,7 +227,7 @@ let menu_ul () =
     potential_li (`view `persons)
       [a_link Services.persons [pcdata "Persons"] (None, [])];
     potential_li (`view `libraries) [
-      a_link Services.libraries [pcdata "Libraries"] (None, []); ];
+      a_link Services.libraries [pcdata "Libraries"] ([`basic], []); ];
     potential_li (`view `all_evaluations)
       [a_link Services.evaluations [pcdata "Function evaluations"] ()];
     potential_li (`view `layout)

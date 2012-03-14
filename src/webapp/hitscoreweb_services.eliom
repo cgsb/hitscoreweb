@@ -25,11 +25,24 @@ let persons =
       ~get_params:Eliom_parameters.(opt (bool "transpose")
                                     ** set string "email"))
 
+type libraries_show = [ `basic | `stock ]
+let libraries_show_of_string = function
+  | "basic" -> `basic
+  | "stock" -> `stock
+  | s -> failwith "libraries_show_of_string"
+let string_of_libraries_show  = function
+  | `basic -> "basic"
+  | `stock -> "stock"
+let libraries_show_eliom_type =
+  Eliom_parameters.user_type
+    ~of_string:libraries_show_of_string
+    ~to_string:string_of_libraries_show
+  
 let libraries =
   make (
     Eliom_services.service
       ~path:["libraries"] 
-      ~get_params:Eliom_parameters.(opt (bool "transpose")
+      ~get_params:Eliom_parameters.(set libraries_show_eliom_type "show"
                                     ** set string "qualified_name"))
 
 let evaluations =
