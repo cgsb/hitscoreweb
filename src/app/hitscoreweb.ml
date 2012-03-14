@@ -374,7 +374,7 @@ let rpm_build ?(release=1) ?ssl ?ssl_dir () =
   let static_source =
     match Option.bind !global_hitscore_configuration
       Hitscore_configuration.root_path with
-      | Some rp -> sprintf "%s/www/*" rp
+      | Some rp -> sprintf "%s/www/" rp
       | None -> failwithf "Root path not configured" ()
   in
   
@@ -444,7 +444,7 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" javascript_tmp static_dir;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" css_tmp static_dir;
-    fprintf o "cp %s/* $RPM_BUILD_ROOT/%s\n" static_source static_dir;
+    fprintf o "cp -r %s/* $RPM_BUILD_ROOT/%s\n" static_source static_dir;
     output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -459,6 +459,7 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "%s\n" mimes_target;
     fprintf o "%s\n" javascript_target;
     fprintf o "%s\n" css_target;
+    fprintf o "%s/*\n" static_dir;
     output_string o "
 
 %doc
