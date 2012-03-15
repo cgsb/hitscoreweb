@@ -516,7 +516,12 @@ end
 
 module Libraries_service = struct
 
-
+  (* Helper functions for type Services.libraries_show *)
+  let show_list ~showing show l =
+    if List.exists showing ((=) show) then l else []
+  let show_list_fun ~showing show f =
+    if List.exists showing ((=) show) then f () else []
+    
   let barcodes_cell ~dbh bartype barcodes bartoms =
     let open Html5 in
     let barcodes_list =
@@ -646,17 +651,17 @@ module Libraries_service = struct
               `sortable (Int32.to_string i, [pcdataf "%ld" i])) in
         let mandatory_stuff = [opttext name; opttext project] in
         let basic_stuff =
-          if List.exists showing ((=) `basic)
-          then [opttext desc; opttext sample_name; opttext org_name;
-                `sortable submissions_cell; opttext app;]
-          else [] in
+          show_list ~showing `basic 
+            [opttext desc; opttext sample_name; opttext org_name;
+             `sortable submissions_cell; opttext app;]
+        in
         let stock_stuff =
-          if List.exists showing ((=) `stock)
-          then [`sortable barcoding; i32opt p5; i32opt p7; opttext protocol;
-                boolopt stranded; boolopt truseq; opttext rnaseq;
-                `sortable (valopt prep_email, [opt person prep_email]);
-                opttext note; ]
-          else [] in
+          show_list_fun ~showing `stock (fun () ->
+            [`sortable barcoding; i32opt p5; i32opt p7; opttext protocol;
+             boolopt stranded; boolopt truseq; opttext rnaseq;
+             `sortable (valopt prep_email, [opt person prep_email]);
+             opttext note; ])
+        in
         return (mandatory_stuff @ basic_stuff @ stock_stuff))
     >>= fun rows ->
     let mandatory_columns = [`head [pcdata "Name"]; `head [pcdata "Project"]] in
@@ -670,8 +675,8 @@ module Libraries_service = struct
       `head [pcdata "Preparator"]; `head [pcdata "Note"];] in
     let header_row =
       mandatory_columns
-      @ (if List.exists showing ((=) `basic) then basic_columns else [])
-      @ (if List.exists showing ((=) `stock) then stock_columns else [])
+      @ (show_list ~showing `basic basic_columns)
+      @ (show_list ~showing `stock stock_columns)
     in
     return (header_row :: rows)
 
