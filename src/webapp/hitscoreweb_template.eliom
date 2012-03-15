@@ -33,11 +33,24 @@ let in_progress_animation_div () =
         ~src:(uri_of_string "images/violet_loader.gif")
         ~alt:"in progress notification" () ]
 
-let in_progress_animation_handler () = {{
-  (get_element_exn %in_progress_animation_id)
-    ##style##visibility <- Js.string "visible";
-}}
-  
+let in_progress_animation_handler unique_elt = 
+  Eliom_services.onload {{
+    (Eliom_client.Html5.of_element %unique_elt)##onclick
+    <- Dom_html.(handler (fun ev ->
+      begin match taggedEvent ev with
+      | MouseEvent me when me##ctrlKey = Js._true || me##shiftKey = Js._true
+                           || me##button = 1 ->
+        (* Dirty way of avoiding the 'open in new tab/window' *)
+        Eliom_pervasives.debug "Mouse Event! Ctrl: %b, Button: %d"
+          (Js.to_bool me##ctrlKey) me##button
+      | _ ->
+        (get_element_exn %in_progress_animation_id) ##style##visibility <-
+          Js.string "visible";
+      end;
+      Js._true));
+  }}
+
+    
 let css_service_handler ~configuration () () =
   let open Lwt in
   let css = Buffer.create 42 in
@@ -206,8 +219,14 @@ let html_of_error =
      @ error_message)
 
 let a_link ?(a=[]) service content args =
-  Html5.span ~a:[ Html5.a_onclick (in_progress_animation_handler ())]
-    [Eliom_output.Html5.a ~a ~service:(service ()) content args]
+  let unique_elt =
+    let aa = a in
+    HTML5.M.(unique
+             (span
+                [Eliom_output.Html5.a ~a:aa ~service:(service ()) content args]))
+  in
+  in_progress_animation_handler unique_elt;
+  unique_elt
 
 let menu_ul () =
   let open Html5 in
