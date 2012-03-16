@@ -53,3 +53,19 @@ let sample_sheet_kind ~dbh sample_sheet =
       end
     | _ -> error (`sample_sheet_kind_not_found sample_sheet))
 
+let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
+  let lane_id = lane_pointer.Layout.Record_lane.id in
+  let query () =
+    PGSQL (dbh)
+      "SELECT bcl_to_fastq_unaligned.directory
+       FROM prepare_unaligned_delivery, invoicing,
+            bcl_to_fastq_unaligned
+       WHERE g_status = 'Succeeded'
+         AND unaligned = bcl_to_fastq_unaligned.g_id
+         AND invoice = invoicing.g_id
+         AND invoicing.lanes @> array_append ('{}', $lane_id :: int);" in
+  Hitscoreweb_std.(
+    wrap_pgocaml ~query ~on_result:(fun l ->
+      List.dedup l
+      |! List.map ~f:Layout.File_system.unsafe_cast_volume
+      |! return))

@@ -25,14 +25,16 @@ let persons =
       ~get_params:Eliom_parameters.(opt (bool "transpose")
                                     ** set string "email"))
 
-type libraries_show = [ `basic | `stock ]
+type libraries_show = [ `basic | `stock | `fastq ]
 let libraries_show_of_string = function
   | "basic" -> `basic
   | "stock" -> `stock
+  | "fastq" -> `fastq
   | s -> failwith "libraries_show_of_string"
 let string_of_libraries_show  = function
   | `basic -> "basic"
   | `stock -> "stock"
+  | `fastq -> "fastq"
 let libraries_show_eliom_type =
   Eliom_parameters.user_type
     ~of_string:libraries_show_of_string

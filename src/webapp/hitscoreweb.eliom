@@ -365,7 +365,10 @@ module Flowcell_service = struct
                             (if List.length l = 1 then "y" else "ies"))
            (content_list (List.filter_opt l))))
 
-  let get_demux_stats ~configuration path =
+  type demux_stats_filter =
+  [`none | `barcoded of int * string | `non_barcoded of int ]
+    
+  let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
     (* eprintf "demux: %s\n%!" dmux_sum; *)
     let make dmux_sum =
       Cache.get_demux_summary dmux_sum >>= fun ls_la ->
@@ -382,7 +385,7 @@ module Flowcell_service = struct
       let first_row = List.map column_names (fun s -> `head [pcdata s]) in
       let other_rows =
         List.mapi (Array.to_list ls_la) (fun i ls_l ->
-          List.map ls_l (fun ls ->
+          List.filter_map ls_l (fun ls ->
             let open Hitscore_interfaces.B2F_unaligned_information in
             let f2s ?(soff=sprintf "%.0f") f = 
               let s = soff f in
@@ -407,22 +410,45 @@ module Flowcell_service = struct
                              ~a:[a_style "text-align:right; font-family: monospace"]
                              [pcdata (f2s ?soff f)]]) in
             let soff = sprintf "%.2f" in
-            [ `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
-              `sortable (ls.name, [ pcdata ls.name ]);
-              s ls.cluster_count;
-              s ~soff (100. *. ls.cluster_count_m0 /. ls.cluster_count);
-              s ~soff (100. *. ls.yield_q30 /. ls.yield);
-              s ~soff (ls.quality_score_sum /. ls.yield);
-            (*   s ls.yield; s ls.yield_q30; s ls.cluster_count;
+            let make_row () =
+              let name =
+                if ls.name = sprintf "lane%d" (i + 1)
+                then sprintf "Undetermined Lane %d" (i + 1)
+                else ls.name in
+              Some [
+                `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
+                `sortable (name, [ pcdata name ]);
+                s ls.cluster_count;
+                s ~soff (100. *. ls.cluster_count_m0 /. ls.cluster_count);
+                s ~soff (100. *. ls.yield_q30 /. ls.yield);
+                s ~soff (ls.quality_score_sum /. ls.yield);
+              (*   s ls.yield; s ls.yield_q30; s ls.cluster_count;
                  s ls.cluster_count_m0; s ls.cluster_count_m1;
                  s ls.quality_score_sum; *)
-            ]))
+              ] in
+            match filter with
+            | `none -> make_row ()
+            | `barcoded (lane, libname) when lane = i + 1 && libname = ls.name ->
+              make_row ()
+            | `non_barcoded lane when
+                lane = i + 1 && ls.name = sprintf "lane%d" lane ->
+              make_row ()
+            | _ -> None))
       in
-      return (content_table (first_row :: List.flatten other_rows))
+      return (first_row, List.flatten other_rows)
     in
     let dmux_sum = Filename.concat path "Flowcell_demux_summary.xml" in
     make dmux_sum
       
+  let basecall_stats_path_of_unaligned ~configuration ~dbh directory serial_name =
+    Hitscore_lwt.Common.paths_of_volume ~configuration ~dbh directory
+    >>= (function
+    | [one] -> return one
+    | _ -> error (`wrong_unaligned_volume directory))
+    >>= fun unaligned_path ->
+    return
+      (Filename.concat unaligned_path (sprintf "Basecall_Stats_%s" serial_name))
+
   let demux_info ~configuration ~serial_name =
     let open Template in
     let open Html5 in
@@ -443,17 +469,12 @@ module Flowcell_service = struct
               | None -> error (`bcl_to_fastq_succeeded_without_result b2f)
               | Some r ->
                 get ~dbh r >>= fun {directory} ->
-                Hitscore_lwt.Common.paths_of_volume ~configuration ~dbh directory
-                >>= function
-                | [one] -> return one
-                | _ -> error (`wrong_unaligned_volume directory))
-            >>= fun unaligned_path ->
-            let stat_path =
-              Filename.concat unaligned_path
-                (sprintf "Basecall_Stats_%s" serial_name)
-            in
+                basecall_stats_path_of_unaligned ~configuration ~dbh
+                  directory serial_name)
+            >>= fun stat_path ->
             double_bind (get_demux_stats ~configuration stat_path)
-              ~ok:(fun tab ->
+              ~ok:(fun (h, rs) ->
+                let tab = content_table (h :: rs) in
                 return (content_section (pcdataf "Stats") tab))
               ~error:(fun e ->
                 return
@@ -520,6 +541,8 @@ module Libraries_service = struct
     if List.exists showing ((=) show) then l else []
   let show_list_fun ~showing show f =
     if List.exists showing ((=) show) then f () else []
+  let show_list_m ~showing show f =
+    if List.exists showing ((=) show) then f () else return []
     
   let barcodes_cell ~dbh bartype barcodes bartoms =
     let open Html5 in
@@ -566,7 +589,87 @@ module Libraries_service = struct
     return (sprintf "%s%s" (Option.value ~default:"" bartype) barcodes_list,
             non_custom :: custom)
 
+  let fastq_files ~dbh ~configuration lib submissions =
+    let open Html5 in
+    let open Template in
+    let  (idopt, libname, project, desc, app, stranded, truseq, rnaseq,
+          bartype, barcodes, bartoms, p5, p7, note,
+          sample_name, org_name, prep_email, protocol) = lib in
+    let header_names =
+      [ "Submission"; "# Reads"; "% 0 mismatch"; "% bases ≥ Q30"; "Mean QS (PF)"; ]
+    in
+    let h s = `head [pcdata s] in
+    (* let sortable_text s = `sortable (s, [pcdata s]) in *)
+    (* let sortable_fmt fmt = ksprintf sortable_text fmt in *)
+    (* let none = `text [pcdata "—"] in *)
+    let header = List.map header_names h in
+    of_list_sequential submissions (fun (fcid, lane, contacts) ->
+      Flowcell_service.get_flowcell_by_serial_name ~dbh fcid >>= fun fc_p ->
+      let lane_pointer = Layout.Record_lane.unsafe_cast lane in
+      Layout.Record_flowcell.(get ~dbh fc_p >>= fun {lanes} ->
+                              return (Array.findi lanes ((=) lane_pointer)))
+      >>= fun lane_index ->
+      Queries.delivered_unaligned_directories_of_lane ~dbh lane_pointer
+      >>= fun dirs ->
+      let filter =
+        let open Option in
+        let or_none = value_map ~default:`none in
+        or_none lane_index ~f:(fun i ->
+          or_none libname ~f:(fun n -> 
+            or_none bartype ~f:(fun t ->
+              match Layout.Enumeration_barcode_provider.of_string t with
+              | Ok `bioo | Ok `illumina -> `barcoded (i + 1, n)
+              | _ -> `non_barcoded (i + 1))))
+      in
+      let lane_display =
+        Option.value_map ~default:"??" lane_index
+          ~f:(fun l -> sprintf "%s:L%d" fcid (l + 1)) in
+      let first_cell =
+        match filter with
+        | `barcoded _ -> `sortable (lane_display, [pcdata lane_display])
+        | _ ->
+          `sortable (lane_display,
+                     [pcdataf "Undetermined in %s" lane_display])
+      in
+      of_list_sequential dirs (fun dir ->
+        Flowcell_service.basecall_stats_path_of_unaligned
+          ~configuration ~dbh dir fcid
+        >>= Flowcell_service.get_demux_stats ~configuration ~filter
+        >>| snd
+        >>| List.map ~f:(function
+        | `sortable _ :: `sortable _ :: t -> first_cell :: t
+        | any_row -> any_row)))
+    >>| List.flatten 
+    >>| List.flatten 
+    >>= fun all_rows ->
+    (* let all_rows = List.flatten rows_ll |! List.flatten in *)
+    match all_rows with
+    | [] -> return [ `sortable ("0", [pcdata "—"]) ]
+    | l -> 
+      return [`sortable (List.length l |! Int.to_string,
+                         [content_table (header :: all_rows) |! html_of_content])]
+(*
+      let tmpcell = `text [ List.flatten rows_l
+                           |! content_table |! html_of_content ] in
 
+            double_bind (get_demux_stats ~configuration stat_path)
+              ~ok:(fun tab ->
+                return (content_section (pcdataf "Stats") tab))
+              ~error:(fun e ->
+                return
+                  (content_section (pcdataf "Stats Not Available")
+                     (content_paragraph [])))
+
+  let get_demux_stats ~configuration path =
+    *)
+(*      let lane_display =
+        Option.value_map ~default:"??" lane_index
+          ~f:(fun l -> sprintf "L%d" (l + 1)) in
+      return [ sortable_fmt "%s:%s" fcid lane_display; tmpcell; none; none; none ]
+    ) 
+    >>= fun rows ->
+*)
+      
   let submissions_cell submissions = 
     let open Html5 in
     let how_much =
@@ -621,7 +724,7 @@ module Libraries_service = struct
         | true -> return (Some (result_item, submissions))
         | false -> return None))
 
-  let make_libs_table ~dbh ~showing libs_filtered =
+  let make_libs_table ~dbh ~configuration ~showing libs_filtered =
     let open Html5 in
     of_list_sequential (List.filter_opt libs_filtered)
       ~f:(fun ((idopt, name, project, desc, app, 
@@ -629,7 +732,7 @@ module Libraries_service = struct
                 bartype, barcodes, bartoms,
                 p5, p7, note,
                 sample_name, org_name,
-                prep_email, protocol), submissions) ->
+                prep_email, protocol) as lib, submissions) ->
         submissions_cell submissions >>= fun submissions_cell ->
         barcodes_cell ~dbh bartype barcodes bartoms >>= fun barcoding ->
         let opt f o = Option.value_map ~default:(f "") ~f o in
@@ -661,7 +764,10 @@ module Libraries_service = struct
              `sortable (valopt prep_email, [opt person prep_email]);
              opttext note; ])
         in
-        return (mandatory_stuff @ basic_stuff @ stock_stuff))
+        show_list_m ~showing `fastq (fun () ->
+          fastq_files ~configuration ~dbh lib submissions)
+        >>= fun fastq_stuff ->
+        return (mandatory_stuff @ basic_stuff @ stock_stuff @ fastq_stuff))
     >>= fun rows ->
     let mandatory_columns = [`head [pcdata "Name"]; `head [pcdata "Project"]] in
     let basic_columns = [ `head [pcdata "Description"];
@@ -676,6 +782,7 @@ module Libraries_service = struct
       mandatory_columns
       @ (show_list ~showing `basic basic_columns)
       @ (show_list ~showing `stock stock_columns)
+      @ (show_list ~showing `fastq [`head [pcdata "FASTQ Files Information"]])
     in
     return (header_row :: rows)
 
@@ -685,17 +792,17 @@ module Libraries_service = struct
       Template.a_link Services.libraries [pcdata name]
         (shwg, qualified_names) in
     let links =
-      List.map [ [`basic], "Basic";
-                 [`basic;`stock], "Full" ] make_link
+      List.map [ [`basic], "Basic"; [`fastq], "Fastq Info"; [`stock], "Stock Info";
+                 [`basic;`stock; `fastq], "Full" ] make_link
       |! interleave_list ~sep:(pcdata ", ") in
     [pcdata "Choose view: ";] @ links @ [pcdata "."]
     
       
-  let libraries ~showing ?(qualified_names=[]) hsc =
+  let libraries ~showing ?(qualified_names=[]) ~configuration  =
     let open Html5 in
-    Hitscore_lwt.with_database hsc (fun ~dbh ->
+    Hitscore_lwt.with_database configuration (fun ~dbh ->
       fetch_and_filter_libs ~dbh qualified_names >>= fun libs_filtered ->
-      make_libs_table ~dbh ~showing libs_filtered)
+      make_libs_table ~dbh ~configuration ~showing libs_filtered)
     >>= fun main_table ->
     let nb_rows = List.length main_table in
     return Template.(
@@ -715,7 +822,7 @@ module Libraries_service = struct
          >>= function
          | true ->
            Template.make_content ~configuration ~main_title    
-             (libraries ~qualified_names ~showing configuration);
+             (libraries ~qualified_names ~showing ~configuration);
          | false ->
            Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf "You may not view the libraries."])))

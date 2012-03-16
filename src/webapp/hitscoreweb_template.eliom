@@ -154,6 +154,8 @@ let html_of_error =
     [pcdataf "The root directory is not configured"]
   | `wrong_unaligned_volume _ ->
     [pcdataf "Unaligned/ virtual volume does not have the expected structure"]
+  | `parse_flowcell_demux_summary_error e ->
+    [pcdataf "Error while parsing demux-summary: %s" (Exn.to_string e)]
   | `layout_edit_coservice_error e ->
     [pcdata "Error while editing: ";
      match e with
