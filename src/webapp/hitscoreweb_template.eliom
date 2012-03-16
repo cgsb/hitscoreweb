@@ -401,8 +401,10 @@ let rec html_of_content ?(section_level=2) content =
   | Table (h :: t) ->
     let make_cell ?orderable idx cell =
       let really_orderable =
-        (* Really orderable: if there is some sortable element in that column. *)
-        List.exists (List.map t (fun l -> List.nth l idx))
+        (* Really orderable: if there is more than one sortable
+           element in that column. *)
+        List.length t > 1
+        && List.exists (List.map t (fun l -> List.nth l idx))
           ~f:(function Some (`sortable _) -> true | _ -> false) in
       let cell_id = incr _global_table_ids; sprintf "cell%d" !_global_table_ids in
       let buttons =
