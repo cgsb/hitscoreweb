@@ -208,12 +208,18 @@ module Flowcell_service = struct
     in
     (sortability, cell)
 
-  let flowcell_lanes_table hsc ~serial_name =
-    Hitscore_lwt.db_connect hsc
-    >>= fun dbh ->
+  let get_flowcell_by_serial_name ~dbh serial_name = 
     Layout.Search.record_flowcell_by_serial_name ~dbh serial_name
     >>= function
-    | [ one ] ->
+    | [ one ] -> return one
+    | [] -> error (`no_flowcell_named serial_name)
+    | more ->
+      error (`layout_inconsistency (`record_flowcell, 
+                                    `more_than_one_flowcell_called serial_name))
+      
+  let flowcell_lanes_table hsc ~serial_name =
+    Hitscore_lwt.with_database hsc (fun ~dbh ->
+      get_flowcell_by_serial_name ~dbh serial_name >>= fun one ->
       let lanes =
         let lane = ref 0 in
         Layout.Record_flowcell.(
@@ -260,8 +266,6 @@ module Flowcell_service = struct
                 ]))))
       in
       lanes >>= fun lanes ->
-      Hitscore_lwt.db_disconnect hsc dbh
-      >>= fun _ ->
       return Template.(Html5.(
         content_section 
           (ksprintf pcdata "Lanes of %s" serial_name)
@@ -271,12 +275,7 @@ module Flowcell_service = struct
 	        `head [pcdata "Vol."];
 	        `head [pcdata "Contacts"];
 	        `head [pcdata "Libraries"];]
-              :: lanes))))
-    | [] ->
-      error (`no_flowcell_named serial_name)
-    | more ->
-      error (`layout_inconsistency (`record_flowcell, 
-                                    `more_than_one_flowcell_called serial_name))
+              :: lanes)))))
 
   let get_clusters_info ~configuration path =
     let make file = 
