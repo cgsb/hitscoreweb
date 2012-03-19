@@ -572,20 +572,21 @@ module Libraries_service = struct
     return (sprintf "%s%s" (Option.value ~default:"" bartype) barcodes_list,
             non_custom :: custom)
 
+  let fastq_header =
+    let open Html5 in
+    let header_names =
+      [ "Submission"; "# Reads"; "% 0 mismatch"; "% bases ≥ Q30"; "Mean QS (PF)"; ]
+    in
+    let h s = `head [pcdata s] in
+    let header = List.map header_names h in
+    header
+      
   let fastq_files ~dbh ~configuration lib submissions =
     let open Html5 in
     let open Template in
     let  (idopt, libname, project, desc, app, stranded, truseq, rnaseq,
           bartype, barcodes, bartoms, p5, p7, note,
           sample_name, org_name, prep_email, protocol) = lib in
-    let header_names =
-      [ "Submission"; "# Reads"; "% 0 mismatch"; "% bases ≥ Q30"; "Mean QS (PF)"; ]
-    in
-    let h s = `head [pcdata s] in
-    (* let sortable_text s = `sortable (s, [pcdata s]) in *)
-    (* let sortable_fmt fmt = ksprintf sortable_text fmt in *)
-    (* let none = `text [pcdata "—"] in *)
-    let header = List.map header_names h in
     of_list_sequential submissions (fun (fcid, lane, contacts) ->
       Flowcell_service.get_flowcell_by_serial_name ~dbh fcid >>= fun fc_p ->
       let lane_pointer = Layout.Record_lane.unsafe_cast lane in
@@ -625,12 +626,14 @@ module Libraries_service = struct
     >>| List.flatten 
     >>| List.flatten 
     >>= fun all_rows ->
+    return all_rows
     (* let all_rows = List.flatten rows_ll |! List.flatten in *)
-    match all_rows with
-    | [] -> return [ `sortable ("0", [pcdata "—"]) ]
-    | l -> 
-      return [`sortable (List.length l |! Int.to_string,
-                         [content_table (header :: all_rows) |! html_of_content])]
+    (* return (header, all_rows) *)
+    (* match all_rows with *)
+    (* | [] -> return (header, [ `sortable ("0", [pcdata "—"]) ]) *)
+    (* | l -> return (header, [`subtable all_rows]) *)
+      (* return [`sortable (List.length l |! Int.to_string, *)
+                         (* [content_table (header :: all_rows) |! html_of_content])] *)
 (*
       let tmpcell = `text [ List.flatten rows_l
                            |! content_table |! html_of_content ] in
@@ -748,7 +751,14 @@ module Libraries_service = struct
              opttext note; ])
         in
         show_list_m ~showing `fastq (fun () ->
-          fastq_files ~configuration ~dbh lib submissions)
+          fastq_files ~configuration ~dbh lib submissions
+          >>= fun fastq_stuff ->
+          match fastq_stuff with
+          | [] -> return (List.init (List.length fastq_header)
+                            (fun _ -> `sortable ("0", [pcdata "—"])))
+          | [one_row] -> return one_row
+          | l -> return [`subtable l]
+        )
         >>= fun fastq_stuff ->
         return (mandatory_stuff @ basic_stuff @ stock_stuff @ fastq_stuff))
     >>= fun rows ->
@@ -765,7 +775,7 @@ module Libraries_service = struct
       mandatory_columns
       @ (show_list ~showing `basic basic_columns)
       @ (show_list ~showing `stock stock_columns)
-      @ (show_list ~showing `fastq [`head [pcdata "FASTQ Files Information"]])
+      @ (show_list ~showing `fastq fastq_header)
     in
     return (header_row :: rows)
 

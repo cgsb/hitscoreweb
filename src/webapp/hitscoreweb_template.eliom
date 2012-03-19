@@ -308,17 +308,20 @@ let default ?(title) content =
 
 type table_cell_html5 = HTML5_types.flow5 Html5.elt list
 
+type table_cell =
+[ `head of HTML5_types.span_content_fun Html5.elt list
+| `text of table_cell_html5
+| `sortable of string * table_cell_html5
+| `number of (float -> string) * float
+| `subtable of table_cell list list
+]
   
 type content =
 | Description of
     (HTML5_types.phrasing Html5.elt * HTML5_types.flow5 Html5.elt) list 
 | Section of HTML5_types.phrasing Html5.elt * content 
 | List of content list
-| Table of [ `head of HTML5_types.span_content_fun Html5.elt list
-           | `text of table_cell_html5
-           | `sortable of string * table_cell_html5
-           | `number of (float -> string) * float
-           ] list list
+| Table of table_cell list list
 | Paragraph of HTML5_types.flow5 Html5.elt list
     
 let content_description l = Description l
@@ -441,6 +444,12 @@ let rec html_of_content ?(section_level=2) content =
         let s = sof f in
         td  ~a:[ a_title s; a_class ["content_table_number"] ]
           [pcdataf "%s" (pretty_string_of_float ~sof f)]
+      | `subtable [] ->
+        td  ~a:[ a_class ["content_table_text"] ] []
+      | `subtable (h :: t) ->
+        td  ~a:[ a_class ["content_table_text"];
+                 a_colspan (List.length h)]
+          [div [html_of_content (Table (h :: t))]]
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
     div [
@@ -449,7 +458,8 @@ let rec html_of_content ?(section_level=2) content =
              a_style "border: 3px  solid black; \
                         border-collapse: collapse; " ]
         (tr (List.mapi h (make_cell ~orderable:id)))
-        (List.map t (fun l -> tr (List.mapi l (make_cell ?orderable:None))))
+        (List.map t (fun l ->
+          tr (List.mapi l (make_cell ?orderable:None))))
     ]
 
 let make_content ~configuration ~main_title content =
