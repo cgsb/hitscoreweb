@@ -787,7 +787,7 @@ module Libraries_service = struct
     return Template.(
       content_section
         (ksprintf pcdata "Found %d librar%s:"
-           nb_rows (if nb_rows = 2 then "y" else "ies"))
+           (nb_rows - 1) (if nb_rows = 2 then "y" else "ies"))
         (content_list [
           content_paragraph (intro_paragraph ~showing ~qualified_names);
           content_table ~transpose:(nb_rows = 2) main_table;
