@@ -118,6 +118,22 @@ let get_element s =
 
 }}
 
+let pretty_string_of_float ?(sof=sprintf "%.3f") f = 
+  let s = sof f in
+  let rec f s =
+    if String.(length s) > 3 then
+      String.(f (drop_suffix s 3) ^ "," ^ suffix s 3)
+    else
+      s in
+  let prefix s =
+    let length = max 0 (18 - String.(length s)) in
+    sprintf "%s%s"
+      (String.concat ~sep:"" (List.init length (fun _ -> " "))) s
+  in
+  match String.split s ~on:'.' with
+  | [] | [_] -> prefix (f s)
+  | one :: more ->
+    sprintf "%s.%s" (prefix (f one)) (String.concat ~sep:"" more)
 
 let make_delayed f = 
   let content = ref None in

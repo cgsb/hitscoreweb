@@ -11,7 +11,7 @@ let css_triangle_arrow ~css_class ?(height_px=10) ?(background="#ddd")
   out ".%s {\n" css_class;
   out " height: %dpx; width: %dpx;" height_px (height_px * 2);
   out "background-color: %s;\n" background;
-  out "position: relative; float: left; margin: %s;\n}\n" margin;
+  out "position: relative; float: right; margin: %s;\n}\n" margin;
   out ".%s:after {\n" css_class;
   out " content: ' '; height: 0; position: absolute; width: 0;\n";
   out " border: %dpx solid transparent;" height_px;
@@ -99,9 +99,10 @@ let css_service_handler ~configuration () () =
                       font-size: 150%% }\n";
   out ".content_table_head { color: #960F00; font-size: 110%%;
           background-color: %s; }\n" light_grey;
-  out ".content_table_head,.content_table_text {
+  out ".content_table_head,.content_table_text,.content_table_number {
           max-width: 40em;
           border: 1px solid black; padding: 3px; }"; 
+  out ".content_table_number {text-align:right; font-family: monospace};\n";
   Lwt.return (Buffer.contents css)
 
 let html_of_error = 
@@ -306,16 +307,18 @@ let default ?(title) content =
   | Error e -> error_page (html_of_error e))
 
 type table_cell_html5 = HTML5_types.flow5 Html5.elt list
+
   
 type content =
 | Description of
     (HTML5_types.phrasing Html5.elt * HTML5_types.flow5 Html5.elt) list 
 | Section of HTML5_types.phrasing Html5.elt * content 
 | List of content list
-| Table of [`head of table_cell_html5
-           |`text of table_cell_html5
-           |`sortable of string * table_cell_html5
-           |`number of table_cell_html5 ] list list
+| Table of [ `head of HTML5_types.span_content_fun Html5.elt list
+           | `text of table_cell_html5
+           | `sortable of string * table_cell_html5
+           | `number of (float -> string) * float
+           ] list list
 | Paragraph of HTML5_types.flow5 Html5.elt list
     
 let content_description l = Description l
@@ -405,7 +408,8 @@ let rec html_of_content ?(section_level=2) content =
            element in that column. *)
         List.length t > 1
         && List.exists (List.map t (fun l -> List.nth l idx))
-          ~f:(function Some (`sortable _) -> true | _ -> false) in
+          ~f:(function Some (`sortable _) | Some (`number _)-> true | _ -> false)
+      in
       let cell_id = incr _global_table_ids; sprintf "cell%d" !_global_table_ids in
       let buttons =
         Option.value_map (if really_orderable then orderable else None)
@@ -414,12 +418,12 @@ let rec html_of_content ?(section_level=2) content =
             let td_onclick order =
               td_on_click_to_sort true order cell_id idx tableid in
             [
-              div ~a:[
+              span ~a:[
                 a_title "sort:normal";
                 a_class ["sort_normal_button"];
                 a_onclick (td_onclick `normal);]
                 [];
-              div ~a:[
+              span ~a:[
                 a_title "sort:reverse";
                 a_class ["sort_reverse_button"];
                 a_onclick (td_onclick `reverse);]
@@ -428,13 +432,15 @@ let rec html_of_content ?(section_level=2) content =
       match cell with
       | `head (c) -> 
         td ~a:[a_id cell_id; a_class ["content_table_head"] ]
-          ([div c] @ buttons)
+          ([span c] @ buttons)
       | `sortable (title, cell) ->
         td  ~a:[ a_title title; a_class ["content_table_text"] ] cell
       | `text cell ->
         td  ~a:[ a_class ["content_table_text"] ] cell
-      | `number c ->
-        td  ~a:[ a_class ["content_table_text"]; a_style "text-align: right" ] c
+      | `number (sof, f) ->
+        let s = sof f in
+        td  ~a:[ a_title s; a_class ["content_table_number"] ]
+          [pcdataf "%s" (pretty_string_of_float ~sof f)]
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
     div [

@@ -387,29 +387,8 @@ module Flowcell_service = struct
         List.mapi (Array.to_list ls_la) (fun i ls_l ->
           List.filter_map ls_l (fun ls ->
             let open Hitscore_interfaces.B2F_unaligned_information in
-            let f2s ?(soff=sprintf "%.0f") f = 
-              let s = soff f in
-              let rec f s =
-                if String.(length s) > 3 then
-                  String.(f (drop_suffix s 3) ^ " " ^ suffix s 3)
-                else
-                  s in
-              let prefix s =
-                let length = max 0 (18 - String.(length s)) in
-                sprintf "%s%s"
-                  (String.concat ~sep:"" (List.init length (fun _ -> " "))) s
-              in
-              match String.split s ~on:'.' with
-              | [] | [_] -> prefix (f s)
-              | one :: more ->
-                sprintf "%s.%s" (prefix (f one)) (String.concat ~sep:"" more)
-            in
-            let s ?soff f =
-              `sortable (Float.to_string f,
-                         [div
-                             ~a:[a_style "text-align:right; font-family: monospace"]
-                             [pcdata (f2s ?soff f)]]) in
-            let soff = sprintf "%.2f" in
+            let nb2 f = `number (sprintf "%.2f", f) in 
+            let nb0 f = `number (sprintf "%.0f", f) in 
             let make_row () =
               let name =
                 if ls.name = sprintf "lane%d" (i + 1)
@@ -418,10 +397,10 @@ module Flowcell_service = struct
               Some [
                 `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
                 `sortable (name, [ pcdata name ]);
-                s ls.cluster_count;
-                s ~soff (100. *. ls.cluster_count_m0 /. ls.cluster_count);
-                s ~soff (100. *. ls.yield_q30 /. ls.yield);
-                s ~soff (ls.quality_score_sum /. ls.yield);
+                nb0 ls.cluster_count;
+                nb2 (100. *. ls.cluster_count_m0 /. ls.cluster_count);
+                nb2 (100. *. ls.yield_q30 /. ls.yield);
+                nb2 (ls.quality_score_sum /. ls.yield);
               (*   s ls.yield; s ls.yield_q30; s ls.cluster_count;
                  s ls.cluster_count_m0; s ls.cluster_count_m1;
                  s ls.quality_score_sum; *)
