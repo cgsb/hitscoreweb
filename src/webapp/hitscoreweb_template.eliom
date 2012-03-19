@@ -314,6 +314,7 @@ type table_cell =
 | `sortable of string * table_cell_html5
 | `number of (float -> string) * float
 | `subtable of table_cell list list
+| `with_geometry of int * int * table_cell
 ]
   
 type content =
@@ -384,6 +385,30 @@ let td_on_click_to_sort do_something order cell_id idx id =
     )   
 }}
 
+let flatten_table l =
+  let rec total_subtables_height row =
+    List.fold_left row ~init:0 ~f:(fun current cell -> 
+      match cell with
+      | `subtable l ->
+        max current (List.fold_left l ~init:0
+                       ~f:(fun cur row -> cur + total_subtables_height row))
+      | flat_one -> max current 1)
+  in
+  List.map l (fun row ->
+    let max_height = total_subtables_height row in
+    let after_the_row = ref [] in
+    let the_row =
+      List.map row (fun cell ->
+        match cell with
+        | `subtable [] -> [`text []]
+        | `subtable (h :: t) ->
+          after_the_row := t;
+          h
+        | any_other -> [`with_geometry (max_height, 1, any_other)])
+      |! List.flatten in
+    the_row :: !after_the_row
+  ) |! List.flatten
+    
 let rec html_of_content ?(section_level=2) content =
   let open Html5 in
   let h = function
@@ -405,7 +430,7 @@ let rec html_of_content ?(section_level=2) content =
     div (List.map cl (html_of_content ~section_level))
   | Table [] -> div []
   | Table (h :: t) ->
-    let make_cell ?orderable idx cell =
+    let rec make_cell ?(colspan=1) ?(rowspan=1) ?orderable idx cell =
       let really_orderable =
         (* Really orderable: if there is more than one sortable
            element in that column. *)
@@ -434,21 +459,28 @@ let rec html_of_content ?(section_level=2) content =
       in
       match cell with
       | `head (c) -> 
-        td ~a:[a_id cell_id; a_class ["content_table_head"] ]
+        td ~a:[a_id cell_id; a_class ["content_table_head"];
+              a_rowspan rowspan; a_colspan colspan]
           ([span c] @ buttons)
       | `sortable (title, cell) ->
-        td  ~a:[ a_title title; a_class ["content_table_text"] ] cell
+        td  ~a:[ a_title title; a_class ["content_table_text"];
+               a_rowspan rowspan; a_colspan colspan] cell
       | `text cell ->
-        td  ~a:[ a_class ["content_table_text"] ] cell
+        td  ~a:[ a_class ["content_table_text"];
+               a_rowspan rowspan; a_colspan colspan] cell
       | `number (sof, f) ->
         let s = sof f in
-        td  ~a:[ a_title s; a_class ["content_table_number"] ]
+        td  ~a:[ a_title s; a_class ["content_table_number"];
+               a_rowspan rowspan; a_colspan colspan]
           [pcdataf "%s" (pretty_string_of_float ~sof f)]
+      | `with_geometry (rowspan, colspan, cell) ->
+        make_cell ~colspan ~rowspan ?orderable idx cell
       | `subtable [] ->
         td  ~a:[ a_class ["content_table_text"] ] []
       | `subtable (h :: t) ->
         td  ~a:[ a_class ["content_table_text"];
-                 a_colspan (List.length h)]
+                 a_colspan (List.length h * colspan);
+                 a_rowspan rowspan; ]
           [div [html_of_content (Table (h :: t))]]
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
@@ -458,7 +490,7 @@ let rec html_of_content ?(section_level=2) content =
              a_style "border: 3px  solid black; \
                         border-collapse: collapse; " ]
         (tr (List.mapi h (make_cell ~orderable:id)))
-        (List.map t (fun l ->
+        (List.map (flatten_table t) (fun l ->
           tr (List.mapi l (make_cell ?orderable:None))))
     ]
 
