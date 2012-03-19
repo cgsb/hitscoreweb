@@ -626,35 +626,10 @@ module Libraries_service = struct
     >>| List.flatten 
     >>| List.flatten 
     >>= fun all_rows ->
-    return all_rows
-    (* let all_rows = List.flatten rows_ll |! List.flatten in *)
-    (* return (header, all_rows) *)
-    (* match all_rows with *)
-    (* | [] -> return (header, [ `sortable ("0", [pcdata "—"]) ]) *)
-    (* | l -> return (header, [`subtable all_rows]) *)
-      (* return [`sortable (List.length l |! Int.to_string, *)
-                         (* [content_table (header :: all_rows) |! html_of_content])] *)
-(*
-      let tmpcell = `text [ List.flatten rows_l
-                           |! content_table |! html_of_content ] in
-
-            double_bind (get_demux_stats ~configuration stat_path)
-              ~ok:(fun tab ->
-                return (content_section (pcdataf "Stats") tab))
-              ~error:(fun e ->
-                return
-                  (content_section (pcdataf "Stats Not Available")
-                     (content_paragraph [])))
-
-  let get_demux_stats ~configuration path =
-    *)
-(*      let lane_display =
-        Option.value_map ~default:"??" lane_index
-          ~f:(fun l -> sprintf "L%d" (l + 1)) in
-      return [ sortable_fmt "%s:%s" fcid lane_display; tmpcell; none; none; none ]
-    ) 
-    >>= fun rows ->
-*)
+    match all_rows with
+    | [] -> return (List.init (List.length fastq_header)
+                      (fun _ -> `sortable ("0", [pcdata "—"])))
+    | l -> return [`subtable l]
       
   let submissions_cell submissions = 
     let open Html5 in
@@ -751,14 +726,7 @@ module Libraries_service = struct
              opttext note; ])
         in
         show_list_m ~showing `fastq (fun () ->
-          fastq_files ~configuration ~dbh lib submissions
-          >>= fun fastq_stuff ->
-          match fastq_stuff with
-          | [] -> return (List.init (List.length fastq_header)
-                            (fun _ -> `sortable ("0", [pcdata "—"])))
-          | [one_row] -> return one_row
-          | l -> return [`subtable l]
-        )
+          fastq_files ~configuration ~dbh lib submissions)
         >>= fun fastq_stuff ->
         return (mandatory_stuff @ basic_stuff @ stock_stuff @ fastq_stuff))
     >>= fun rows ->
@@ -804,7 +772,7 @@ module Libraries_service = struct
            (nb_rows - 1) (if nb_rows = 2 then "y" else "ies"))
         (content_list [
           content_paragraph (intro_paragraph ~showing ~qualified_names);
-          content_table ~transpose:(nb_rows = 2) main_table;
+          content_table main_table;
         ]))
 
   let make configuration =
