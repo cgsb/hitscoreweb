@@ -385,6 +385,7 @@ module Flowcell_service = struct
       let first_row = List.map column_names (fun s -> `head [pcdata s]) in
       let other_rows =
         List.mapi (Array.to_list ls_la) (fun i ls_l ->
+          let only_one_in_the_lane = List.length ls_l = 1 in
           List.filter_map ls_l (fun ls ->
             let open Hitscore_interfaces.B2F_unaligned_information in
             let nb2 f = `number (sprintf "%.2f", f) in 
@@ -410,7 +411,10 @@ module Flowcell_service = struct
             | `barcoded (lane, libname) when lane = i + 1 && libname = ls.name ->
               make_row ()
             | `non_barcoded lane when
-                lane = i + 1 && ls.name = sprintf "lane%d" lane ->
+                lane = i + 1 && (
+                  ls.name = sprintf "lane%d" lane
+                  || ls.name = sprintf "UndeterminedLane%d" lane
+                  || only_one_in_the_lane) ->
               make_row ()
             | _ -> None))
       in
