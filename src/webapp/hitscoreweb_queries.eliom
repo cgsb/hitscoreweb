@@ -67,5 +67,5 @@ let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
   Hitscoreweb_std.(
     wrap_pgocaml ~query ~on_result:(fun l ->
       List.dedup l
-      |! List.map ~f:Layout.File_system.unsafe_cast_volume
+      |! List.map ~f:Layout.File_system.unsafe_cast
       |! return))

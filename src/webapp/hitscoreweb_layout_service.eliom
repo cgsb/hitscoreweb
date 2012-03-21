@@ -133,9 +133,11 @@ let generic_to_table type_info current_name r =
 
 let volume_to_table name toplevel rows =
   let open Html5 in
-  List.map rows ~f:(List.map ~f:(Option.value_map
-                                   ~default:(`sortable ("", [codef "—"]))
-                                   ~f:(fun s -> `sortable (s, [pcdataf "%s" s]))))
+  List.map rows
+    ~f:(List.map
+          ~f:(Option.value_map
+                ~default:(`sortable ("", [codef "—"]))
+                ~f:(fun s -> `sortable (s, [pre [pcdataf "%s" s]]))))
 
 
 let view_layout ~configuration ~main_title ~types ~values =
@@ -203,12 +205,12 @@ let view_layout ~configuration ~main_title ~types ~values =
           table_section "function" name (typed_values_in_table all_typed :: table)
         | Volume (name, toplevel) ->
           get_all_generic
-            ~only:values ~more_where:["g_toplevel", toplevel] dbh "g_volume"
+            ~only:values ~more_where:["g_kind", name] dbh "g_volume"
           >>| volume_to_table name toplevel
           >>= fun table ->
           let head s = List.map s (fun s -> `head [pcdataf "%s" s]) in
           table_section "volume" name
-            (head ["Id"; "Top-level"; "Human-readable tag …"; "Files"] :: table)
+            (head ["Id"; "Kind"; "Human-readable S-Exp …"] :: table)
         end
       | None -> 
         return (

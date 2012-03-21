@@ -424,7 +424,7 @@ module Flowcell_service = struct
     make dmux_sum
       
   let basecall_stats_path_of_unaligned ~configuration ~dbh directory serial_name =
-    Hitscore_lwt.Common.paths_of_volume ~configuration ~dbh directory
+    Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh directory
     >>= (function
     | [one] -> return one
     | _ -> error (`wrong_unaligned_volume directory))
@@ -810,13 +810,11 @@ module Evaluations_service = struct
         >>= fun kind ->
         Layout.Record_sample_sheet.(
           get ~dbh sample_sheet >>= fun {file; _} ->
-          FS.get_volume ~dbh file >>= fun vol ->
-          IO.return (FS.volume_trees vol) >>= fun vol_trees ->
-          return (FS.trees_to_unix_paths vol_trees) >>= function
-          | [ csv ] ->
-            return FS.(entry_unix_path vol.volume_entry, csv)
+          Hitscore_lwt.Common.all_paths_of_volume ~dbh ~configuration file
+          >>= function
+          | [ csv ] -> return csv
           | _ -> error (`sample_sheet_should_a_lonely_file sample_sheet))
-        >>= fun (vol_path, csv_path) -> 
+        >>= fun csv_path -> 
         let fc_link = 
           Template.a_link Services.flowcell [pcdata flowcell_name] (flowcell_name) in
         return [
@@ -832,11 +830,7 @@ module Evaluations_service = struct
                      [pcdata kind;
                       small [
                         pcdata " (";
-                        a ~a:[ 
-                          a_hreff "file://%s/%s/%s"
-                            (Option.value ~default:"$HSROOT" 
-                               (Configuration.vol_path configuration))
-                            vol_path csv_path] [pcdata "file"];
+                        a ~a:[a_hreff "file://%s" csv_path] [pcdata "file"];
                         pcdata ")"
                       ];
                      ]));
