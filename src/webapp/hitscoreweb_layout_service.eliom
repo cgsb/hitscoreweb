@@ -260,7 +260,7 @@ exception Edition_error of [
   | `wrong_id
   | `wrong_rights
   | `io_exn of exn
-  | `layout_inconsistency of [ `record_log ] *
+  | `layout_inconsistency of [ `Record of string] *
       [ `insert_did_not_return_one_id of string * int32 list ]
   | `pg_exn of exn
   ]

@@ -105,9 +105,9 @@ let css_service_handler ~configuration () () =
   out ".content_table_number {text-align:right; font-family: monospace};\n";
   Lwt.return (Buffer.contents css)
 
-let html_of_error = 
+let rec html_of_error poly_error = 
   let open Html5 in
-  function
+  match poly_error with
   | `non_https_login -> [pcdata "Login service not on HTTPS: FORBIDDEN"]
   | `eliom_404 -> [pcdataf "Error 404."]
   | `eliom_wrong_parameter -> [pcdataf "Error 404 (wrong parameter)."]
@@ -158,49 +158,22 @@ let html_of_error =
   | `parse_flowcell_demux_summary_error e ->
     [pcdataf "Error while parsing demux-summary: %s" (Exn.to_string e)]
   | `layout_edit_coservice_error e ->
-    [pcdata "Error while editing: ";
-     match e with
-     | `fields_wrong_typing -> pcdata "Fields have wrong types"
-     | `wrong_id -> pcdata "Could not get a decent g_id value"
-     | `wrong_rights -> pcdata "You don't have enough access rights to do edit this.."
-     | `io_exn e -> pcdataf "I/O Error: %s" (Exn.to_string e)
-     | `layout_inconsistency (`record_log, _) -> 
-       pcdata "Error while logging (chances are that the editing actually worked!)"
-     | `pg_exn e -> pcdataf "PostgreSQL Error: %s" (Exn.to_string e)
-    ]
+    pcdata "Error while editing: "
+    :: (match e with
+     | `fields_wrong_typing -> [pcdata "Fields have wrong types"]
+     | `wrong_id -> [pcdata "Could not get a decent g_id value"]
+     | `wrong_rights ->
+       [pcdata "You don't have enough access rights to do edit this.."]
+     | `layout_inconsistency (`Record "log", _) -> 
+       [pcdata "Error while logging (chances are that the editing actually worked!)"]
+     |  `layout_inconsistency _ | `io_exn _ | `pg_exn _ as e -> 
+       html_of_error e)
   | `layout_inconsistency (place, problem) ->
     let place_presentation =
-      let r = pcdata "the record " in
-      let f = pcdata "the function " in
       match place with
-      | `record_person ->        [ r; code [pcdata "person"        ]]  
-      | `record_organism ->      [ r; code [pcdata "organism"      ]]  
-      | `record_sample ->        [ r; code [pcdata "sample"        ]]  
-      | `record_stock_library -> [ r; code [pcdata "stock_library" ]]
-      | `record_flowcell      -> [ r; code [pcdata "record_flowcell"      ]] 
-      | `record_input_library -> [ r; code [pcdata "record_input_library" ]] 
-      | `record_lane          -> [ r; code [pcdata "record_lane"          ]]
-      | `record_hiseq_raw     -> [ r; code [pcdata "record_hiseq_raw"     ]]
-      | `record_custom_barcode -> [ r; code [pcdata "record_custom_barcode"]]
-      | `record_sample_sheet ->   [ r; code [pcdata "record_sample_sheet"]]
-      | `file_system ->   [ r; code [pcdata "file_system"]]
-      | `function_bcl_to_fastq -> [ f; code [pcdata "bcl_to_fastq"]]
-      | `function_assemble_sample_sheet      -> [f; codef "assemble_sample_sheet "]
-      | `function_delete_intensities         -> [f; codef "delete_intensities "]
-      | `function_dircmp_raw                 -> [f; codef "dircmp_raw "]
-      | `function_prepare_unaligned_delivery -> [f; codef "prepare_unaligned_delivery"]
-      | `function_transfer_hisqeq_raw        -> [f; codef "transfer_hisqeq_raw "]
-      | `record_agarose_gel                  -> [r; codef "agarose_gel "]
-      | `record_bcl_to_fastq_unaligned       -> [r; codef "bcl_to_fastq_unaligned"]
-      | `record_bioanalyzer                  -> [r; codef "bioanalyzer "]
-      | `record_client_fastqs_dir            -> [r; codef "client_fastqs_dir "]
-      | `record_hiseq_checksum               -> [r; codef "hiseq_checksum "]
-      | `record_inaccessible_hiseq_raw       -> [r; codef "inaccessible_hiseq_raw"]
-      | `record_invoicing                    -> [r; codef "invoicing "]
-      | `record_key_value                    -> [r; codef "key_value "]
-      | `record_log                          -> [r; codef "log "]
-      | `record_protocol                     -> [r; codef "protocol "]
-      | `record_hiseq_run                    -> [r; codef "hiseq_run "]
+      | `Record r -> [ pcdata "The record "; code [pcdata r ]]  
+      | `File_system ->   [ pcdata "The File-System"]
+      | `Function f -> [ pcdata "The function "; code [pcdata f]]
     in
     let error_message =
       match problem with

@@ -214,7 +214,7 @@ module Flowcell_service = struct
     | [ one ] -> return one
     | [] -> error (`no_flowcell_named serial_name)
     | more ->
-      error (`layout_inconsistency (`record_flowcell, 
+      error (`layout_inconsistency (`Record "flowcell", 
                                     `more_than_one_flowcell_called serial_name))
       
   let flowcell_lanes_table hsc ~serial_name =
@@ -1047,7 +1047,9 @@ let () =
           | Eliom_common.Eliom_404 -> send ~code:404 `eliom_404
           | Eliom_common.Eliom_Wrong_parameter -> send `eliom_wrong_parameter
           | Eliom_common.Eliom_Typing_Error l -> send (`eliom_typing_error l)
-          | Authentication.Authentication_error e -> send e
+          | Authentication.Authentication_error e ->
+            send (e :>
+              [> `auth_state_exn of exn | `io_exn of exn | `non_https_login ])
           | Layout_service.Edition_error (`layout_edit_coservice_error e) ->
             send (`layout_edit_coservice_error e)
           | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)

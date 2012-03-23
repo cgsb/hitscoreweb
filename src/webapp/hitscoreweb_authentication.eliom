@@ -56,7 +56,7 @@ type authentication_state = [
 | `wrong_pam of [ `pam_exn of exn]
 | `error of [ 
   | `layout_inconsistency of
-      [ `record_person ] * [ `select_did_not_return_one_tuple of string * int ]
+      [ `Record of string] * [ `select_did_not_return_one_tuple of string * int ]
   | `pg_exn of exn
   | `too_many_persons_with_same_login of 
       Layout.Record_person.pointer Core.Std.List.t 
@@ -148,7 +148,7 @@ let pam_auth ?service ~user ~password () =
     | `pam_exn _ as e -> set_state (`wrong_pam e)
     | `email_no_allowed s
     | `login_not_found s -> set_state (`insufficient_credentials s)
-    | `layout_inconsistency (`record_person,
+    | `layout_inconsistency (`Record _,
                              `select_did_not_return_one_tuple (_, _)) 
     | `io_exn _
     | `auth_state_exn _
@@ -174,7 +174,18 @@ let authorizes (cap:capability) =
 
 
 exception Authentication_error of
-    [ `auth_state_exn of exn | `io_exn of exn | `non_https_login ]
+    [ `auth_state_exn of exn
+    | `io_exn of exn
+    | `pg_exn of exn
+    | `layout_inconsistency of
+        [ `Record of string ] *
+          [ `insert_did_not_return_one_id of
+              string * int32 Hitscoreweb_std.List.container
+          | `more_than_one_flowcell_called of string
+          | `more_than_one_person_with_that_email
+          | `no_last_modified_timestamp of int32
+          | `select_did_not_return_one_tuple of string * int ]
+    | `non_https_login ]
 
 let login_coservice = 
   let coserv = ref None in
@@ -298,7 +309,7 @@ let display_state ?in_progress_element () =
       pcdataf "Authentication failure";
     | `error e -> 
       begin match e with
-      | `layout_inconsistency (`record_person, 
+      | `layout_inconsistency (`Record _, 
                                `select_did_not_return_one_tuple (s, i)) ->
         pcdataf "ERROR: LI: More than one tuple: %s, %d" s i
       | `auth_state_exn e | `io_exn e | `pg_exn e ->
