@@ -1,7 +1,7 @@
 
 (* WARNING: Do not open Hitscore_std, Core.Std, etc ... PGOCaml hates it. *)
 
-module RIO = Hitscoreweb_std.Hitscore_lwt.Result_IO
+module Flow = Hitscoreweb_std.Hitscore_lwt.Flow
 module PGOCaml = Hitscoreweb_std.PGOCaml
 module Layout = Hitscoreweb_std.Hitscore_lwt.Layout
 
@@ -22,7 +22,7 @@ let full_libraries dbh =
          LEFT OUTER JOIN protocol ON stock.protocol = protocol.g_id
          ORDER BY stock.name"
   in
-  RIO.wrap_pgocaml ~query ~on_result:RIO.return
+  Flow.wrap_pgocaml ~query ~on_result:Flow.return
    
 let library_submissions ~lib_id dbh =
   let query () =
@@ -33,7 +33,7 @@ let library_submissions ~lib_id dbh =
         AND flowcell.lanes @> array_append ('{}', lane.g_id)
         AND input.library = $lib_id"
   in
-  RIO.wrap_pgocaml ~query ~on_result:RIO.return
+  Flow.wrap_pgocaml ~query ~on_result:Flow.return
 
 let sample_sheet_kind ~dbh sample_sheet =
   let sample_sheet = sample_sheet.Layout.Record_sample_sheet.id in
@@ -43,7 +43,7 @@ let sample_sheet_kind ~dbh sample_sheet =
        FROM assemble_sample_sheet, sample_sheet
        WHERE assemble_sample_sheet.g_result = $sample_sheet"
   in
-  RIO.(
+  Flow.(
     wrap_pgocaml ~query ~on_result:return
     >>= function
     | kind_str :: _ ->

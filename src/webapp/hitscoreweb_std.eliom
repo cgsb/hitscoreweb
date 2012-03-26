@@ -43,7 +43,7 @@ module Layout = Hitscore_lwt.Layout
 module PGOCaml = Layout.PGOCaml
 module Configuration = Hitscore_lwt.Configuration
 
-include Hitscore_lwt.Result_IO
+include Hitscore_lwt.Flow
 
 module Xml_tree = struct
   include Xmlm
