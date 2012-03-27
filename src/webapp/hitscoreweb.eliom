@@ -712,7 +712,19 @@ module Libraries_service = struct
           Option.value_map i32 ~default:(`sortable ("", []))
             ~f:(fun i ->
               `sortable (Int32.to_string i, [pcdataf "%ld" i])) in
-        let mandatory_stuff = [opttext name; opttext project] in
+        let mandatory_stuff =
+          let liblink =
+            Option.value_map name
+              ~default:(`sortable ("", [strong [pcdata "NO NAME"]]))
+              ~f:(fun n ->
+                let qn =
+                  Option.value_map project ~default:n
+                    ~f:(fun p -> sprintf "%s.%s" p n) in
+                `sortable
+                  (n, [Template.a_link Services.libraries
+                          [pcdata n] (showing, [qn])]))
+          in
+          [liblink; opttext project] in
         let basic_stuff =
           show_list ~showing `basic 
             [opttext desc; opttext sample_name; opttext org_name;
