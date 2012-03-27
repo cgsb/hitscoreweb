@@ -577,15 +577,6 @@ module Libraries_service = struct
     return (sprintf "%s%s" (Option.value ~default:"" bartype) barcodes_list,
             non_custom :: custom)
 
-  let fastq_header =
-    let open Html5 in
-    let header_names =
-      [ "Submission"; "# Reads"; "% 0 mismatch"; "% bases ≥ Q30"; "Mean QS (PF)"; ]
-    in
-    let h s = `head [pcdata s] in
-    let header = List.map header_names h in
-    header
-      
   type enriched_submission = {
     lane_index: int;
     unaligned_dirs: Layout.File_system.pointer list;
@@ -599,10 +590,12 @@ module Libraries_service = struct
     contacts: Layout.Record_person.pointer list;
     mutable enrichment: enriched_submission option;
     mutable fastq_files: fastq_files list option;
+    mutable fastq_info: Template.table_cell list list option;
   }
     
   let make_submission ~fcid ~lane ~contacts =
-    {fcid; lane; contacts; enrichment = None; fastq_files = None;}
+    {fcid; lane; contacts; enrichment = None;
+     fastq_files = None; fastq_info = None}
       
   let submission_enrichment ~dbh submission =
     begin match submission.enrichment with
@@ -648,17 +641,16 @@ module Libraries_service = struct
       submission.fastq_files <- Some fsqs;
       return fsqs
     end
-        
 
-      
-
-  let fastq_files ~dbh ~configuration lib submissions =
+  let submission_fastq_info ~dbh ~configuration lib submission =
     let open Html5 in
     let open Template in
-    let  (idopt, libname, project, desc, app, stranded, truseq, rnaseq,
-          bartype, barcodes, bartoms, p5, p7, note,
-          sample_name, org_name, prep_email, protocol) = lib in
-    of_list_sequential submissions (fun submission ->
+    begin match submission.fastq_info with
+    | Some s -> return s
+    | None ->
+      let  (idopt, libname, project, desc, app, stranded, truseq, rnaseq,
+            bartype, barcodes, bartoms, p5, p7, note,
+            sample_name, org_name, prep_email, protocol) = lib in
       let { fcid; lane; contacts } = submission in
       submission_enrichment ~dbh submission
       >>= fun {lane_index; unaligned_dirs} ->
@@ -686,8 +678,27 @@ module Libraries_service = struct
         >>| snd
         >>| List.map ~f:(function
         | `sortable _ :: `sortable _ :: t -> first_cell :: t
-        | any_row -> any_row)))
-    >>| List.flatten 
+        | any_row -> any_row))
+      >>| List.flatten
+      >>= fun fi ->
+      submission.fastq_info <- Some fi;
+      return fi
+    end
+
+  let fastq_header =
+    let open Html5 in
+    let header_names =
+      [ "Submission"; "# Reads"; "% 0 mismatch"; "% bases ≥ Q30"; "Mean QS (PF)"; ]
+    in
+    let h s = `head [pcdata s] in
+    let header = List.map header_names h in
+    header
+      
+  let fastq_files ~dbh ~configuration lib submissions =
+    let open Html5 in
+    let open Template in
+    of_list_sequential submissions (fun submission ->
+      submission_fastq_info ~dbh ~configuration lib submission)
     >>| List.flatten 
     >>= fun all_rows ->
     match all_rows with
@@ -867,16 +878,24 @@ module Libraries_service = struct
       let files =
         List.map fastqs (function
         | {r1_fastq; r2_fastq = Some r2} ->
-          li [codef "%s" r1_fastq; br (); codef "%s" r2]
-        | {r1_fastq; r2_fastq = None} -> li [codef "%s" r1_fastq]) in
+          [codef "%s" r1_fastq; br (); codef "%s" r2]
+        | {r1_fastq; r2_fastq = None} -> [codef "%s" r1_fastq]) in
       let title =
         match files with
         | [] ->
-          pcdataf "No available files for submission %s:%d."
+          pcdataf "No available files for submission %s:L%d."
             submission.fcid lane_index
         | l ->
-          pcdataf "Files for submission %s:%d:" submission.fcid lane_index in
-      return [li [title; ul files;]])
+          pcdataf "Files for submission %s:L%d:" submission.fcid lane_index in
+      submission_fastq_info ~dbh ~configuration (fst lib_filtered) submission
+      >>= fun rows ->
+      let file_info_ul =
+        try 
+        List.map2_exn files rows ~f:(fun file row ->
+          li (file @ [Template.html_of_content (content_table [fastq_header; row])]))
+        with e -> List.map files ~f:(li)
+      in
+      return [li [title; ul file_info_ul]])
     >>= fun fastq_paths ->
     return [
       content_section (pcdataf "Library Details") 
