@@ -368,6 +368,19 @@ module Flowcell_service = struct
   type demux_stats_filter =
   [`none | `barcoded of int * string | `non_barcoded of int ]
     
+  let apply_demux_stats_filter
+      ~filter ~lane_index ~library_name ~only_one_in_the_lane ~f =
+    match filter with
+    | `none -> Some (f ())
+    | `barcoded (lane, libname)
+        when lane = lane_index && libname = library_name -> Some (f ())
+    | `non_barcoded lane when
+        lane = lane_index && (
+          library_name = sprintf "lane%d" lane
+          || library_name = sprintf "UndeterminedLane%d" lane
+            || only_one_in_the_lane) -> Some (f ())
+    | _ -> None
+    
   let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
     (* eprintf "demux: %s\n%!" dmux_sum; *)
     let make dmux_sum =
@@ -395,7 +408,7 @@ module Flowcell_service = struct
                 if ls.name = sprintf "lane%d" (i + 1)
                 then sprintf "Undetermined Lane %d" (i + 1)
                 else ls.name in
-              Some [
+              [
                 `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
                 `sortable (name, [ pcdata name ]);
                 nb0 ls.cluster_count;
@@ -406,17 +419,9 @@ module Flowcell_service = struct
                  s ls.cluster_count_m0; s ls.cluster_count_m1;
                  s ls.quality_score_sum; *)
               ] in
-            match filter with
-            | `none -> make_row ()
-            | `barcoded (lane, libname) when lane = i + 1 && libname = ls.name ->
-              make_row ()
-            | `non_barcoded lane when
-                lane = i + 1 && (
-                  ls.name = sprintf "lane%d" lane
-                  || ls.name = sprintf "UndeterminedLane%d" lane
-                  || only_one_in_the_lane) ->
-              make_row ()
-            | _ -> None))
+            apply_demux_stats_filter
+              ~filter ~lane_index:(i + 1) ~library_name:ls.name
+              ~only_one_in_the_lane ~f:make_row))
       in
       return (first_row, List.flatten other_rows)
     in
@@ -581,33 +586,92 @@ module Libraries_service = struct
     let header = List.map header_names h in
     header
       
+  type enriched_submission = {
+    lane_index: int;
+    unaligned_dirs: Layout.File_system.pointer list;
+  }
+  type fastq_files = {
+    r1_fastq : string;
+    r2_fastq : string option;
+  }
+  type submission = {
+    fcid: string; lane: Layout.Record_lane.pointer;
+    contacts: Layout.Record_person.pointer list;
+    mutable enrichment: enriched_submission option;
+    mutable fastq_files: fastq_files list option;
+  }
+    
+  let make_submission ~fcid ~lane ~contacts =
+    {fcid; lane; contacts; enrichment = None; fastq_files = None;}
+      
+  let submission_enrichment ~dbh submission =
+    begin match submission.enrichment with
+    | Some e -> return e
+    | None ->
+      let { fcid; lane; contacts } = submission in
+      Flowcell_service.get_flowcell_by_serial_name ~dbh fcid >>= fun fc_p ->
+      Layout.Record_flowcell.(get ~dbh fc_p >>= fun {lanes} ->
+                              return (Array.findi lanes ((=) lane)))
+      >>= function
+      | None -> error (`no_lane_index (fcid, lane))
+      | Some lane_index_minus_one ->
+        Queries.delivered_unaligned_directories_of_lane ~dbh lane
+        >>= fun unaligned_dirs ->
+        let e = {lane_index = lane_index_minus_one + 1; unaligned_dirs} in
+        submission.enrichment <- Some e;
+        return e
+    end
+
+  let submission_fastq_files ~dbh ~configuration ~libname ~barcode submission =
+    begin match submission.fastq_files with
+    | Some e -> return e
+    | None ->
+      submission_enrichment ~dbh submission >>= fun {lane_index; unaligned_dirs} ->
+      Layout.Record_lane.(get ~dbh submission.lane
+                          >>= fun { requested_read_length_2 } ->
+                          return (requested_read_length_2 <> None))
+      >>= fun is_paired_end ->
+      of_list_sequential unaligned_dirs (fun directory ->
+        Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh directory
+        >>= (function
+        | [one] -> return one
+        | _ -> error (`wrong_unaligned_volume directory))
+        >>= fun unaligned_path ->
+        let f read =
+          sprintf "%s/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.fastq.gz"
+            unaligned_path lane_index libname libname
+            (Option.value ~default:"Undetermined" barcode)
+            lane_index read in
+        return
+          { r1_fastq = f 1; r2_fastq = if is_paired_end then Some (f 2) else None;})
+      >>= fun fsqs ->
+      submission.fastq_files <- Some fsqs;
+      return fsqs
+    end
+        
+
+      
+
   let fastq_files ~dbh ~configuration lib submissions =
     let open Html5 in
     let open Template in
     let  (idopt, libname, project, desc, app, stranded, truseq, rnaseq,
           bartype, barcodes, bartoms, p5, p7, note,
           sample_name, org_name, prep_email, protocol) = lib in
-    of_list_sequential submissions (fun (fcid, lane, contacts) ->
-      Flowcell_service.get_flowcell_by_serial_name ~dbh fcid >>= fun fc_p ->
-      let lane_pointer = Layout.Record_lane.unsafe_cast lane in
-      Layout.Record_flowcell.(get ~dbh fc_p >>= fun {lanes} ->
-                              return (Array.findi lanes ((=) lane_pointer)))
-      >>= fun lane_index ->
-      Queries.delivered_unaligned_directories_of_lane ~dbh lane_pointer
-      >>= fun dirs ->
+    of_list_sequential submissions (fun submission ->
+      let { fcid; lane; contacts } = submission in
+      submission_enrichment ~dbh submission
+      >>= fun {lane_index; unaligned_dirs} ->
       let filter =
         let open Option in
         let or_none = value_map ~default:`none in
-        or_none lane_index ~f:(fun i ->
-          or_none libname ~f:(fun n -> 
-            or_none bartype ~f:(fun t ->
-              match Layout.Enumeration_barcode_provider.of_string t with
-              | Ok `bioo | Ok `illumina -> `barcoded (i + 1, n)
-              | _ -> `non_barcoded (i + 1))))
+        or_none libname ~f:(fun n -> 
+          or_none bartype ~f:(fun t ->
+            match Layout.Enumeration_barcode_provider.of_string t with
+            | Ok `bioo | Ok `illumina -> `barcoded (lane_index, n)
+            | _ -> `non_barcoded (lane_index)))
       in
-      let lane_display =
-        Option.value_map ~default:"??" lane_index
-          ~f:(fun l -> sprintf "%s:L%d" fcid (l + 1)) in
+      let lane_display = sprintf "%s:L%d" fcid lane_index in
       let first_cell =
         match filter with
         | `barcoded _ -> `sortable (lane_display, [pcdata lane_display])
@@ -615,7 +679,7 @@ module Libraries_service = struct
           `sortable (lane_display,
                      [pcdataf "Undetermined in %s" lane_display])
       in
-      of_list_sequential dirs (fun dir ->
+      of_list_sequential unaligned_dirs (fun dir ->
         Flowcell_service.basecall_stats_path_of_unaligned
           ~configuration ~dbh dir fcid
         >>= Flowcell_service.get_demux_stats ~configuration ~filter
@@ -638,7 +702,7 @@ module Libraries_service = struct
       | 0 -> "Never" | 1 -> "Once: " | 2 -> "Twice: " 
       | n -> sprintf "%d times: " n in
     let flowcells = 
-      List.map submissions fst3 |! List.dedup in
+      List.map submissions (fun s -> s.fcid) |! List.dedup in
     let sortability = List.length submissions |! sprintf "%d" in
     let display =
       (ksprintf pcdata "%s" how_much)
@@ -646,8 +710,7 @@ module Libraries_service = struct
         interleave_list ~sep:(pcdata ", ")
         (List.map flowcells (fun fcid ->
           let lanes = 
-            List.filter submissions ~f:(fun (f,_,_) -> f = fcid)
-            |! List.length in
+            List.filter submissions ~f:(fun f -> f.fcid = fcid) |! List.length in
           span [
             Template.a_link Services.flowcell [ksprintf pcdata "%s" fcid] fcid;
             ksprintf pcdata " (%d lane%s)"
@@ -674,20 +737,25 @@ module Libraries_service = struct
       else (
         let lib_id = Option.value ~default:0l idopt in
         Queries.library_submissions ~lib_id dbh
+        >>| List.map
+            ~f:(fun (fcid, l, c) ->
+              let lane = Layout.Record_lane.unsafe_cast l in
+              let contacts =
+                Array.to_list c
+                |! List.map ~f:(fun id -> Layout.Record_person.unsafe_cast id) in
+              make_submission ~fcid ~lane ~contacts)
         >>= fun submissions ->
         let people = 
-          submissions |! List.map ~f:(fun (_,_,ids) -> Array.to_list ids)
-          |! List.flatten
-          |! List.map ~f:(fun id -> Layout.Record_person.unsafe_cast id)
-        in
+          submissions |! List.map ~f:(fun s -> s.contacts) |! List.flatten in
         Authentication.authorizes (`view (`libraries_of people))
         >>= function
         | true -> return (Some (result_item, submissions))
         | false -> return None))
+    >>| List.filter_opt 
 
   let make_libs_table ~dbh ~configuration ~showing libs_filtered =
     let open Html5 in
-    of_list_sequential (List.filter_opt libs_filtered)
+    of_list_sequential libs_filtered
       ~f:(fun ((idopt, name, project, desc, app, 
                 stranded, truseq, rnaseq,
                 bartype, barcodes, bartoms,
@@ -770,22 +838,72 @@ module Libraries_service = struct
       |! interleave_list ~sep:(pcdata ", ") in
     [pcdata "Choose view: ";] @ links @ [pcdata "."]
     
+  let details_for_one_lib ~dbh ~configuration lib_filtered =
+    let open Html5 in
+    let open Template in
+    let ((idopt, libname, project, desc, app, 
+          stranded, truseq, rnaseq,
+          bartype, barcodes, bartoms,
+          p5, p7, note,
+          sample_name, org_name,
+          prep_email, protocol), submissions) = lib_filtered in
+    let libname = Option.value ~default:"UNNAMED" libname in
+    let barcode =
+      let barcodes =
+        Option.value_map ~default:[] barcodes ~f:(fun l -> Array.to_list l) in
+      Option.bind bartype (fun t ->
+        match Layout.Enumeration_barcode_provider.of_string t with
+        | Ok `bioo ->
+          Option.bind (List.hd barcodes)
+            (List.Assoc.find Hitscore_lwt.Assemble_sample_sheet.bioo_barcodes)
+        | Ok `illumina ->
+          Option.bind (List.hd barcodes)
+            (List.Assoc.find Hitscore_lwt.Assemble_sample_sheet.illumina_barcodes)
+        | _ -> None) in
+    of_list_sequential submissions (fun submission -> 
+      submission_fastq_files ~dbh ~configuration ~libname ~barcode submission 
+      >>= fun fastqs ->
+      submission_enrichment ~dbh submission >>= fun {lane_index} ->
+      let files =
+        List.map fastqs (function
+        | {r1_fastq; r2_fastq = Some r2} ->
+          li [codef "%s" r1_fastq; br (); codef "%s" r2]
+        | {r1_fastq; r2_fastq = None} -> li [codef "%s" r1_fastq]) in
+      let title =
+        match files with
+        | [] ->
+          pcdataf "No available files for submission %s:%d."
+            submission.fcid lane_index
+        | l ->
+          pcdataf "Files for submission %s:%d:" submission.fcid lane_index in
+      return [li [title; ul files;]])
+    >>= fun fastq_paths ->
+    return [
+      content_section (pcdataf "Library Details") 
+        (content_paragraph [ul (List.flatten fastq_paths)])
+    ]
       
   let libraries ~showing ?(qualified_names=[]) ~configuration  =
     let open Html5 in
     Hitscore_lwt.with_database configuration (fun ~dbh ->
       fetch_and_filter_libs ~dbh qualified_names >>= fun libs_filtered ->
-      make_libs_table ~dbh ~configuration ~showing libs_filtered)
-    >>= fun main_table ->
-    let nb_rows = List.length main_table in
-    return Template.(
-      content_section
-        (ksprintf pcdata "Found %d librar%s:"
-           (nb_rows - 1) (if nb_rows = 2 then "y" else "ies"))
-        (content_list [
-          content_paragraph (intro_paragraph ~showing ~qualified_names);
-          content_table main_table;
-        ]))
+      make_libs_table ~dbh ~configuration ~showing libs_filtered
+      >>= fun main_table ->
+      begin match libs_filtered with
+      | [ one ] -> details_for_one_lib ~dbh ~configuration one
+      | l -> return []
+      end
+      >>= fun details ->
+      let nb_rows = List.length main_table in
+      return Template.(
+        content_section
+          (ksprintf pcdata "Found %d librar%s:"
+             (nb_rows - 1) (if nb_rows = 2 then "y" else "ies"))
+          (content_list [
+            content_paragraph (intro_paragraph ~showing ~qualified_names);
+            content_table main_table;
+            content_list details;
+          ])))
 
   let make configuration =
     (fun (showing, qualified_names) () ->

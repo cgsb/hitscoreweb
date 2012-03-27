@@ -168,6 +168,8 @@ let rec html_of_error poly_error =
        [pcdata "Error while logging (chances are that the editing actually worked!)"]
      |  `layout_inconsistency _ | `io_exn _ | `pg_exn _ as e -> 
        html_of_error e)
+  | `no_lane_index (fcid, pointer) ->
+    [pcdataf "no_lane_index: %S (lane %ld)" fcid pointer.Layout.Record_lane.id]
   | `layout_inconsistency (place, problem) ->
     let place_presentation =
       match place with
