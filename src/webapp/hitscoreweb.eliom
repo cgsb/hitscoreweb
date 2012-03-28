@@ -581,6 +581,7 @@ module Flowcell_service = struct
 
 end
 
+  
 module Libraries_service = struct
 
   (* Helper functions for type Services.libraries_show *)
@@ -981,6 +982,71 @@ module Libraries_service = struct
             (Exn.to_string e)])
     end
 
+  let fastx_quality_plot path =
+    let open Html5 in
+    let open Template in
+    let get_info =
+      Cache.(
+        get_fastx_quality_stats path
+        >>= fun stats ->
+        of_list_sequential stats ~f:(fun {
+          bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
+          bfxqs_sum; bfxqs_mean; bfxqs_Q1; bfxqs_med;
+          bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
+          bfxqs_A_Count; bfxqs_C_Count; bfxqs_G_Count; bfxqs_T_Count; bfxqs_N_Count;
+          bfxqs_Max_count;} ->
+          return (bfxqs_mean,
+                  [ "min", bfxqs_min;
+                    "med", bfxqs_med -. bfxqs_min;
+                    "max", bfxqs_max -. bfxqs_med -. bfxqs_min])))
+    (* return (sprintf "{name: '%.0f', data: [%.0f,%.0f,%.0f]}"))) *)
+    in
+    let container_id = unique_id "plot_container" in
+    let highchart info =
+      let curve, boxes = List.split info in
+      let categories =
+        List.mapi boxes ~f:(fun i _ -> sprintf "'%d'" (i + 1))
+        |! String.concat ~sep:", " in
+      let boxes_series =
+        let keys = List.hd_exn boxes |! List.map ~f:fst |! List.rev in
+        List.map keys ~f:(fun k ->
+          List.map boxes ~f:(fun i -> List.Assoc.find_exn i k |! sprintf "%.2f")
+          |! String.concat ~sep:", "
+          |! sprintf "{type: 'column', name: '%s', data: [%s]}" k)
+        |! String.concat ~sep:" ,"
+      in
+      let y_max =
+        List.fold_left boxes ~init:0. ~f:(fun prev n ->
+          max prev (List.map n snd |! List.fold_left ~f:(+.) ~init:0.)) in
+      let curve_series =
+        sprintf "{type: 'spline', name: 'Mean', data: [%s]}"
+          (List.map curve ~f:(sprintf "%.2f") |! String.concat ~sep:", ") in
+      script (pcdataf "
+var chart;
+$(document).ready(function() {
+  chart = new Highcharts.Chart({
+    chart: {renderTo: '%s'},
+    title: {text: '%s'},
+    xAxis: {categories: [%s]},
+    yAxis: {min: 0, max: %.0f, title: {text: 'Q Scores'}},
+    tooltip: {
+      formatter: function() {
+        return ''+ this.series.name +': '+ this.y;
+      }
+    },
+    plotOptions: {column: {stacking: 'normal'}},
+    series: [%s,%s]
+  });
+});
+
+" container_id path categories (y_max +. 5.) boxes_series curve_series) in
+    double_bind get_info 
+      ~ok:(fun info ->
+        return [highchart info;
+                div ~a:[ a_id container_id;
+                         a_style "width: 90%; height: 500px" ] []])
+      ~error:(fun _ -> return [pcdataf "ERROR"])
+      
   let details_for_one_lib ~dbh ~configuration lib_filtered =
     let open Html5 in
     let open Template in
@@ -1010,13 +1076,16 @@ module Libraries_service = struct
       of_list_sequential fastqs (fun f ->
         rendered_fastx_table_of_option f.r1_fastx >>= fun r1_table ->
         rendered_fastx_table_of_option f.r2_fastx >>= fun r2_table ->
+        of_option f.r1_fastx fastx_quality_plot >>= fun r1_qplot ->
+        of_option f.r2_fastx fastx_quality_plot >>= fun r2_qplot ->
         let opt o f = Option.value_map o ~f ~default:[] in
+        let optv o = Option.value o ~default:[] in
         let show_file c = [ br (); codef "%s" c] in
         return (
           [codef "%s" f.r1_fastq]
           @ opt f.r2_fastq show_file
-          @ opt f.r1_fastx show_file @ r1_table
-          @ opt f.r2_fastx show_file @ r2_table))
+          @ opt f.r1_fastx show_file @ r1_table @ optv r1_qplot
+          @ opt f.r2_fastx show_file @ r2_table @ optv r2_qplot))
       >>= fun files ->
       let title =
         match files with
