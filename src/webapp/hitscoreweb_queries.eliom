@@ -73,7 +73,6 @@ let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
 let fastx_stats_of_unaligned_volume ~dbh unaligned_pointer =
   let link_hack =
     Printf.sprintf "(Link ((id %ld)))" unaligned_pointer.Layout.File_system.id in
-  Printf.eprintf "looking for %s\n%!" link_hack;
   let query () =
     PGSQL (dbh)
      "SELECT fr.directory

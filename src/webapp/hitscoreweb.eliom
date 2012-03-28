@@ -649,10 +649,6 @@ module Libraries_service = struct
               (Option.value ~default:"Undetermined" barcode)
               lane_index read ext)
         in
-        begin match fastx_unaligned_path_opt with
-        | None -> eprintf "fastx_unaligned_path_opt = None\n%!"
-        |Some s -> eprintf "fastx_unaligned_path_opt = %s\n%!" s
-        end;
         return {
           r1_fastq = Option.value_exn (f (Some unaligned_path) 1 `fgz);
           r2_fastq = if is_paired_end then f (Some unaligned_path) 2 `fgz else None;
