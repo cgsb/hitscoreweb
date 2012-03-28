@@ -985,7 +985,7 @@ module Libraries_service = struct
   let fastx_quality_plot path =
     let open Html5 in
     let open Template in
-    let get_info =
+    let make_chart =
       Cache.(
         get_fastx_quality_stats path
         >>= fun stats ->
@@ -998,54 +998,17 @@ module Libraries_service = struct
           return (bfxqs_mean,
                   [ "min", bfxqs_min;
                     "med", bfxqs_med -. bfxqs_min;
-                    "max", bfxqs_max -. bfxqs_med -. bfxqs_min])))
-    (* return (sprintf "{name: '%.0f', data: [%.0f,%.0f,%.0f]}"))) *)
+                    "max", bfxqs_max -. bfxqs_med -. bfxqs_min]))
+        >>| List.split
+        >>= fun (curv, boxes) -> return [`stack boxes; `curve curv]
+        >>= fun plot_spec ->
+        Highchart.make ~more_y:5. ~y_axis_title:"Q Score"
+          ~plot_title:"Quality Plot" plot_spec)
     in
-    let container_id = unique_id "plot_container" in
-    let highchart info =
-      let curve, boxes = List.split info in
-      let categories =
-        List.mapi boxes ~f:(fun i _ -> sprintf "'%d'" (i + 1))
-        |! String.concat ~sep:", " in
-      let boxes_series =
-        let keys = List.hd_exn boxes |! List.map ~f:fst |! List.rev in
-        List.map keys ~f:(fun k ->
-          List.map boxes ~f:(fun i -> List.Assoc.find_exn i k |! sprintf "%.2f")
-          |! String.concat ~sep:", "
-          |! sprintf "{type: 'column', name: '%s', data: [%s]}" k)
-        |! String.concat ~sep:" ,"
-      in
-      let y_max =
-        List.fold_left boxes ~init:0. ~f:(fun prev n ->
-          max prev (List.map n snd |! List.fold_left ~f:(+.) ~init:0.)) in
-      let curve_series =
-        sprintf "{type: 'spline', name: 'Mean', data: [%s]}"
-          (List.map curve ~f:(sprintf "%.2f") |! String.concat ~sep:", ") in
-      script (pcdataf "
-var chart;
-$(document).ready(function() {
-  chart = new Highcharts.Chart({
-    chart: {renderTo: '%s'},
-    title: {text: '%s'},
-    xAxis: {categories: [%s]},
-    yAxis: {min: 0, max: %.0f, title: {text: 'Q Scores'}},
-    tooltip: {
-      formatter: function() {
-        return ''+ this.series.name +': '+ this.y;
-      }
-    },
-    plotOptions: {column: {stacking: 'normal'}},
-    series: [%s,%s]
-  });
-});
-
-" container_id path categories (y_max +. 5.) boxes_series curve_series) in
-    double_bind get_info 
-      ~ok:(fun info ->
-        return [highchart info;
-                div ~a:[ a_id container_id;
-                         a_style "width: 90%; height: 500px" ] []])
-      ~error:(fun _ -> return [pcdataf "ERROR"])
+    double_bind make_chart 
+      ~ok:(fun chart ->
+        return chart)
+      ~error:(fun _ -> return [pcdataf "ERROR while getting the fastx plot"])
       
   let details_for_one_lib ~dbh ~configuration lib_filtered =
     let open Html5 in
