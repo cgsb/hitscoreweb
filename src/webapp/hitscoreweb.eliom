@@ -932,6 +932,55 @@ module Libraries_service = struct
       |! interleave_list ~sep:(pcdata ", ") in
     [pcdata "Choose view: ";] @ links @ [pcdata "."]
     
+  let fastx_table path =
+    let open Html5 in
+    let open Template in
+    Cache.(
+      get_fastx_quality_stats path
+      >>| List.map ~f:(fun {
+        bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
+        bfxqs_sum; bfxqs_mean; bfxqs_Q1; bfxqs_med;
+        bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
+        bfxqs_A_Count; bfxqs_C_Count; bfxqs_G_Count; bfxqs_T_Count; bfxqs_N_Count;
+        bfxqs_Max_count;} ->
+        let nb0 f = `number (sprintf "%.0f", f) in 
+        let nb2 f = `number (sprintf "%.2f", f) in 
+        [nb0 bfxqs_column; nb0 bfxqs_count; nb0 bfxqs_min; nb0 bfxqs_max;
+         nb0 bfxqs_sum; nb0 bfxqs_mean; nb0 bfxqs_Q1; nb2 bfxqs_med;
+         nb0 bfxqs_Q3; nb0 bfxqs_IQR; nb0 bfxqs_lW; nb0 bfxqs_rW;
+         nb0 bfxqs_A_Count; nb0 bfxqs_C_Count; nb0 bfxqs_G_Count;
+         nb0 bfxqs_T_Count; nb0 bfxqs_N_Count;
+         nb0 bfxqs_Max_count;]))
+    >>= fun rows ->
+    let h s = `head [pcdata s] in
+    return (  
+      [h "column"; h "count"; h "min"; h "max";
+       h "sum"; h "mean"; h "Q1"; h "med";
+       h "Q3"; h "IQR"; h "lW"; h "rW";
+       h "A_Count"; h "C_Count"; h "G_Count"; h "T_Count"; h "N_Count";
+       h "Max_count";]
+      :: rows)
+      
+  let rendered_fastx_table_of_option path_opt =
+    let open Html5 in
+    let open Template in
+    begin match path_opt with
+    | None -> return []
+    | Some s ->
+      double_bind (fastx_table s)
+        ~ok:(fun o -> return [Template.html_of_content (content_table o)])
+        ~error:(function
+        | `empty_fastx_quality_stats s ->
+          return [br (); pcdataf "ERROR: file %s gave empty quality stats" s]
+        | `error_in_fastx_quality_stats_parsing (s, sll) ->
+          return [br ();
+                  pcdataf "ERROR: parsing file %s gave an error (%d)"
+                    s (List.length sll)]
+        | `io_exn e ->
+          return [br (); pcdataf "I/O Error in with fastx: %s\n%!"
+            (Exn.to_string e)])
+    end
+
   let details_for_one_lib ~dbh ~configuration lib_filtered =
     let open Html5 in
     let open Template in
@@ -958,18 +1007,17 @@ module Libraries_service = struct
       submission_fastq_files ~dbh ~configuration ~libname ~barcode submission 
       >>= fun fastqs ->
       submission_enrichment ~dbh submission >>= fun {lane_index} ->
-      let files =
+      of_list_sequential fastqs (fun f ->
+        rendered_fastx_table_of_option f.r1_fastx >>= fun r1_table ->
+        rendered_fastx_table_of_option f.r2_fastx >>= fun r2_table ->
         let opt o f = Option.value_map o ~f ~default:[] in
-        List.map fastqs (function
-        | {r1_fastq; r2_fastq = Some r2; r1_fastx; r2_fastx} ->
-          [codef "%s" r1_fastq; br (); codef "%s" r2]
-          @ opt r1_fastx (fun c -> [br (); codef "%s" c])
-          @ opt r2_fastx (fun c -> [br (); codef "%s" c])
-        | {r1_fastq; r2_fastq = None; r1_fastx; r2_fastx} ->
-          [codef "%s" r1_fastq]
-          @ opt r1_fastx (fun c -> [br (); codef "%s" c])
-          @ opt r2_fastx (fun c -> [br (); codef "%s" c])
-        ) in
+        let show_file c = [ br (); codef "%s" c] in
+        return (
+          [codef "%s" f.r1_fastq]
+          @ opt f.r2_fastq show_file
+          @ opt f.r1_fastx show_file @ r1_table
+          @ opt f.r2_fastx show_file @ r2_table))
+      >>= fun files ->
       let title =
         match files with
         | [] ->
@@ -979,14 +1027,24 @@ module Libraries_service = struct
           pcdataf "Files for submission %s:L%d:" submission.fcid lane_index in
       double_bind
         (submission_fastq_info ~dbh ~configuration (fst lib_filtered) submission)
-        ~ok:return
-        ~error:(fun e -> return  [])
+        ~ok:(fun rows ->
+          of_list_sequential rows (fun row ->
+            return [Template.html_of_content (content_table [fastq_header; row])]))
+        ~error:(function
+        | `io_exn e ->
+          return  [[br ();
+                    strong [
+                      pcdataf "I/O Error while loading submission_fastq_info: %s"
+                        (Exn.to_string e)]]]
+        | e ->
+          return  [[br ();
+                    pcdataf "Error while loading submission_fastq_info"]])
       >>= fun rows ->
       let file_info_ul =
         try 
         List.map2_exn files rows ~f:(fun file row ->
-          li (file @ [Template.html_of_content (content_table [fastq_header; row])]))
-        with e -> List.map files ~f:(li)
+          li (file @ row))
+        with e -> List.map files ~f:(fun file -> li (file @ (List.flatten rows)))
       in
       return [li [title; ul file_info_ul]])
     >>= fun fastq_paths ->
