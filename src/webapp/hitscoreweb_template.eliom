@@ -489,3 +489,81 @@ let make_authentication_error ~configuration ~main_title content =
     ];
   ]
 
+module Highchart = struct
+
+  let make_curve_series curve =
+    let categories =
+      List.mapi curve ~f:(fun i _ -> sprintf "'%d'" (i + 1))
+      |! String.concat ~sep:", " in
+    let series =
+      sprintf "{type: 'spline', name: 'Mean', data: [%s]}"
+        (List.map curve ~f:(sprintf "%.2f") |! String.concat ~sep:", ") in
+    (categories, series, List.fold_left curve ~f:max ~init:0.)
+      
+  let make_stack_series_exn stack =
+    let categories =
+      List.mapi stack ~f:(fun i _ -> sprintf "'%d'" (i + 1))
+      |! String.concat ~sep:", " in
+    let stack_series =
+      let keys = List.hd_exn stack |! List.map ~f:fst |! List.rev in
+      List.map keys ~f:(fun k ->
+        List.map stack ~f:(fun i -> List.Assoc.find_exn i k |! sprintf "%.2f")
+        |! String.concat ~sep:", "
+        |! sprintf "{type: 'column', name: '%s', data: [%s]}" k)
+      |! String.concat ~sep:" ,"
+    in
+    let y_max =
+      List.fold_left stack ~init:0. ~f:(fun prev n ->
+        max prev (List.map n snd |! List.fold_left ~f:(+.) ~init:0.)) in
+    (categories, stack_series, y_max)
+      
+  let make_exn ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
+    let open Html5 in
+    let container_id = unique_id "plot_container" in
+    let highchart_script =
+      let series =
+        List.map spec (function
+        | `curve c -> make_curve_series c
+        | `stack s -> make_stack_series_exn s) in
+      let series_string = List.map series ~f:snd3 |! String.concat ~sep:", " in
+      let y_max = List.fold_left ~f:(fun c (_,_,y) -> max c y) ~init:0. series in
+      let categories =
+        match categories with
+        | Some s -> s
+        | None -> List.hd_exn series |! fst3 in
+      script (pcdataf "
+       \ var chart;
+       \ $(document).ready(function() {
+       \   chart = new Highcharts.Chart({
+       \     chart: {renderTo: '%s'},
+       \     title: {text: '%s'},
+       \     xAxis: {categories: [%s]},
+       \     yAxis: {min: 0, max: %.0f %s},
+       \     tooltip: {
+       \       formatter: function() {
+       \         return ''+ this.series.name +': '+ this.y;
+       \       }
+       \     },
+       \     plotOptions: {column: {stacking: 'normal'}},
+       \     series: [%s]
+       \   });
+       \ }); "
+                container_id plot_title categories
+                (y_max +. more_y)
+                (Option.value_map y_axis_title ~default:""
+                   ~f:(sprintf ", title: {text: '%s'}"))
+                series_string)
+    in
+    [highchart_script;
+     div ~a:[ a_id container_id;
+              a_style "width: 90%; height: 500px" ] []]
+
+
+  let make ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
+    try
+      return (make_exn ?categories ~more_y ?y_axis_title ~plot_title spec)
+    with
+      e ->
+        error (`error_while_preparing_highchart (e, plot_title))
+      
+end
