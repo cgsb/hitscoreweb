@@ -154,7 +154,9 @@ let rec html_of_error poly_error =
   | `root_directory_not_configured ->
     [pcdataf "The root directory is not configured"]
   | `wrong_unaligned_volume _ ->
-    [pcdataf "Unaligned/ virtual volume does not have the expected structure"]
+    [pcdataf "B2F/Unaligned/ virtual volume does not have the expected structure"]
+  | `wrong_fastx_volume _ ->
+    [pcdataf "FASTX/Unaligned/ virtual volume does not have the expected structure"]
   | `parse_flowcell_demux_summary_error e ->
     [pcdataf "Error while parsing demux-summary: %s" (Exn.to_string e)]
   | `layout_edit_coservice_error e ->

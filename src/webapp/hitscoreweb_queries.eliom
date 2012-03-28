@@ -69,3 +69,27 @@ let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
       List.dedup l
       |! List.map ~f:Layout.File_system.unsafe_cast
       |! return))
+
+let fastx_stats_of_unaligned_volume ~dbh unaligned_pointer =
+  let link_hack =
+    Printf.sprintf "(Link ((id %ld)))" unaligned_pointer.Layout.File_system.id in
+  Printf.eprintf "looking for %s\n%!" link_hack;
+  let query () =
+    PGSQL (dbh)
+     "SELECT fr.directory
+      FROM fastx_quality_stats_result as fr,
+           fastx_quality_stats as fq,
+           generic_fastqs,
+           g_volume
+      WHERE
+        fr.g_id = fq.g_result
+        AND fq.input_dir = generic_fastqs.g_id
+        AND generic_fastqs.directory = g_volume.g_id
+        AND fq.filter_names = '(*.fastq *.fastq.gz)'
+        AND g_volume.g_sexp = $link_hack
+      ORDER BY fr.g_last_modified" in
+  Hitscoreweb_std.(
+    wrap_pgocaml ~query ~on_result:(fun l ->
+      List.last l
+      |! Option.map ~f:Layout.File_system.unsafe_cast
+      |! return))

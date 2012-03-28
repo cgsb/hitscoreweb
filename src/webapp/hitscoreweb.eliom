@@ -579,11 +579,13 @@ module Libraries_service = struct
 
   type enriched_submission = {
     lane_index: int;
-    unaligned_dirs: Layout.File_system.pointer list;
+    delivered_unaligned_dirs: Layout.File_system.pointer list;
   }
   type fastq_files = {
-    r1_fastq : string;
-    r2_fastq : string option;
+    r1_fastq: string;
+    r2_fastq: string option;
+    r1_fastx: string option;
+    r2_fastx: string option;
   }
   type submission = {
     fcid: string; lane: Layout.Record_lane.pointer;
@@ -609,8 +611,8 @@ module Libraries_service = struct
       | None -> error (`no_lane_index (fcid, lane))
       | Some lane_index_minus_one ->
         Queries.delivered_unaligned_directories_of_lane ~dbh lane
-        >>= fun unaligned_dirs ->
-        let e = {lane_index = lane_index_minus_one + 1; unaligned_dirs} in
+        >>= fun delivered_unaligned_dirs ->
+        let e = {lane_index = lane_index_minus_one + 1; delivered_unaligned_dirs} in
         submission.enrichment <- Some e;
         return e
     end
@@ -619,24 +621,45 @@ module Libraries_service = struct
     begin match submission.fastq_files with
     | Some e -> return e
     | None ->
-      submission_enrichment ~dbh submission >>= fun {lane_index; unaligned_dirs} ->
+      submission_enrichment ~dbh submission
+      >>= fun {lane_index; delivered_unaligned_dirs} ->
       Layout.Record_lane.(get ~dbh submission.lane
                           >>= fun { requested_read_length_2 } ->
                           return (requested_read_length_2 <> None))
       >>= fun is_paired_end ->
-      of_list_sequential unaligned_dirs (fun directory ->
+      of_list_sequential delivered_unaligned_dirs (fun directory ->
         Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh directory
         >>= (function
         | [one] -> return one
         | _ -> error (`wrong_unaligned_volume directory))
         >>= fun unaligned_path ->
-        let f read =
-          sprintf "%s/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.fastq.gz"
-            unaligned_path lane_index libname libname
-            (Option.value ~default:"Undetermined" barcode)
-            lane_index read in
-        return
-          { r1_fastq = f 1; r2_fastq = if is_paired_end then Some (f 2) else None;})
+        Queries.fastx_stats_of_unaligned_volume ~dbh directory
+        >>= fun fastx_result_dir_opt ->
+        of_option fastx_result_dir_opt (fun frd ->
+          Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh frd
+          >>= (function
+          | [one] -> return one
+          | _ -> error (`wrong_fastx_volume directory)))
+        >>= fun fastx_unaligned_path_opt ->
+        let f path read typ =
+          let ext = match typ with `fgz -> "fastq.gz" | `fxqs -> "fxqs" in
+          Option.map path ~f:(fun p ->
+            sprintf "%s/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.%s"
+              p lane_index libname libname
+              (Option.value ~default:"Undetermined" barcode)
+              lane_index read ext)
+        in
+        begin match fastx_unaligned_path_opt with
+        | None -> eprintf "fastx_unaligned_path_opt = None\n%!"
+        |Some s -> eprintf "fastx_unaligned_path_opt = %s\n%!" s
+        end;
+        return {
+          r1_fastq = Option.value_exn (f (Some unaligned_path) 1 `fgz);
+          r2_fastq = if is_paired_end then f (Some unaligned_path) 2 `fgz else None;
+          r1_fastx = f fastx_unaligned_path_opt 1 `fxqs;
+          r2_fastx =
+            if is_paired_end then f fastx_unaligned_path_opt 2 `fxqs else None;
+        })
       >>= fun fsqs ->
       submission.fastq_files <- Some fsqs;
       return fsqs
@@ -653,7 +676,7 @@ module Libraries_service = struct
             sample_name, org_name, prep_email, protocol) = lib in
       let { fcid; lane; contacts } = submission in
       submission_enrichment ~dbh submission
-      >>= fun {lane_index; unaligned_dirs} ->
+      >>= fun {lane_index; delivered_unaligned_dirs} ->
       let filter =
         let open Option in
         let or_none = value_map ~default:`none in
@@ -671,7 +694,7 @@ module Libraries_service = struct
           `sortable (lane_display,
                      [pcdataf "Undetermined in %s" lane_display])
       in
-      of_list_sequential unaligned_dirs (fun dir ->
+      of_list_sequential delivered_unaligned_dirs (fun dir ->
         Flowcell_service.basecall_stats_path_of_unaligned
           ~configuration ~dbh dir fcid
         >>= Flowcell_service.get_demux_stats ~configuration ~filter
@@ -697,14 +720,19 @@ module Libraries_service = struct
   let fastq_files ~dbh ~configuration lib submissions =
     let open Html5 in
     let open Template in
-    of_list_sequential submissions (fun submission ->
-      submission_fastq_info ~dbh ~configuration lib submission)
-    >>| List.flatten 
-    >>= fun all_rows ->
-    match all_rows with
-    | [] -> return (List.init (List.length fastq_header)
-                      (fun _ -> `sortable ("0", [pcdata "—"])))
-    | l -> return [`subtable l]
+    let all_rows_m =
+      of_list_sequential submissions (fun submission ->
+        submission_fastq_info ~dbh ~configuration lib submission)
+      >>| List.flatten in
+    double_bind all_rows_m
+      ~ok:(function
+      | [] -> return (List.init (List.length fastq_header)
+                        (fun _ -> `sortable ("0", [pcdata "—"])))
+      | l -> return [`subtable l])
+      ~error:(fun e ->
+        return (List.init (List.length fastq_header)
+                  (fun _ -> `sortable ("0", [pcdata "Error accessing info"]))))
+    
       
   let submissions_cell submissions = 
     let open Html5 in
@@ -876,10 +904,17 @@ module Libraries_service = struct
       >>= fun fastqs ->
       submission_enrichment ~dbh submission >>= fun {lane_index} ->
       let files =
+        let opt o f = Option.value_map o ~f ~default:[] in
         List.map fastqs (function
-        | {r1_fastq; r2_fastq = Some r2} ->
+        | {r1_fastq; r2_fastq = Some r2; r1_fastx; r2_fastx} ->
           [codef "%s" r1_fastq; br (); codef "%s" r2]
-        | {r1_fastq; r2_fastq = None} -> [codef "%s" r1_fastq]) in
+          @ opt r1_fastx (fun c -> [br (); codef "%s" c])
+          @ opt r2_fastx (fun c -> [br (); codef "%s" c])
+        | {r1_fastq; r2_fastq = None; r1_fastx; r2_fastx} ->
+          [codef "%s" r1_fastq]
+          @ opt r1_fastx (fun c -> [br (); codef "%s" c])
+          @ opt r2_fastx (fun c -> [br (); codef "%s" c])
+        ) in
       let title =
         match files with
         | [] ->
@@ -887,7 +922,10 @@ module Libraries_service = struct
             submission.fcid lane_index
         | l ->
           pcdataf "Files for submission %s:L%d:" submission.fcid lane_index in
-      submission_fastq_info ~dbh ~configuration (fst lib_filtered) submission
+      double_bind
+        (submission_fastq_info ~dbh ~configuration (fst lib_filtered) submission)
+        ~ok:return
+        ~error:(fun e -> return  [])
       >>= fun rows ->
       let file_info_ul =
         try 
