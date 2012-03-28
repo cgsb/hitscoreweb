@@ -24,6 +24,10 @@ CLIENT_FILES := $(COMMON_FILES)
 
 CLOSURE_CSS_NAMES= common dialog autocomplete
 
+JQUERY_MIN_JS=../../src/ext/highcharts/jquery.min.js
+HIGHCHARTS_JS=../../src/ext/highcharts/highcharts.js
+HIGHCHARTS_LIB=${JQUERY_MIN_JS} ${HIGHCHARTS_JS}
+
 ## Required binaries
 CAMLP4= 'camlp4o str.cma \
    -I`ocamlfind query extlib` extLib.cma \
@@ -107,8 +111,8 @@ ${APP_NAME}_tmp.js: ${CLIENT_OBJS}
 ${APP_NAME}_tmp_oclosure.js: ${APP_NAME}_tmp.js
 	oclosure_req $<
 
-${APP_NAME}.js: ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js
-	cat  ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js > $@
+${APP_NAME}.js: ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB}
+	cat ${HIGHCHARTS_LIB} ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js > $@
 
 ${ELIOM_CLIENT_DIR}/%.cmi: %.eliom
 	${JS_OF_ELIOM} -c ${CLIENT_INC} $<
