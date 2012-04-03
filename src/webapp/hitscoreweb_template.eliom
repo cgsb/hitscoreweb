@@ -517,21 +517,137 @@ module Highchart = struct
         max prev (List.map n snd |! List.fold_left ~f:(+.) ~init:0.)) in
     (categories, stack_series, y_max)
       
-  let make_exn ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
+
+  let make_box_whisker_plot_exn by_5_list =
+    let categories =
+      List.mapi by_5_list ~f:(fun i _ -> sprintf "'%d'" (i + 1))
+      |! String.concat ~sep:", " in
+    let minimum      = List.map by_5_list (fun (x, _, _, _, _) -> x) in
+    let fst_quartile = List.map by_5_list (fun (_, x, _, _, _) -> x) in 
+    let median       = List.map by_5_list (fun (_, _, x, _, _) -> x) in
+    let trd_quartile = List.map by_5_list (fun (_, _, _, x, _) -> x) in
+    let maximum      = List.map by_5_list (fun (_, _, _, _, x) -> x) in
+    let series =
+      let make_series n d =
+        sprintf "{name: '%s', marker:{enabled:false},
+                  data: [%s], type: 'scatter'}"
+          n (List.map d (sprintf "%.2f") |! String.concat ~sep:", ") in
+      String.concat ~sep:", " [
+        make_series "Minimum" minimum;
+        make_series "1st Quartile" fst_quartile;
+        make_series "Median" median;
+        make_series "3rd Quartile" trd_quartile;
+        make_series "Maximum" maximum; ] in
+    let y_max = List.fold_left maximum ~init:0. ~f:max in
+    (categories, series, y_max)
+
+
+  let additional_box_whisker_renderer = "
+, function(chart) {
+  var min = chart.series[0].data;
+  var quartile1 = chart.series[1].data;
+  var median = chart.series[2].data;
+  var quartile3 = chart.series[3].data;
+  var max = chart.series[4].data;
+
+  var translate = 0;
+  var semiwidth = 4;
+  var fwidth = 2 * semiwidth;
+  var stroke_width = 2;
+
+  for(i=0; i<quartile1.length; i++)
+  {
+     
+       chart.renderer.rect(quartile3[i].plotX-semiwidth+chart.plotLeft-translate,quartile3[i].plotY+chart.plotTop,fwidth,quartile1[i].plotY-quartile3[i].plotY, 0)
+          .attr({
+          'stroke-width': stroke_width,
+          stroke: '#aaa',
+          fill: '#ccc',
+          zIndex:4
+      })
+      .add();  
+
+      chart.renderer.path(['M',max[i].plotX-semiwidth+chart.plotLeft-translate,max[i].plotY+chart.plotTop,'L',max[i].plotX+semiwidth+chart.plotLeft-translate,max[i].plotY+chart.plotTop])
+          .attr({
+          'stroke-width': stroke_width,
+          stroke: 'blue',
+          zIndex:5
+      })
+      .add();  
+      
+              chart.renderer.path(['M',median[i].plotX-semiwidth+chart.plotLeft-translate,median[i].plotY+chart.plotTop,'L',median[i].plotX+semiwidth+chart.plotLeft-translate,median[i].plotY+chart.plotTop])
+          .attr({
+          'stroke-width': stroke_width,
+          stroke: 'green',
+          zIndex:5
+      })
+      .add();  
+      
+      
+              chart.renderer.path(['M',min[i].plotX-semiwidth+chart.plotLeft-translate,min[i].plotY+chart.plotTop,'L',min[i].plotX+semiwidth+chart.plotLeft-translate,min[i].plotY+chart.plotTop])
+          .attr({
+          'stroke-width': stroke_width,
+          stroke: 'red',
+          zIndex:5
+      })
+      .add();
+
+              chart.renderer.path(['M',min[i].plotX+chart.plotLeft-translate,min[i].plotY+chart.plotTop,'L',max[i].plotX+chart.plotLeft-translate,max[i].plotY+chart.plotTop])
+          .attr({
+          'stroke-width': stroke_width,
+          stroke: '#aaa',
+          zIndex:3
+      })
+      .add();          
+  }
+}"
+
+  let box_whisker_tooltip = "
+     tooltip:{
+         formatter: function(){
+             var s = '<b>'+this.x+'</b><br>';
+             for(var i=this.points.length-1;i>-1;i--){
+                 colors = ['red','#444', 'green', '#444', 'blue'];
+    s = s + ['<br>','<span style=\"color:' + colors[i] + '\">',
+             this.points[i].series.name, '</span>: ',
+      '<b>', Highcharts.numberFormat(this.points[i].y, 0), '</b>'].join('');
+             }
+             return s;    
+         },
+         shared:true         
+     }
+     "
+  let standard_tooltip = "
+       \     tooltip: {
+       \       formatter: function() {
+       \         return ''+ this.series.name +': '+ this.y;
+       \       }
+       \     }"
+      
+  let make_exn
+      ?(with_legend=false) ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
     let open Html5 in
     let container_id = unique_id "plot_container" in
     let highchart_script =
       let series =
         List.map spec (function
         | `curve c -> make_curve_series c
-        | `stack s -> make_stack_series_exn s) in
+        | `stack s -> make_stack_series_exn s
+        | `box_whisker bw -> make_box_whisker_plot_exn bw) in
       let series_string = List.map series ~f:snd3 |! String.concat ~sep:", " in
       let y_max = List.fold_left ~f:(fun c (_,_,y) -> max c y) ~init:0. series in
       let categories =
         match categories with
         | Some s -> s
         | None -> List.hd_exn series |! fst3 in
-      script (pcdataf "
+      let more_code, tooltip =
+        match spec with
+        | [`box_whisker _] -> (additional_box_whisker_renderer, box_whisker_tooltip)
+        | l when List.exists l (function `box_whisker _ -> true | _ -> false) ->
+          failwith "box_whisker-with-other-stuff: NOT IMPLEMENTED"
+        | _ -> ("", standard_tooltip)
+      in
+      script (ksprintf cdata "
        \ var chart;
        \ $(document).ready(function() {
        \   chart = new Highcharts.Chart({
@@ -539,29 +655,31 @@ module Highchart = struct
        \     title: {text: '%s'},
        \     xAxis: {categories: [%s]},
        \     yAxis: {min: 0, max: %.0f %s},
-       \     tooltip: {
-       \       formatter: function() {
-       \         return ''+ this.series.name +': '+ this.y;
-       \       }
-       \     },
        \     plotOptions: {column: {stacking: 'normal'}},
+       \     %s,
+       \     legend: {enabled: %b},
        \     series: [%s]
-       \   });
+       \   }%s);
        \ }); "
                 container_id plot_title categories
                 (y_max +. more_y)
                 (Option.value_map y_axis_title ~default:""
                    ~f:(sprintf ", title: {text: '%s'}"))
-                series_string)
+                tooltip
+                with_legend
+                series_string
+                more_code
+      )
     in
     [highchart_script;
      div ~a:[ a_id container_id;
               a_style "width: 90%; height: 500px" ] []]
 
 
-  let make ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
+  let make ?with_legend ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
     try
-      return (make_exn ?categories ~more_y ?y_axis_title ~plot_title spec)
+      return (make_exn ?with_legend ?categories ~more_y ?y_axis_title
+                ~plot_title spec)
     with
       e ->
         error (`error_while_preparing_highchart (e, plot_title))
