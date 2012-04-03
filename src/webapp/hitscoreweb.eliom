@@ -995,12 +995,12 @@ module Libraries_service = struct
           bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
           bfxqs_A_Count; bfxqs_C_Count; bfxqs_G_Count; bfxqs_T_Count; bfxqs_N_Count;
           bfxqs_Max_count;} ->
-          return (bfxqs_mean,
-                  [ "min", bfxqs_min;
-                    "med", bfxqs_med -. bfxqs_min;
-                    "max", bfxqs_max -. bfxqs_med -. bfxqs_min]))
-        >>| List.split
-        >>= fun (curv, boxes) -> return [`stack boxes; `curve curv]
+          return (bfxqs_lW,
+                  bfxqs_Q1,
+                  bfxqs_med,
+                  bfxqs_Q3,
+                  bfxqs_rW))
+        >>= fun by5 -> return [`box_whisker by5]
         >>= fun plot_spec ->
         Highchart.make ~more_y:5. ~y_axis_title:"Q Score"
           ~plot_title:"Quality Plot" plot_spec)
