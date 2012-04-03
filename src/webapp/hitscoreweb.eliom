@@ -982,28 +982,35 @@ module Libraries_service = struct
             (Exn.to_string e)])
     end
 
-  let fastx_quality_plot path =
+  let fastx_quality_plots path =
     let open Html5 in
     let open Template in
     let make_chart =
-      Cache.(
-        get_fastx_quality_stats path
-        >>= fun stats ->
-        of_list_sequential stats ~f:(fun {
-          bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
-          bfxqs_sum; bfxqs_mean; bfxqs_Q1; bfxqs_med;
-          bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
-          bfxqs_A_Count; bfxqs_C_Count; bfxqs_G_Count; bfxqs_T_Count; bfxqs_N_Count;
-          bfxqs_Max_count;} ->
-          return (bfxqs_lW,
-                  bfxqs_Q1,
-                  bfxqs_med,
-                  bfxqs_Q3,
-                  bfxqs_rW))
-        >>= fun by5 -> return [`box_whisker by5]
-        >>= fun plot_spec ->
-        Highchart.make ~more_y:5. ~y_axis_title:"Q Score"
-          ~plot_title:"Quality Plot" plot_spec)
+      let open Cache in
+      get_fastx_quality_stats path
+      >>= fun stats ->
+      of_list_sequential stats ~f:(fun {
+        bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
+        bfxqs_sum; bfxqs_mean; bfxqs_Q1; bfxqs_med;
+        bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
+        bfxqs_A_Count; bfxqs_C_Count; bfxqs_G_Count; bfxqs_T_Count; bfxqs_N_Count;
+        bfxqs_Max_count;} ->
+        return (
+          [ "A", bfxqs_A_Count;
+            "C", bfxqs_C_Count;
+            "G", bfxqs_G_Count;
+            "T", bfxqs_T_Count;
+            "N", bfxqs_N_Count;],
+          (bfxqs_lW, bfxqs_Q1, bfxqs_med, bfxqs_Q3, bfxqs_rW)))
+      >>| List.split
+      >>= fun (acgtn, by5) ->
+      Highchart.make ~more_y:5. ~y_axis_title:"Q Score"
+        ~plot_title:"Quality Plot" [`box_whisker by5]
+      >>= fun qplot ->
+      Highchart.make ~more_y:5. ~y_axis_title:"Counts" ~with_legend:true
+        ~plot_title:"ACGTN Distribution" [`stack acgtn]
+      >>= fun acgtnplot ->
+      return (acgtnplot @ qplot)
     in
     double_bind make_chart 
       ~ok:(fun chart ->
@@ -1039,8 +1046,8 @@ module Libraries_service = struct
       of_list_sequential fastqs (fun f ->
         rendered_fastx_table_of_option f.r1_fastx >>= fun r1_table ->
         rendered_fastx_table_of_option f.r2_fastx >>= fun r2_table ->
-        of_option f.r1_fastx fastx_quality_plot >>= fun r1_qplot ->
-        of_option f.r2_fastx fastx_quality_plot >>= fun r2_qplot ->
+        of_option f.r1_fastx fastx_quality_plots >>= fun r1_qplot ->
+        of_option f.r2_fastx fastx_quality_plots >>= fun r2_qplot ->
         let opt o f = Option.value_map o ~f ~default:[] in
         let optv o = Option.value o ~default:[] in
         let show_file c = [ br (); codef "%s" c] in
