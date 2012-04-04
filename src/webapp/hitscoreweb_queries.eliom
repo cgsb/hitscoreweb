@@ -57,7 +57,7 @@ let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
   let lane_id = lane_pointer.Layout.Record_lane.id in
   let query () =
     PGSQL (dbh)
-      "SELECT bcl_to_fastq_unaligned.directory
+      "SELECT bcl_to_fastq_unaligned.directory, prepare_unaligned_delivery.g_result
        FROM prepare_unaligned_delivery, invoicing,
             bcl_to_fastq_unaligned
        WHERE g_status = 'Succeeded'
@@ -66,8 +66,16 @@ let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
          AND invoicing.lanes @> array_append ('{}', $lane_id :: int);" in
   Hitscoreweb_std.(
     wrap_pgocaml ~query ~on_result:(fun l ->
-      List.dedup l
-      |! List.map ~f:Layout.File_system.unsafe_cast
+      List.filter_map l ~f:(function
+        | (vol, None) -> None
+        | (vol, Some s) -> Some (vol, s))
+      |! List.dedup
+      |! List.map ~f:(fun (vol, cfd) ->
+        eprintf "%ld -- %ld\n%!" vol cfd;
+        (vol, cfd))
+      |! List.map ~f:(fun (vol, cfd) ->
+        (Layout.File_system.unsafe_cast vol,
+         Layout.Record_client_fastqs_dir.unsafe_cast cfd))
       |! return))
 
 let fastx_stats_of_unaligned_volume ~dbh unaligned_pointer =

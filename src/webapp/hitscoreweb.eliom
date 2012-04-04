@@ -639,9 +639,11 @@ module Libraries_service = struct
 
   type enriched_submission = {
     lane_index: int;
-    delivered_unaligned_dirs: Layout.File_system.pointer list;
+    delivered_unaligned_dirs:
+      (Layout.File_system.pointer * string) list;
   }
   type fastq_files = {
+    delivery_dir: string;
     r1_fastq: string;
     r2_fastq: string option;
     r1_fastx: string option;
@@ -671,6 +673,12 @@ module Libraries_service = struct
       | None -> error (`no_lane_index (fcid, lane))
       | Some lane_index_minus_one ->
         Queries.delivered_unaligned_directories_of_lane ~dbh lane
+        >>= fun delivered_unaligned_dirs_and_client_dirs ->
+        of_list_sequential delivered_unaligned_dirs_and_client_dirs
+          (fun (vol, cfd) ->
+            Layout.Record_client_fastqs_dir.(
+              get ~dbh cfd >>= fun {directory} ->
+              return (vol, directory)))
         >>= fun delivered_unaligned_dirs ->
         let e = {lane_index = lane_index_minus_one + 1; delivered_unaligned_dirs} in
         submission.enrichment <- Some e;
@@ -688,12 +696,12 @@ module Libraries_service = struct
                           return (requested_read_length_2 <> None))
       >>= fun is_paired_end ->
       of_list_sequential delivered_unaligned_dirs (fun directory ->
-        Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh directory
+        Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh (fst directory)
         >>= (function
         | [one] -> return one
         | _ -> error (`wrong_unaligned_volume directory))
         >>= fun unaligned_path ->
-        Queries.fastx_stats_of_unaligned_volume ~dbh directory
+        Queries.fastx_stats_of_unaligned_volume ~dbh (fst directory)
         >>= fun fastx_result_dir_opt ->
         of_option fastx_result_dir_opt (fun frd ->
           Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh frd
@@ -710,6 +718,7 @@ module Libraries_service = struct
               lane_index read ext)
         in
         return {
+          delivery_dir = snd directory;
           r1_fastq = Option.value_exn (f (Some unaligned_path) 1 `fgz);
           r2_fastq = if is_paired_end then f (Some unaligned_path) 2 `fgz else None;
           r1_fastx = f fastx_unaligned_path_opt 1 `fxqs;
@@ -752,7 +761,7 @@ module Libraries_service = struct
       in
       of_list_sequential delivered_unaligned_dirs (fun dir ->
         Flowcell_service.basecall_stats_path_of_unaligned
-          ~configuration ~dbh dir fcid
+          ~configuration ~dbh (fst dir) fcid
         >>= Flowcell_service.get_demux_stats ~configuration ~filter
         >>| snd
         >>| List.map ~f:(function
@@ -1052,7 +1061,8 @@ module Libraries_service = struct
       let optv o = Option.value o ~default:[] in
       let show_file c = [ br (); codef "%s" c] in
       return (
-        [strong [pcdata "Read 1:"]]
+        [strong [pcdata "Delivery "; codef "%s/" f.delivery_dir]]
+        @ [br (); strong [pcdata "Read 1:"]]
         @ r1_table @ optv r1_qplot
         @ (let msg, div =
              Template.hide_show_div
