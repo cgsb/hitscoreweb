@@ -57,6 +57,10 @@ let in_progress_animation_handler unique_elt =
       Js._true));
   }}
 
+let color_theme =
+object
+  method title_violet = "#30053F"
+end
     
 let css_service_handler ~configuration () () =
   let open Lwt in
@@ -96,14 +100,16 @@ let css_service_handler ~configuration () () =
   out ".top_banner a:visited {color : #FFC800;}\n";
   out ".top_banner form { display: inline; padding: 10px; }";
   out ".top_banner .main_menu { padding: 0px; display: inline; }\n";
-  out ".main_page { position: absolute; top: 100px; }";
+  out ".main_page { position: absolute; top: 100px; width: auto}";
   out ".main_page a:link {color : #960F00; }\n";
+  out ".main_page .like_link {color : #960F00; text-decoration: underline; }\n";
   out ".main_page a:hover {background-color : #ECD5F4; }\n";
   out ".main_page a:visited {color : #480007; }\n";
-  out ".main_page h1 {font-weight: 900; color : #30053F;
-           font-variant: small-caps; font-size: 200%% }\n";
-  out ".main_page h2 {font-weight: 900; color : #30053F;
-                      font-size: 150%% }\n";
+  out ".main_page h1 {font-weight: 900; color : %s;
+           font-variant: small-caps; font-size: 200%% }\n"
+    color_theme#title_violet;
+  out ".main_page h2 {font-weight: 900; color : %s;
+                      font-size: 150%% }\n" color_theme#title_violet;
   out ".content_table_head { color: #960F00; font-size: 110%%;
           background-color: %s; }\n" light_grey;
   out ".content_table_head,.content_table_text,.content_table_number {
@@ -636,12 +642,17 @@ module Highchart = struct
     let open Html5 in
     let plot_id = unique_id "plot" in
     let container_id = plot_id ^ "_container" in
+    let width = ref 0 in
+    let update_width l =
+      width := max !width (List.length l * 18)
+    in
     let highchart_script =
       let series =
         List.map spec (function
-        | `curve c -> make_curve_series c
-        | `stack s -> make_stack_series_exn s
-        | `box_whisker bw -> make_box_whisker_plot_exn bw) in
+        | `curve c -> update_width c; make_curve_series c
+        | `stack s -> update_width s; make_stack_series_exn s
+        | `box_whisker bw ->
+          update_width bw; make_box_whisker_plot_exn bw) in
       let series_string = List.map series ~f:snd3 |! String.concat ~sep:", " in
       let y_max = List.fold_left ~f:(fun c (_,_,y) -> max c y) ~init:0. series in
       let categories =
@@ -682,7 +693,8 @@ module Highchart = struct
     let to_run = sprintf "(%s_fun ());" plot_id in
     make_unsafe_eval_string_onload (highchart_script ^ to_run);
     [div ~a:[ a_id container_id;
-               a_style "width: 90%; height: 500px" ] []]
+              ksprintf a_style "display: block; width: %dpx; height: 500px" !width ]
+        []]
 
 
   let make ?with_legend ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
@@ -707,7 +719,8 @@ let hide_show_div ?(a=[]) ?(display_property="block")
   let span_msg =
     span ~a:[
       a_id the_msg_id;
-      a_style "background-color: #ccc";
+      a_class ["like_link"];
+      a_style "padding: 2px";
       a_onclick {{
         let the_div = get_element_exn %the_div_id in
         let the_msg = get_element_exn %the_msg_id in
@@ -726,3 +739,16 @@ let hide_show_div ?(a=[]) ?(display_property="block")
            :: ksprintf a_style "display: %s" initial_property
            :: more_a)
     inside)
+
+let pretty_box content =
+  let open Html5 in
+  div ~a:[a_style "display: block" ] [
+    div ~a:[ksprintf a_style
+               "display: inline-block;
+                border: 3px  solid %s;
+                border-radius: 3px; " color_theme#title_violet]
+      content]
+
+let error_span content =
+  let open Html5 in
+  span ~a:[ a_style "background-color: #ecc" ] [strong content]

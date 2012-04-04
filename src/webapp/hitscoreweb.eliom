@@ -796,7 +796,8 @@ module Libraries_service = struct
       | l -> return [`subtable l])
       ~error:(fun e ->
         return (List.init (List.length fastq_header)
-                  (fun _ -> `sortable ("0", [pcdata "Error accessing info"]))))
+                  (fun _ -> `sortable ("0",
+                                       [error_span [pcdata "Error accessing info"]]))))
     
       
   let submissions_cell submissions = 
@@ -984,7 +985,7 @@ module Libraries_service = struct
                ~show_message:"Show FASTX quality stats table"
                ~hide_message:"Hide FASTX quality stats table"
                [Template.html_of_content (content_table o)]) in
-          return [br (); msg; div])
+          return [Template.pretty_box [msg; div]])
         ~error:(function
         | `empty_fastx_quality_stats s ->
           return [br (); pcdataf "ERROR: file %s gave empty quality stats" s]
@@ -1027,7 +1028,7 @@ module Libraries_service = struct
            ~show_message:"Show Q Score Box-Whisker plot"
            ~hide_message:"Hide Q Score Box-Whisker plot"
            qplot) in
-      return [br (); msg; div]
+      return [Template.pretty_box [msg; div]]
       >>= fun qplot ->
       Highchart.make ~more_y:5. ~y_axis_title:"Counts" ~with_legend:true
         ~plot_title:"ACGTN Distribution" [`stack acgtn]
@@ -1037,7 +1038,7 @@ module Libraries_service = struct
            ~show_message:"Show ACGTN distribution plot"
            ~hide_message:"Hide ACGTN distribution plot"
            acgtnplot) in
-      return [br (); msg; div]
+      return [Template.pretty_box [msg; div]]
       >>= fun acgtnplot ->
       return (acgtnplot @ qplot)
     in
@@ -1069,16 +1070,16 @@ module Libraries_service = struct
                ~show_message:"Show file paths"
                ~hide_message:"Hide file paths"
                ([codef "%s" f.r1_fastq] @ opt f.r1_fastx show_file) in
-           [br (); msg; div])
+           [Template.pretty_box [msg; div]])
         @ (Option.value_map f.r2_fastq ~default:[]
              ~f:(fun _ ->
-               [br (); strong [pcdata "Read 2:"]] @ r2_table @ optv r2_qplot
+               [strong [pcdata "Read 2:"]] @ r2_table @ optv r2_qplot
                @ (let msg, div =
                     Template.hide_show_div
                       ~show_message:"Show file paths"
                       ~hide_message:"Hide file paths"
                       (opt f.r2_fastq show_file @ opt f.r2_fastx show_file) in
-                  [br (); msg; div])))
+                  [Template.pretty_box [msg; div]])))
       ))
     >>= fun files ->
     let title =
@@ -1095,13 +1096,14 @@ module Libraries_service = struct
           return [Template.html_of_content (content_table [fastq_header; row])]))
       ~error:(function
       | `io_exn e ->
-        return  [[br ();
-                  strong [
+        return  [[
+                  Template.error_span [
                     pcdataf "I/O Error while loading submission_fastq_info: %s"
                       (Exn.to_string e)]]]
       | e ->
-        return  [[br ();
-                  pcdataf "Error while loading submission_fastq_info"]])
+        return  [[
+                  Template.error_span [
+                    pcdataf "Error while loading submission_fastq_info"]]])
     >>= fun rows ->
     let file_info_ul =
       try 

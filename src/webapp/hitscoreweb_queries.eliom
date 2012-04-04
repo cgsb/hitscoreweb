@@ -71,9 +71,6 @@ let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
         | (vol, Some s) -> Some (vol, s))
       |! List.dedup
       |! List.map ~f:(fun (vol, cfd) ->
-        eprintf "%ld -- %ld\n%!" vol cfd;
-        (vol, cfd))
-      |! List.map ~f:(fun (vol, cfd) ->
         (Layout.File_system.unsafe_cast vol,
          Layout.Record_client_fastqs_dir.unsafe_cast cfd))
       |! return))
