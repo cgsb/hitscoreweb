@@ -697,13 +697,13 @@ end
 
 
 let hide_show_div ?(a=[]) ?(display_property="block")
-    ?(start_hiddden=true) ~show_message ~hide_message inside =
+    ?(start_hidden=true) ~show_message ~hide_message inside =
   let more_a = a in (* "a" will be hidden while opening Html5: *)
   let open Html5 in
   let the_div_id = unique_id "hide_show_div" in
   let the_msg_id = unique_id "hide_show_msg" in
-  let initial_property = if start_hiddden then "none" else display_property in
-  let initial_message = if start_hiddden then show_message else hide_message in
+  let initial_property = if start_hidden then "none" else display_property in
+  let initial_message  = if start_hidden then show_message else hide_message in
   let span_msg =
     span ~a:[
       a_id the_msg_id;
