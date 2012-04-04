@@ -4,6 +4,13 @@ module Services = Hitscoreweb_services
 }}
 module Authentication = Hitscoreweb_authentication
 
+
+let make_unsafe_eval_string_onload to_run =
+  Eliom_services.onload {{
+    Eliom_pervasives.debug "Running %S" %to_run;
+    Js.Unsafe.eval_string %to_run
+  }}
+
 let css_triangle_arrow ~css_class ?(height_px=10) ?(background="#ddd")
     ?(margin="2px") ?(color="#333") (direction : [ `up | `down ]) =
   let buf = Buffer.create 42 in
