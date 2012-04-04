@@ -971,8 +971,9 @@ module Libraries_service = struct
       double_bind (fastx_table s)
         ~ok:(fun o ->
           let msg, div =
-            (Template.hide_show_div ~show_message:"Show table"
-               ~hide_message:"Hide table"
+            (Template.hide_show_div
+               ~show_message:"Show FASTX quality stats table"
+               ~hide_message:"Hide FASTX quality stats table"
                [Template.html_of_content (content_table o)]) in
           return [br (); msg; div])
         ~error:(function
@@ -1012,8 +1013,22 @@ module Libraries_service = struct
       Highchart.make ~more_y:5. ~y_axis_title:"Q Score"
         ~plot_title:"Quality Plot" [`box_whisker by5]
       >>= fun qplot ->
+      let msg, div =
+        (Template.hide_show_div ~start_hidden:false
+           ~show_message:"Show Q Score Box-Whisker plot"
+           ~hide_message:"Hide Q Score Box-Whisker plot"
+           qplot) in
+      return [br (); msg; div]
+      >>= fun qplot ->
       Highchart.make ~more_y:5. ~y_axis_title:"Counts" ~with_legend:true
         ~plot_title:"ACGTN Distribution" [`stack acgtn]
+      >>= fun acgtnplot ->
+      let msg, div =
+        (Template.hide_show_div
+           ~show_message:"Show ACGTN distribution plot"
+           ~hide_message:"Hide ACGTN distribution plot"
+           acgtnplot) in
+      return [br (); msg; div]
       >>= fun acgtnplot ->
       return (acgtnplot @ qplot)
     in
@@ -1022,6 +1037,70 @@ module Libraries_service = struct
         return chart)
       ~error:(fun _ -> return [pcdataf "ERROR while getting the fastx plot"])
       
+  let submission_list_item ~dbh ~configuration libinfo libname barcode submission =
+    let open Html5 in
+    let open Template in
+    submission_fastq_files ~dbh ~configuration ~libname ~barcode submission 
+    >>= fun fastqs ->
+    submission_enrichment ~dbh submission >>= fun {lane_index} ->
+    of_list_sequential fastqs (fun f ->
+      rendered_fastx_table_of_option f.r1_fastx >>= fun r1_table ->
+      rendered_fastx_table_of_option f.r2_fastx >>= fun r2_table ->
+      of_option f.r1_fastx fastx_quality_plots >>= fun r1_qplot ->
+      of_option f.r2_fastx fastx_quality_plots >>= fun r2_qplot ->
+      let opt o f = Option.value_map o ~f ~default:[] in
+      let optv o = Option.value o ~default:[] in
+      let show_file c = [ br (); codef "%s" c] in
+      return (
+        [strong [pcdata "Read 1:"]]
+        @ r1_table @ optv r1_qplot
+        @ (let msg, div =
+             Template.hide_show_div
+               ~show_message:"Show file paths"
+               ~hide_message:"Hide file paths"
+               ([codef "%s" f.r1_fastq] @ opt f.r1_fastx show_file) in
+           [br (); msg; div])
+        @ (Option.value_map f.r2_fastq ~default:[]
+             ~f:(fun _ ->
+               [br (); strong [pcdata "Read 2:"]] @ r2_table @ optv r2_qplot
+               @ (let msg, div =
+                    Template.hide_show_div
+                      ~show_message:"Show file paths"
+                      ~hide_message:"Hide file paths"
+                      (opt f.r2_fastq show_file @ opt f.r2_fastx show_file) in
+                  [br (); msg; div])))
+      ))
+    >>= fun files ->
+    let title =
+      match files with
+      | [] ->
+        pcdataf "No available files for submission %s:L%d."
+          submission.fcid lane_index
+      | l ->
+        pcdataf "Files for submission %s:L%d:" submission.fcid lane_index in
+    double_bind
+      (submission_fastq_info ~dbh ~configuration libinfo submission)
+      ~ok:(fun rows ->
+        of_list_sequential rows (fun row ->
+          return [Template.html_of_content (content_table [fastq_header; row])]))
+      ~error:(function
+      | `io_exn e ->
+        return  [[br ();
+                  strong [
+                    pcdataf "I/O Error while loading submission_fastq_info: %s"
+                      (Exn.to_string e)]]]
+      | e ->
+        return  [[br ();
+                  pcdataf "Error while loading submission_fastq_info"]])
+    >>= fun rows ->
+    let file_info_ul =
+      try 
+        List.map2_exn files rows ~f:(fun file row ->
+          li (file @ row))
+      with e -> List.map files ~f:(fun file -> li (file @ (List.flatten rows)))
+    in
+    return [li [title; ul file_info_ul]]
+
   let details_for_one_lib ~dbh ~configuration lib_filtered =
     let open Html5 in
     let open Template in
@@ -1044,53 +1123,8 @@ module Libraries_service = struct
           Option.bind (List.hd barcodes)
             (List.Assoc.find Hitscore_lwt.Assemble_sample_sheet.illumina_barcodes)
         | _ -> None) in
-    of_list_sequential submissions (fun submission -> 
-      submission_fastq_files ~dbh ~configuration ~libname ~barcode submission 
-      >>= fun fastqs ->
-      submission_enrichment ~dbh submission >>= fun {lane_index} ->
-      of_list_sequential fastqs (fun f ->
-        rendered_fastx_table_of_option f.r1_fastx >>= fun r1_table ->
-        rendered_fastx_table_of_option f.r2_fastx >>= fun r2_table ->
-        of_option f.r1_fastx fastx_quality_plots >>= fun r1_qplot ->
-        of_option f.r2_fastx fastx_quality_plots >>= fun r2_qplot ->
-        let opt o f = Option.value_map o ~f ~default:[] in
-        let optv o = Option.value o ~default:[] in
-        let show_file c = [ br (); codef "%s" c] in
-        return (
-          [codef "%s" f.r1_fastq]
-          @ opt f.r2_fastq show_file
-          @ opt f.r1_fastx show_file @ r1_table @ optv r1_qplot
-          @ opt f.r2_fastx show_file @ r2_table @ optv r2_qplot))
-      >>= fun files ->
-      let title =
-        match files with
-        | [] ->
-          pcdataf "No available files for submission %s:L%d."
-            submission.fcid lane_index
-        | l ->
-          pcdataf "Files for submission %s:L%d:" submission.fcid lane_index in
-      double_bind
-        (submission_fastq_info ~dbh ~configuration (fst lib_filtered) submission)
-        ~ok:(fun rows ->
-          of_list_sequential rows (fun row ->
-            return [Template.html_of_content (content_table [fastq_header; row])]))
-        ~error:(function
-        | `io_exn e ->
-          return  [[br ();
-                    strong [
-                      pcdataf "I/O Error while loading submission_fastq_info: %s"
-                        (Exn.to_string e)]]]
-        | e ->
-          return  [[br ();
-                    pcdataf "Error while loading submission_fastq_info"]])
-      >>= fun rows ->
-      let file_info_ul =
-        try 
-        List.map2_exn files rows ~f:(fun file row ->
-          li (file @ row))
-        with e -> List.map files ~f:(fun file -> li (file @ (List.flatten rows)))
-      in
-      return [li [title; ul file_info_ul]])
+    of_list_sequential submissions
+      (submission_list_item ~dbh ~configuration (fst lib_filtered) libname barcode)
     >>= fun fastq_paths ->
     return [
       content_section (pcdataf "Library Details") 
