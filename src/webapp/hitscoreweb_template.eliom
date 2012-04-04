@@ -634,7 +634,8 @@ module Highchart = struct
   let make_exn
       ?(with_legend=false) ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
     let open Html5 in
-    let container_id = unique_id "plot_container" in
+    let plot_id = unique_id "plot" in
+    let container_id = plot_id ^ "_container" in
     let highchart_script =
       let series =
         List.map spec (function
@@ -654,10 +655,10 @@ module Highchart = struct
           failwith "box_whisker-with-other-stuff: NOT IMPLEMENTED"
         | _ -> ("", standard_tooltip)
       in
-      script (ksprintf cdata "
-       \ var chart;
-       \ $(document).ready(function() {
-       \   chart = new Highcharts.Chart({
+      sprintf "
+       \ var %s_chart;
+       \ var %s_fun = (function() {
+       \   %s_chart = new Highcharts.Chart({
        \     chart: {renderTo: '%s'},
        \     title: {text: '%s'},
        \     xAxis: {categories: [%s]},
@@ -668,19 +669,20 @@ module Highchart = struct
        \     series: [%s]
        \   }%s);
        \ }); "
-                container_id plot_title categories
-                (y_max +. more_y)
-                (Option.value_map y_axis_title ~default:""
-                   ~f:(sprintf ", title: {text: '%s'}"))
-                tooltip
-                with_legend
-                series_string
-                more_code
-      )
+        plot_id plot_id plot_id
+        container_id plot_title categories
+        (y_max +. more_y)
+        (Option.value_map y_axis_title ~default:""
+           ~f:(sprintf ", title: {text: '%s'}"))
+        tooltip
+        with_legend
+        series_string
+        more_code
     in
-    [highchart_script;
-     div ~a:[ a_id container_id;
-              a_style "width: 90%; height: 500px" ] []]
+    let to_run = sprintf "(%s_fun ());" plot_id in
+    make_unsafe_eval_string_onload (highchart_script ^ to_run);
+    [div ~a:[ a_id container_id;
+               a_style "width: 90%; height: 500px" ] []]
 
 
   let make ?with_legend ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
