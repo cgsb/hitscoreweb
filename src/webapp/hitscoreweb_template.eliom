@@ -685,3 +685,35 @@ module Highchart = struct
         error (`error_while_preparing_highchart (e, plot_title))
       
 end
+
+
+let hide_show_div ?(a=[]) ?(display_property="block")
+    ?(start_hiddden=true) ~show_message ~hide_message inside =
+  let more_a = a in (* "a" will be hidden while opening Html5: *)
+  let open Html5 in
+  let the_div_id = unique_id "hide_show_div" in
+  let the_msg_id = unique_id "hide_show_msg" in
+  let initial_property = if start_hiddden then "none" else display_property in
+  let initial_message = if start_hiddden then show_message else hide_message in
+  let span_msg =
+    span ~a:[
+      a_id the_msg_id;
+      a_style "background-color: #ccc";
+      a_onclick {{
+        let the_div = get_element_exn %the_div_id in
+        let the_msg = get_element_exn %the_msg_id in
+        if the_div##style##display = Js.string "none"
+        then (
+          the_div##style##display <- Js.string %display_property;
+          the_msg##innerHTML <- Js.string %hide_message;
+        ) else (
+          the_div##style##display <- Js.string "none";
+          the_msg##innerHTML <- Js.string %show_message;
+        )
+      }} ]
+      [pcdata initial_message] in
+  (span_msg,
+   div ~a:(a_id the_div_id
+           :: ksprintf a_style "display: %s" initial_property
+           :: more_a)
+    inside)

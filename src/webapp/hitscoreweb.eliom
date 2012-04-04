@@ -969,7 +969,12 @@ module Libraries_service = struct
     | None -> return []
     | Some s ->
       double_bind (fastx_table s)
-        ~ok:(fun o -> return [Template.html_of_content (content_table o)])
+        ~ok:(fun o ->
+          let msg, div =
+            (Template.hide_show_div ~show_message:"Show table"
+               ~hide_message:"Hide table"
+               [Template.html_of_content (content_table o)]) in
+          return [br (); msg; div])
         ~error:(function
         | `empty_fastx_quality_stats s ->
           return [br (); pcdataf "ERROR: file %s gave empty quality stats" s]
