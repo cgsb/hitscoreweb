@@ -62,6 +62,10 @@ let stylesheet =
           ~path:["gencore_stylesheet"]
           ~get_params: Eliom_parameters.unit)
     
+let doc =
+  make (Eliom_services.service
+  ~path:["doc"]
+  ~get_params:Eliom_parameters.(suffix (all_suffix "path")))
 
 let register f =
   Output_app.register 

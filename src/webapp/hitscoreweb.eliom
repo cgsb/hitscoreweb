@@ -1396,15 +1396,38 @@ module Default_service = struct
         let welcome = [
           h2 [pcdata "Welcome"];
           p [
-            pcdata "This is Gencore's website; see also ";
+            pcdata "This is Gencore's website; for library submission information\
+                    see ";
+            Template.a_link Services.doc [pcdata "the FAQ"] ["help"; "faq.html"];
+            pcdata " or ";
             a ~a:[
               a_hreff "https://docs.google.com/a/nyu.edu/?tab=co#folders/\
                 0B6RMw3n537F2OTc3ZjZlMzktZTY2YS00MmI4LTk0MmQtZmZlYzQ3Nzk3YTRl"]
-              [pcdata "GenCore FAQs and Presentations"];
-            pcdata " on Google-Docs.";
+              [pcdata "GenCore's Google-Docs"];
+            pcdata ".";
           ];
         ] in
         return (header @ welcome @ menu)
+      in
+      Template.default ~title:"Home" content)
+
+end
+
+module Doc_service = struct
+
+  let make ~configuration =
+    (fun path () ->
+      let open Html5 in
+      let content = 
+        begin match Configuration.root_path configuration with
+        | Some p ->
+          read_file (String.concat ~sep:"/" (p :: "doc" :: path))
+          >>= fun file_content ->
+          let test = unsafe_data file_content in
+          return [div ~a:[a_style "text-align: justify; max-width:60em;"] [test]]
+        | None ->
+          error `root_directory_not_configured
+        end
       in
       Template.default ~title:"Home" content)
 
@@ -1515,6 +1538,9 @@ let () =
 
       Services.(register layout) 
         Layout_service.(make ~configuration:hitscore_configuration);
+
+      Services.(register doc) 
+        Doc_service.(make ~configuration:hitscore_configuration);
 
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);
