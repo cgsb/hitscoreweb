@@ -97,3 +97,13 @@ let fastx_stats_of_unaligned_volume ~dbh unaligned_pointer =
       List.last l
       |! Option.map ~f:Layout.File_system.unsafe_cast
       |! return))
+
+let person_of_any_identifier ~dbh identifier =
+  let query () =
+    PGSQL (dbh)
+      "SELECT g_id FROM person
+       WHERE login = $identifier OR email = $identifier"
+  in
+  Hitscoreweb_std.(
+    wrap_pgocaml ~query
+      ~on_result:(fun l -> return (List.map l Layout.Record_person.unsafe_cast)))

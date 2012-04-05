@@ -4,6 +4,7 @@ open Hitscoreweb_std
 
 module Services = Hitscoreweb_services
 
+module Queries = Hitscoreweb_queries
 
 type capability = [
 | `view of [`all 
@@ -18,7 +19,7 @@ type capability = [
 | `edit of [`layout]
 ]
 
-let roles_allow ?person roles cap =
+let roles_allow ?person roles (cap:capability) =
   match cap with
   | `edit something ->
     if List.exists roles (fun c -> c = `administrator) then
@@ -36,7 +37,8 @@ let roles_allow ?person roles cap =
         | `libraries_of [] -> false
         | `libraries_of people ->
           begin match person with
-          | Some p -> List.exists people ((=) p)
+          | Some p ->
+            List.exists people (fun x -> Layout.Record_person.(x.id = p.g_id))
           | None -> false
           end
         | _ -> false
@@ -45,7 +47,7 @@ let roles_allow ?person roles cap =
 
 type user_logged = {
   id: string;
-  person: Layout.Record_person.pointer option;
+  person: Layout.Record_person.t;
   roles: Layout.Enumeration_role.t list;
 }
     
@@ -53,16 +55,6 @@ type authentication_state = [
 | `nothing
 | `user_logged of user_logged
 | `insufficient_credentials of string
-| `wrong_pam of [ `pam_exn of exn]
-| `error of [ 
-  | `layout_inconsistency of
-      [ `Record of string] * [ `select_did_not_return_one_tuple of string * int ]
-  | `pg_exn of exn
-  | `too_many_persons_with_same_login of 
-      Layout.Record_person.pointer Core.Std.List.t 
-  | `auth_state_exn of exn
-  | `io_exn of exn
-]
 ]
 
 let authentication_history =
@@ -105,60 +97,52 @@ let user_logged () =
   | `user_logged u :: _ -> return (Some u)
   | _ -> return None
 
-let validate_user u =  (* TODO *)
-  let make_viewer id = return { id; roles = [`auditor]; person = None } in
+let find_user login =
   get_configuration () >>= fun configuration ->
-  let normal_validation login =
-    Hitscore_lwt.db_connect configuration >>= fun dbh ->
-    Layout.Search.record_person_by_login ~dbh (Some login)
+  Hitscore_lwt.with_database configuration (fun ~dbh ->
+    Queries.person_of_any_identifier ~dbh login
     >>= (function
     | [] -> error (`login_not_found login)
     | [one] -> return one
     | more -> error (`too_many_persons_with_same_login more))
     >>= fun found ->
-    Layout.Record_person.(
-      get ~dbh found >>= fun {email; roles; _ } ->
-      Hitscore_lwt.db_disconnect configuration dbh >>= fun () ->
-      return (email, Array.to_list roles))
-    >>= fun (id, roles) ->
-    return { id; roles; person = Some found}
-  in
-  match u with
-  | `login id when id = "smondet" -> make_viewer "smondet@localhost"
-  | `login id -> normal_validation id
+    Layout.Record_person.(get ~dbh found))
+      
+let make_user u = 
+  let module P = Layout.Record_person in
+  { id = u.P.email; roles = Array.to_list u.P.roles; person = u}
 
 let pam_auth ?service ~user ~password () =
   let service =
     Option.value ~default:!global_pam_service service in
   let wrap_pam f a = try Ok (f a) with e -> Error (`pam_exn e) in
   let auth () =
-    let open Result in
-    match wrap_pam (Simple_pam.authenticate service user) (password) with
-    | Ok () -> Ok user
-    | Error e -> Error e
+     wrap_pam (Simple_pam.authenticate service user) (password) 
   in
-  let m =
-    Lwt_preemptive.detach auth () 
-    >>= fun name ->
-    validate_user (`login name)
-  in
-  double_bind m
-    ~ok:(fun user -> set_state (`user_logged user))
-    ~error:(function
-    | `pam_exn _ as e -> set_state (`wrong_pam e)
-    | `email_no_allowed s
-    | `login_not_found s -> set_state (`insufficient_credentials s)
-    | `layout_inconsistency (`Record _,
-                             `select_did_not_return_one_tuple (_, _)) 
-    | `io_exn _
-    | `auth_state_exn _
-    | `pg_exn _ 
-    | `too_many_persons_with_same_login _ as e -> set_state (`error e)
-    )
-
+  Lwt_preemptive.detach auth () 
+      
 let check = function
-  | `pam (user, password) ->
-    pam_auth ~user ~password ()
+  | `user_password (identifier, password) ->
+    let open Layout.Record_person in
+    let checking_m =
+      find_user identifier >>= fun person ->
+      if person.password_hash = Some Digest.(string password |! to_hex)
+      then
+        set_state (`user_logged (make_user person))
+      else
+        begin
+          of_option person.login (fun user -> pam_auth ~user ~password ())
+          >>= fun pammed ->
+          if pammed = Some ()
+          then
+            set_state (`user_logged (make_user person))
+          else 
+            set_state (`insufficient_credentials identifier)
+        end
+    in
+    double_bind checking_m
+      ~ok:return
+      ~error:(fun e -> set_state (`insufficient_credentials identifier))
 
 let logout () =
   set_state `nothing
@@ -166,7 +150,7 @@ let logout () =
 let authorizes (cap:capability) =
   user_logged () >>= 
     begin function
-    | Some u -> return (roles_allow ?person:u.person u.roles cap)
+    | Some u -> return (roles_allow ~person:u.person u.roles cap)
     | _ -> return !global_authentication_disabled
     end
 
@@ -205,7 +189,7 @@ let login_coservice =
           ~post_params:Eliom_parameters.(string "user" ** string "pwd")
           (fun () (user, pwd) ->
             if Eliom_request_info.get_ssl () then
-              (check (`pam (user,pwd))
+              (check (`user_password (user,pwd))
                >>= function
                | Ok () ->
                  return ()
@@ -294,30 +278,13 @@ let display_state ?in_progress_element () =
     | `user_logged u -> 
       span [
         pcdata "User: ";
-        begin match u.person with
-        | Some t -> 
-          Eliom_output.Html5.a ~service:(Services.persons ())
-            [pcdataf "%s" u.id] (Some true, [u.id])
-        | None -> pcdataf "[%s]" u.id
-        end;
+        Eliom_output.Html5.a ~service:(Services.persons ())
+          [pcdataf "%s" u.id] (Some true, [u.id]);
         pcdataf " (%s)"
           (String.concat ~sep:", " (List.map u.roles 
                                       Layout.Enumeration_role.to_string));
       ]
     | `insufficient_credentials s -> pcdataf "Wrong credentials for: %s" s
-    | `wrong_pam (`pam_exn e) ->
-      pcdataf "Authentication failure";
-    | `error e -> 
-      begin match e with
-      | `layout_inconsistency (`Record _, 
-                               `select_did_not_return_one_tuple (s, i)) ->
-        pcdataf "ERROR: LI: More than one tuple: %s, %d" s i
-      | `auth_state_exn e | `io_exn e | `pg_exn e ->
-        pcdataf "ERROR: I/O/PG: %s" (Exn.to_string e)
-      | `too_many_persons_with_same_login tl ->
-        pcdataf "ERROR: Found %d persons with same login" (List.length tl)
-          
-      end
   in
   return (state
           :: (match s with
