@@ -1218,6 +1218,7 @@ module Evaluations_service = struct
           (let tiles = (Option.value ~default:"" tiles) in
           `sortable (tiles, [codef "%s"tiles]));
           (let kind = (match kind with
+            | `no_demultiplexing -> "No Demultiplexing"
             | `all_barcodes -> "All barcodes"
             | `specific_barcodes -> "Specific barcodes") in
           `sortable (kind,
