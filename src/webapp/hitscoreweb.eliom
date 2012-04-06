@@ -1424,11 +1424,49 @@ module Doc_service = struct
       let open Html5 in
       let content = 
         begin match Configuration.root_path configuration with
-        | Some p ->
-          read_file (String.concat ~sep:"/" (p :: "doc" :: path))
+        | Some rootpath ->
+          read_file (String.concat ~sep:"/" (rootpath :: "doc" :: path))
           >>= fun file_content ->
-          let test = unsafe_data file_content in
-          return [div ~a:[a_style "text-align: justify; max-width:60em;"] [test]]
+          let xml =
+            let content = "<content>" ^ file_content ^ "</content>" in
+            Xml_tree.(in_tree (make_input (`String (0, content)))) in
+          let continue l f = List.map l f |! List.flatten in
+          let find_attr name attrs =
+            List.find_map attrs (fun ((_, attr), value) ->
+              if name = attr then Some value else None) in
+              
+          let rec go_through = function
+            | `E (((_,"content"), _), inside) -> continue inside go_through
+            | `E (((_,"h1"), _), inside) -> [h1 (continue inside go_through_inline)]
+            | `E (((_,"h2"), _), inside) -> [h2 (continue inside go_through_inline)]
+            | `E (((_,"h3"), _), inside) -> [h3 (continue inside go_through_inline)]
+            | `E (((_,"p"), _), inside) -> [p (continue inside go_through_inline)]
+            | `E (((_,"ul"), _), inside) -> [ul (continue inside go_through_list)]
+            | `E (((_,"ol"), _), inside) -> [ol (continue inside go_through_list)]
+            | `E (_) as e -> [span (continue [e] go_through_inline)]
+            | `D s -> [pcdata s]
+          and go_through_list = function
+            | `E (((_,"li"), _), inside) -> [li (continue inside go_through)]
+            | `E (t, tl) -> []
+            | `D s -> []
+          and go_through_inline = function
+            | `E (((_,"a"), attr), inside) ->
+              let html_attrs =
+                List.filter_opt [
+                  Option.map (find_attr "id" attr) a_id;
+                  Option.map (find_attr "href" attr) (a_hreff "%s");
+                ] in
+              [span [a ~a:html_attrs (continue inside go_through_inline)]]
+            | `E (((_,"i"), _), inside) -> [i (continue inside go_through_inline)]
+            | `E (((_,"b"), _), inside) -> [b (continue inside go_through_inline)]
+            | `E (((_,"tt"), _), inside) -> [kbd (continue inside go_through_inline)]
+            | `E (((_,"code"), _), inside) ->
+              [code (continue inside go_through_inline)]
+            | `E (t, tl) -> continue tl go_through_inline
+            | `D s -> [pcdata s]
+          in
+          let html = go_through (snd xml) in
+          return [div ~a:[a_style "text-align: justify; max-width:60em;"] html]
         | None ->
           error `root_directory_not_configured
         end
