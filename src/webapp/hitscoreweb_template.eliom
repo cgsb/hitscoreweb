@@ -185,6 +185,9 @@ let rec html_of_error poly_error =
        html_of_error e)
   | `no_lane_index (fcid, pointer) ->
     [pcdataf "no_lane_index: %S (lane %ld)" fcid pointer.Layout.Record_lane.id]
+  | `xml_parsing_error ((l, c), e) ->
+    [pcdataf "Error while parsing the XML: Line %d, Character %d: %s"
+        l c (Xml_tree.error_message e)]
   | `layout_inconsistency (place, problem) ->
     let place_presentation =
       match place with

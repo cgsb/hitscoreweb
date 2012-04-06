@@ -1428,9 +1428,13 @@ module Doc_service = struct
         | Some rootpath ->
           read_file (String.concat ~sep:"/" (rootpath :: "doc" :: path))
           >>= fun file_content ->
-          let xml =
+          begin try
             let content = "<content>" ^ file_content ^ "</content>" in
-            Xml_tree.(in_tree (make_input (`String (0, content)))) in
+            return Xml_tree.(in_tree (make_input (`String (0, content))))
+            with
+            | Xml_tree.Error (p, e) -> error (`xml_parsing_error (p, e))
+          end
+          >>= fun xml ->
           let continue l f = List.map l f |! List.flatten in
           let find_attr name attrs =
             List.find_map attrs (fun ((_, attr), value) ->
