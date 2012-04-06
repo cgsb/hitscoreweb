@@ -84,7 +84,7 @@ let config
     ?(authentication=`pam "login") ?(debug=false)
     ?ssl
     ?(port=80) ~runtime_root ?conf_root ?ssl_dir
-    ~static_dir ?log_root kind output_string =
+    ~static_dirs ?log_root kind output_string =
   let out = output_string in
   let line out fmt = ksprintf out (fmt ^^ "\n") in
   let conf_dir = Option.value ~default:runtime_root conf_root in
@@ -135,8 +135,11 @@ let config
     conf_dir |> output_string;
   output_string " <charset>utf-8</charset> <debugmode/>\n";
   output_string extensions;
-  ksprintf output_string "<host hostfilter=\"*\">\n <static dir=\"%s/\" /> %s\n"
-    static_dir hitscore_module;
+  ksprintf output_string "<host hostfilter=\"*\">\n";
+  List.iter static_dirs (fun static_dir ->
+    ksprintf output_string " <static dir=\"%s/\" />\n" static_dir;
+  );
+  ksprintf output_string " %s\n" hitscore_module;
   Hitscore_configuration.(Option.(
     let (>>) x f = iter x ~f in
     !global_hitscore_configuration >> (fun c ->
@@ -179,26 +182,25 @@ let syscmd_exn s = syscmd s |> Result.raise_error
 
 let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
   let runtime_root = "/tmp/hitscoreweb" in
+  let www_dir =
+    Option.(bind !global_hitscore_configuration
+              Hitscore_configuration.root_path |! value_exn) ^ "/www" in
   let exec =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
   let open Result in
-  syscmd (sprintf "mkdir -p %s/static/" runtime_root) |> raise_error;
+  syscmd (sprintf "rm -fr %s/static/ && mkdir -p %s/static/"
+            runtime_root runtime_root) |> raise_error;
   let open Out_channel in
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
   with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
     ~f:(fun o -> config ?authentication ?ssl ?ssl_dir
-      ?debug ~static_dir:(runtime_root ^ "/static")
+      ?debug ~static_dirs:[runtime_root ^ "/static"; www_dir]
       ~port ~runtime_root kind (output_string o));
   syscmdf "cp _build/hitscoreweb/hitscoreweb.js %s/static/" 
     runtime_root |! raise_error;
   syscmdf "cp _build/hitscoreweb/hitscoreweb.css %s/static/" 
     runtime_root |! raise_error;
-  begin match Option.bind !global_hitscore_configuration
-      Hitscore_configuration.root_path with
-  | Some rp -> syscmdf "cp -r %s/www/* %s/static/" rp runtime_root |! raise_error
-  | None -> failwithf "Root path not configured" ()
-  end;
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
 
 
@@ -371,7 +373,7 @@ let rpm_build ?(release=1) ?ssl ?ssl_dir () =
   let css_target =
     sprintf "%s/hitscoreweb.css" static_dir in
   
-  let static_source =
+  let static_www =
     match Option.bind !global_hitscore_configuration
       Hitscore_configuration.root_path with
       | Some rp -> sprintf "%s/www/" rp
@@ -388,7 +390,8 @@ let rpm_build ?(release=1) ?ssl ?ssl_dir () =
     ~f:(fun o -> output_string o (mime_types));
 
   with_file conf_tmp ~f:(fun o -> 
-    config ~port:80 ~runtime_root ~conf_root ?ssl ?ssl_dir ~static_dir 
+    config ~port:80 ~runtime_root ~conf_root ?ssl ?ssl_dir
+      ~static_dirs:[static_dir;  static_www]
       ~log_root:log_dir `Static (output_string o));
   
   with_file sysv_tmp ~f:(fun o ->
@@ -444,7 +447,6 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" javascript_tmp static_dir;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" css_tmp static_dir;
-    fprintf o "cp -r %s/* $RPM_BUILD_ROOT/%s\n" static_source static_dir;
     output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
