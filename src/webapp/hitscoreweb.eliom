@@ -986,16 +986,18 @@ module Libraries_service = struct
                ~hide_message:"Hide FASTX quality stats table"
                [Template.html_of_content (content_table o)]) in
           return [Template.pretty_box [msg; div]])
-        ~error:(function
-        | `empty_fastx_quality_stats s ->
-          return [br (); pcdataf "ERROR: file %s gave empty quality stats" s]
-        | `error_in_fastx_quality_stats_parsing (s, sll) ->
-          return [br ();
-                  pcdataf "ERROR: parsing file %s gave an error (%d)"
-                    s (List.length sll)]
-        | `io_exn e ->
-          return [br (); pcdataf "I/O Error in with fastx: %s\n%!"
-            (Exn.to_string e)])
+        ~error:(fun e ->
+          let errf fmt =
+            ksprintf (fun s -> [br(); Template.error_span [pcdata s]]) fmt in
+          begin match e with
+          | `empty_fastx_quality_stats s ->
+            return (errf "ERROR: file %s gave empty quality stats" s)
+          | `error_in_fastx_quality_stats_parsing (s, sll) ->
+            return (errf "ERROR: parsing file %s gave an error (%d)"
+                      s (List.length sll))
+          | `io_exn e ->
+            return (errf "I/O Error in with fastx: %s\n%!" (Exn.to_string e))
+          end)
     end
 
   let fastx_quality_plots path =
@@ -1042,10 +1044,12 @@ module Libraries_service = struct
       >>= fun acgtnplot ->
       return (acgtnplot @ qplot)
     in
+    let errf fmt =
+      ksprintf (fun s -> [br(); Template.error_span [pcdata s]]) fmt in
     double_bind make_chart 
       ~ok:(fun chart ->
         return chart)
-      ~error:(fun _ -> return [pcdataf "ERROR while getting the fastx plot"])
+      ~error:(fun _ -> return (errf "ERROR while getting the fastx plot"))
       
   let submission_list_item ~dbh ~configuration libinfo libname barcode submission =
     let open Html5 in
