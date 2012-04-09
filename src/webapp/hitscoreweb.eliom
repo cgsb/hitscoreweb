@@ -496,6 +496,8 @@ module Flowcell_service = struct
               strong [pcdataf "Mismatch: "]; pcdataf "%ld, " b2f_eval.mismatch;
               strong [pcdataf "Version: "]; pcdataf "%s, " b2f_eval.version;
               strong [pcdataf "Tiles: "]; pcdataf "%s, " (opt b2f_eval.tiles);
+              strong [pcdataf "Bases-Mask: "]; pcdataf "%s, "
+                (opt b2f_eval.bases_mask);
             ] in
             let section =
               content_section title (content_list (intro :: stats :: [])) in
@@ -1151,8 +1153,8 @@ module Evaluations_service = struct
     if List.length b2fs > 0 then (
       of_list_sequential b2fs ~f:(fun b2f ->
         B2F.get ~dbh b2f
-        >>= fun {B2F.raw_data; availability; mismatch; version;
-  	         tiles; sample_sheet; } ->
+        >>= fun {B2F.g_id; raw_data; availability; mismatch; version;
+  	         tiles; bases_mask; sample_sheet; } ->
         HSR.get ~dbh raw_data
         >>= fun { HSR.flowcell_name; _ } ->
         Queries.sample_sheet_kind ~dbh sample_sheet
@@ -1167,11 +1169,14 @@ module Evaluations_service = struct
         let fc_link = 
           Template.a_link Services.flowcell [pcdata flowcell_name] (flowcell_name) in
         return [
+          `sortable (sprintf "%ld" g_id, [codef "%ld" g_id]);
           `sortable (flowcell_name, [fc_link]);
           `sortable (Int32.to_string mismatch, [pcdataf "%ld" mismatch]);
           `sortable (version, [pcdataf "%s" version]);
           (let tiles = (Option.value ~default:"" tiles) in
-          `sortable (tiles, [codef "%s"tiles]));
+          `sortable (tiles, [codef "%s" tiles]));
+          (let bmsk = (Option.value ~default:"" bases_mask) in
+          `sortable (bmsk, [codef "%s" bmsk]));
           (let kind = (match kind with
             | `no_demultiplexing -> "No Demultiplexing"
             | `all_barcodes -> "All barcodes"
@@ -1189,10 +1194,12 @@ module Evaluations_service = struct
       return Template.(
         let tab = 
           content_table (
-            [`head [pcdata "Flowcell"]; 
+            [`head [pcdata "Id"];
+             `head [pcdata "Flowcell"]; 
              `head [pcdata "Mismatch"];
              `head [pcdata "Version"];
              `head [pcdata "Tiles Option"];
+             `head [pcdata "Bases-Mask Option"];
              `head [pcdata "Kind of sample-sheet"];
             ] :: rows)
         in
