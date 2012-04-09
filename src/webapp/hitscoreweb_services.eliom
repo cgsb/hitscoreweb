@@ -67,6 +67,11 @@ let doc =
   ~path:["doc"]
   ~get_params:Eliom_parameters.(suffix (all_suffix "path")))
 
+let self =
+  make (Eliom_services.service
+          ~path:["self"]
+          ~get_params:Eliom_parameters.unit)
+    
 let register f =
   Output_app.register 
     ~error_handler:(fun sel -> 

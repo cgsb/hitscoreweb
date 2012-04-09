@@ -8,6 +8,7 @@ module Queries = Hitscoreweb_queries
 
 type capability = [
 | `view of [`all 
+           | `self
            | `all_evaluations
            | `all_flowcells
            | `layout
@@ -16,11 +17,12 @@ type capability = [
            | `libraries_of of Layout.Record_person.pointer list
            | `full_persons
            | `full_flowcell]
-| `edit of [`layout]
+| `edit of [`self | `layout]
 ]
 
 let roles_allow ?person roles (cap:capability) =
   match cap with
+  | `edit `self | `view `self -> person <> None
   | `edit something ->
     if List.exists roles (fun c -> c = `administrator) then
       true
@@ -278,8 +280,7 @@ let display_state ?in_progress_element () =
     | `user_logged u -> 
       span [
         pcdata "User: ";
-        Eliom_output.Html5.a ~service:(Services.persons ())
-          [pcdataf "%s" u.id] (Some true, [u.id]);
+        Eliom_output.Html5.a ~service:(Services.self ()) [pcdataf "%s" u.id] ();
         pcdataf " (%s)"
           (String.concat ~sep:", " (List.map u.roles 
                                       Layout.Enumeration_role.to_string));

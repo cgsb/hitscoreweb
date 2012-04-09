@@ -216,6 +216,63 @@ module Persons_service = struct
 
 end
 
+module Self_service = struct
+
+  let make_self_page ~configuration =
+    let open Html5 in
+    let open Template in
+    Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
+      Authentication.user_logged ()
+      >>= function
+      | None ->
+        return (content_paragraph [pcdataf "No User logged"])
+      | Some u ->
+        let open Layout.Record_person in
+        let person = u.Authentication.person in
+        let display title thing =
+          [strong [pcdataf "%s: " title]; em [pcdataf "%s." thing]] in
+        let display_opt title opt =
+          display title (Option.value ~default:"N/A" opt) in
+        let display_array title arr =
+          display title
+            (match arr with
+            | [| |] -> "N/A"
+            | s -> Array.to_list s |! String.concat ~sep:", ") in
+        return (content_paragraph
+                  [ul [
+                    li (display_opt "Print Name" person.print_name);
+                    li (display "Given Name" person.given_name);
+                    li (display_opt "Middle Name" person.middle_name);
+                    li (display "Family Name" person.family_name);
+                    li (display_opt "Nick Name" person.nickname);
+                    li (display "Primary Email" person.email);
+                    li (display_array "Secondary Emails" person.secondary_emails);
+                    li (display_opt "Login/NetID" person.login);
+                    li (display "Authentication"
+                          (match person.password_hash, person.login with
+                          | None, None -> "Impossible"
+                          | None, Some _ -> "NYU Only"
+                          | Some _, None -> "Gencore password set (No NYU)"
+                          | Some _, Some _ ->
+                            "Gencore Passowrd set + NYU Available"));
+                   ]])
+    )
+      
+  let make ~configuration =
+    (fun () () ->
+      Template.default ~title:"User Page"
+        (Authentication.authorizes (`view `self)
+         >>= function
+         | true ->
+           Template.make_content ~configuration ~main_title:"About Yourself" 
+             (make_self_page ~configuration)
+         | false ->
+           Template.make_authentication_error ~configuration
+             ~main_title:"User Page" 
+             (return [Html5.pcdataf "You shall not view nor edit anything there."])))
+
+end
+
 module Flowcell_service = struct
     
 
@@ -1588,6 +1645,9 @@ let () =
 
       Services.(register doc) 
         Doc_service.(make ~configuration:hitscore_configuration);
+
+      Services.(register self) 
+        Self_service.(make ~configuration:hitscore_configuration);
 
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);
