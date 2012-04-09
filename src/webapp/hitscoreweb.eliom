@@ -1,5 +1,7 @@
 open Hitscoreweb_std
 
+module Data_access = Hitscoreweb_data_access
+
 module Queries = Hitscoreweb_queries
 
 module Services = Hitscoreweb_services
@@ -1619,6 +1621,10 @@ let () =
             ?vol_directory:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
             ?root_path:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
+        Data_access.init
+          ~loop_time:(if !debug_mode then 30. else 300.)
+          ~configuration:config ()
+        |! Lwt.ignore_result;
         config
       in
 
@@ -1652,5 +1658,6 @@ let () =
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);
 
+      
     )
 
