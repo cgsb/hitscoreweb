@@ -2,6 +2,8 @@
 open Hitscoreweb_std
 }}
 
+module Data_access = Hitscoreweb_data_access
+  
 module Services = Hitscoreweb_services
 
 module Queries = Hitscoreweb_queries
@@ -100,16 +102,15 @@ let user_logged () =
   | _ -> return None
 
 let find_user login =
-  get_configuration () >>= fun configuration ->
-  Hitscore_lwt.with_database configuration (fun ~dbh ->
-    Queries.person_of_any_identifier ~dbh login
-    >>= (function
-    | [] -> error (`login_not_found login)
-    | [one] -> return one
-    | more -> error (`too_many_persons_with_same_login more))
-    >>= fun found ->
-    Layout.Record_person.(get ~dbh found))
-      
+  Data_access.find_person login
+  >>= fun found ->
+  begin match found with
+  | Some p -> return p
+  | None ->
+    eprintf "login_not_found\n%!";
+    error (`login_not_found login)
+  end
+    
 let make_user u = 
   let module P = Layout.Record_person in
   { id = u.P.email; roles = Array.to_list u.P.roles; person = u}
