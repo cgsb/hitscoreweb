@@ -1014,7 +1014,7 @@ module Libraries_service = struct
         let nb0 f = `number (sprintf "%.0f", f) in 
         let nb2 f = `number (sprintf "%.2f", f) in 
         [nb0 bfxqs_column; nb0 bfxqs_count; nb0 bfxqs_min; nb0 bfxqs_max;
-         nb0 bfxqs_sum; nb0 bfxqs_mean; nb0 bfxqs_Q1; nb2 bfxqs_med;
+         nb0 bfxqs_sum; nb2 bfxqs_mean; nb0 bfxqs_Q1; nb0 bfxqs_med;
          nb0 bfxqs_Q3; nb0 bfxqs_IQR; nb0 bfxqs_lW; nb0 bfxqs_rW;
          nb0 bfxqs_A_Count; nb0 bfxqs_C_Count; nb0 bfxqs_G_Count;
          nb0 bfxqs_T_Count; nb0 bfxqs_N_Count;
