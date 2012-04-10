@@ -232,12 +232,13 @@ let rec html_of_error poly_error =
      @ [pcdata ":"; br ()]
      @ error_message)
 
-let a_link ?(a=[]) service content args =
+let a_link ?(a=[]) ?fragment service content args =
   let unique_elt =
     let aa = a in
     HTML5.M.(unique
              (span
-                [Eliom_output.Html5.a ~a:aa ~service:(service ()) content args]))
+                [Eliom_output.Html5.a ~a:aa ?fragment
+                    ~service:(service ()) content args]))
   in
   in_progress_animation_handler unique_elt;
   unique_elt

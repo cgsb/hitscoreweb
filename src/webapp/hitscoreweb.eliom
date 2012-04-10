@@ -1448,9 +1448,13 @@ module Doc_service = struct
                   match content with
                   | [] -> []
                   | l -> [ol (frec l)] in
-                li (span [a ~a:[ a_hreff "#%s" id ] name] :: next)
+                li (span [Eliom_output.Html5.a ~fragment:id
+                             ~service:Eliom_services.void_coservice'
+                             name ()] :: next)
               | `N (id, name) ->
-                li (span [a ~a:[ a_hreff "#%s" id ] name] :: [])
+                li (span [Eliom_output.Html5.a ~fragment:id
+                             ~service:Eliom_services.void_coservice'
+                             name ()] :: [])
               ) in
             ol (frec !toc)
           in
@@ -1470,21 +1474,25 @@ module Doc_service = struct
             | `D s -> []
           and go_through_inline = function
             | `E (((_,"a"), attr), inside) ->
-              let html_attrs =
-                let id = 
-                  match find_attr "id" attr with
-                  | Some s -> s
-                  | None -> unique_id "a_id_" in
-                let href =
-                  Option.map (find_attr "href" attr) (fun s ->
-                    if String.is_prefix s ~prefix:"mailto:" then (
-                      Template.anti_spam_mailto ~id ~mailto:s;
-                      a_hreff "ah ah no-spam"
-                    ) else
-                      a_hreff "%s" s)
-                in
-                List.filter_opt [Some (a_id id); href] in
-              [span [a ~a:html_attrs (continue inside go_through_inline)]]
+              let id = 
+                match find_attr "id" attr with
+                | Some s -> s
+                | None -> unique_id "a_id_" in
+              begin match find_attr "href" attr with
+              | None ->
+                [span [a ~a:[a_id id] (continue inside go_through_inline)]]
+              | Some s when String.is_prefix s ~prefix:"mailto:" ->
+                Template.anti_spam_mailto ~id ~mailto:s;
+                [span [a ~a:[a_id id; a_hreff "ah ah no-spam"]
+                          (continue inside go_through_inline)]]
+              | Some s when String.is_prefix s ~prefix:"#" ->
+                [span [Eliom_output.Html5.a ~fragment:(String.chop_prefix_exn s "#")
+                          ~service:Eliom_services.void_coservice'
+                          (continue inside go_through_inline) ()]]
+              | Some s ->
+                [span [a ~a:[a_id id; a_hreff "%s" s]
+                          (continue inside go_through_inline)]]
+              end
             | `E (((_,"i"), _), inside) -> [i (continue inside go_through_inline)]
             | `E (((_,"b"), _), inside) -> [b (continue inside go_through_inline)]
             | `E (((_,"tt"), _), inside) -> [kbd (continue inside go_through_inline)]
