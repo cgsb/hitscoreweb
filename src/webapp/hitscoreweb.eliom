@@ -1471,10 +1471,19 @@ module Doc_service = struct
           and go_through_inline = function
             | `E (((_,"a"), attr), inside) ->
               let html_attrs =
-                List.filter_opt [
-                  Option.map (find_attr "id" attr) a_id;
-                  Option.map (find_attr "href" attr) (a_hreff "%s");
-                ] in
+                let id = 
+                  match find_attr "id" attr with
+                  | Some s -> s
+                  | None -> unique_id "a_id_" in
+                let href =
+                  Option.map (find_attr "href" attr) (fun s ->
+                    if String.is_prefix s ~prefix:"mailto:" then (
+                      Template.anti_spam_mailto ~id ~mailto:s;
+                      a_hreff "ah ah no-spam"
+                    ) else
+                      a_hreff "%s" s)
+                in
+                List.filter_opt [Some (a_id id); href] in
               [span [a ~a:html_attrs (continue inside go_through_inline)]]
             | `E (((_,"i"), _), inside) -> [i (continue inside go_through_inline)]
             | `E (((_,"b"), _), inside) -> [b (continue inside go_through_inline)]

@@ -116,6 +116,9 @@ let get_element_exn s =
 let get_element s =
   Js.Opt.to_option (Dom_html.document##getElementById (Js.string s))
 
+module String = struct
+  include String
+end
 }}
 
 let pretty_string_of_float ?(sof=sprintf "%.3f") f = 

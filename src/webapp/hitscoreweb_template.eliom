@@ -773,3 +773,31 @@ let pretty_box content =
 let error_span content =
   let open Html5 in
   span ~a:[ a_style "background-color: #ecc" ] [strong content]
+
+{client{
+  let string_map ~f s =
+    let res = String.create (String.length s) in
+    let c = ref 0 in
+    String.iter (fun char ->
+      res.[!c] <- f char;
+      incr c)
+      s;
+    res
+
+  let involution =
+    string_map ~f:(fun char -> char_of_int ((int_of_char char + 128) mod 256))
+
+}}
+let involution =
+  String.map ~f:(fun char -> char_of_int ((int_of_char char + 128) mod 256))
+        
+let anti_spam_mailto ~id ~mailto =
+  let (encoded:string) = (involution mailto : string) in
+  Eliom_services.onload {{
+    let open Dom_html in
+    begin match opt_tagged (document##getElementById (Js.string %id)) with
+    | Some (A anchor) ->
+      anchor##href <- Js.string (involution %encoded)
+    | _ -> ()
+    end
+  }}
