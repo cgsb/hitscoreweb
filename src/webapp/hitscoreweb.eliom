@@ -1401,7 +1401,59 @@ module Doc_service = struct
           let find_attr name attrs =
             List.find_map attrs (fun ((_, attr), value) ->
               if name = attr then Some value else None) in
-              
+          let toc = ref [] in
+          let n level l =
+            let id = unique_id "h" in
+            begin match level with
+            | 1 -> toc := `N ((id, l)) :: !toc;
+            | 2 ->
+              begin match !toc with
+              | `C (hh1, chh2) :: rest ->
+                toc := `C (hh1, `N (id, l) :: chh2) :: rest
+              | `N (hh1) :: rest ->
+                toc := `C (hh1, `N (id, l) :: []) :: rest
+              | [] ->
+                toc := `C (("noid", [pcdata "no h1"]), [`N (id,l)]) :: [];
+              end;
+            | 3 ->
+              begin match !toc with
+              | [] ->
+                toc := `C (("noid", [pcdata "no h1"]),
+                           [`C (("noid", [pcdata "no h2"]), [`N (id,l)])]) :: [];
+              | `N hh1 :: rest | `C (hh1, []) :: rest->
+                toc := `C (hh1,
+                           [`C (("noid", [pcdata "no h2"]),
+                                [`N (id,l)])]) :: rest;
+              | `C (hh1, `N hh2 :: rest2) :: rest1 ->
+                toc := `C (hh1,
+                           `C (hh2,
+                               [`N (id,l)]) :: rest2) :: rest1;
+              | `C (hh1, `C (hh2, chh2) :: rest2) :: rest1 ->
+                toc := `C (hh1,
+                           `C (hh2,
+                               `N (id,l) :: chh2) :: rest2) :: rest1;
+              end
+            | n -> failwithf "TOC Generation for level %d: NOT IMPLEMENTED" n ()
+            end;
+            id in
+            
+          let h1 l = Html5.h1 ~a:[a_id (n 1 l)] l in 
+          let h2 l = Html5.h2 ~a:[a_id (n 2 l)] l in 
+          let h3 l = Html5.h3 ~a:[a_id (n 3 l)] l in 
+          let make_toc () =
+            let rec frec subtoc =
+              List.rev_map subtoc ~f:(function
+              | `C ((id, name), content) ->
+                let next =
+                  match content with
+                  | [] -> []
+                  | l -> [ol (frec l)] in
+                li (span [a ~a:[ a_hreff "#%s" id ] name] :: next)
+              | `N (id, name) ->
+                li (span [a ~a:[ a_hreff "#%s" id ] name] :: [])
+              ) in
+            ol (frec !toc)
+          in
           let rec go_through = function
             | `E (((_,"content"), _), inside) -> continue inside go_through
             | `E (((_,"h1"), _), inside) -> [h1 (continue inside go_through_inline)]
@@ -1433,7 +1485,8 @@ module Doc_service = struct
             | `D s -> [pcdata s]
           in
           let html = go_through (snd xml) in
-          return [div ~a:[a_style "text-align: justify; max-width:60em;"] html]
+          return [div ~a:[ a_class ["doc_toc"]] (try [make_toc ()] with e -> []);
+                  div ~a:[a_class ["doc_doc"]] html]
         | None ->
           error `root_directory_not_configured
         end
@@ -1525,7 +1578,7 @@ let () =
             ?root_path:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
         Data_access.init
-          ~loop_time:(if !debug_mode then 30. else 300.)
+          ~loop_time:(if !debug_mode then 90. else 600.)
           ~configuration:config ()
         |! Lwt.ignore_result;
         config

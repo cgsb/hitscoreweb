@@ -115,7 +115,25 @@ let css_service_handler ~configuration () () =
   out ".content_table_head,.content_table_text,.content_table_number {
           max-width: 40em;
           border: 1px solid black; padding: 3px; }"; 
-  out ".content_table_number {text-align:right; font-family: monospace};\n";
+  out ".content_table_number {text-align:right; font-family: monospace}\n";
+
+  out "
+    @media (max-width: 73em) {
+      .doc_toc {
+        margin-right: 1em;
+      }
+    }
+    @media (min-width: 73em) {
+      .doc_toc {
+        position:fixed;
+        overflow: auto; max-width: 40em;
+        top: 100px; left: 53em;
+        margin-right: 1em;
+      }
+    } ";
+  out ".doc_doc {text-align: justify; max-width:50em;
+         margin-right: 1em; margin-bottom: 3em;}";
+
   Lwt.return (Buffer.contents css)
 
 let rec html_of_error poly_error = 
