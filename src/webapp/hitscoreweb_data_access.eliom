@@ -13,7 +13,6 @@ let rec update  ~configuration () =
   with_database configuration (fun ~dbh ->
     begin match !_global_broker with
     | Some b ->
-      eprintf "Reload Dump!\n%!";
       Broker.reload b ~dbh ~configuration 
     | None -> return ()
     end)
