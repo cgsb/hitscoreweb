@@ -1402,8 +1402,20 @@ module Doc_service = struct
             List.find_map attrs (fun ((_, attr), value) ->
               if name = attr then Some value else None) in
           let toc = ref [] in
-          let n level l =
-            let id = unique_id "h" in
+          let n a level l =
+            let new_a, id =
+              let already = 
+                List.find_map (to_xmlattribs a) ~f:(fun xmla ->
+                  let open XML in
+                  if aname xmla = "id" then
+                    begin match acontent xmla with
+                    | AStr s -> Some s
+                    | _ -> None
+                    end
+                  else None) in
+              match already with
+              | None -> let id = unique_id "h" in (a_id id :: a, id) 
+              | Some id -> (a, id) in
             begin match level with
             | 1 -> toc := `N ((id, l)) :: !toc;
             | 2 ->
@@ -1435,11 +1447,11 @@ module Doc_service = struct
               end
             | n -> failwithf "TOC Generation for level %d: NOT IMPLEMENTED" n ()
             end;
-            id in
-            
-          let h1 l = Html5.h1 ~a:[a_id (n 1 l)] l in 
-          let h2 l = Html5.h2 ~a:[a_id (n 2 l)] l in 
-          let h3 l = Html5.h3 ~a:[a_id (n 3 l)] l in 
+            new_a
+          in
+          let h1 ?(a=[]) l = Html5.h1 ~a:(n a 1 l) l in 
+          let h2 ?(a=[]) l = Html5.h2 ~a:(n a 2 l) l in 
+          let h3 ?(a=[]) l = Html5.h3 ~a:(n a 3 l) l in 
           let make_toc () =
             let rec frec subtoc =
               List.rev_map subtoc ~f:(function
@@ -1458,11 +1470,23 @@ module Doc_service = struct
               ) in
             ol (frec !toc)
           in
+          let propagate_common attr =
+            List.filter_opt [
+              Option.map (find_attr "id" attr) (a_id);
+              Option.map (find_attr "class" attr) (fun s ->
+                a_class (String.split ~on:' ' s));
+            ] in
           let rec go_through = function
             | `E (((_,"content"), _), inside) -> continue inside go_through
-            | `E (((_,"h1"), _), inside) -> [h1 (continue inside go_through_inline)]
-            | `E (((_,"h2"), _), inside) -> [h2 (continue inside go_through_inline)]
-            | `E (((_,"h3"), _), inside) -> [h3 (continue inside go_through_inline)]
+            | `E (((_,"h1"), attr), inside) ->
+              let a = propagate_common attr in
+              [h1 ~a (continue inside go_through_inline)]
+            | `E (((_,"h2"), attr), inside) ->
+              let a = propagate_common attr in
+              [h2 ~a (continue inside go_through_inline)]
+            | `E (((_,"h3"), attr), inside) ->
+              let a = propagate_common attr in
+              [h3 ~a (continue inside go_through_inline)]
             | `E (((_,"p"), _), inside) -> [p (continue inside go_through_inline)]
             | `E (((_,"ul"), _), inside) -> [ul (continue inside go_through_list)]
             | `E (((_,"ol"), _), inside) -> [ol (continue inside go_through_list)]
