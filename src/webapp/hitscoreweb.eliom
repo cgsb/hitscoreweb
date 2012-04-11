@@ -1476,11 +1476,16 @@ module Doc_service = struct
               Option.map (find_attr "class" attr) (fun s ->
                 a_class (String.split ~on:' ' s));
             ] in
+          let first_h1 = ref [] in
           let rec go_through = function
             | `E (((_,"content"), _), inside) -> continue inside go_through
             | `E (((_,"h1"), attr), inside) ->
               let a = propagate_common attr in
-              [h1 ~a (continue inside go_through_inline)]
+              let h = [h1 ~a (continue inside go_through_inline)] in
+              begin match !first_h1 with
+              | [] -> first_h1 := h; []
+              | _ -> h
+              end
             | `E (((_,"h2"), attr), inside) ->
               let a = propagate_common attr in
               [h2 ~a (continue inside go_through_inline)]
@@ -1526,7 +1531,8 @@ module Doc_service = struct
             | `D s -> [pcdata s]
           in
           let html = go_through (snd xml) in
-          return [div ~a:[ a_class ["doc_toc"]] (try [make_toc ()] with e -> []);
+          return [div ~a:[a_class ["doc_doc"]] !first_h1;
+                  div ~a:[ a_class ["doc_toc"]] (try [make_toc ()] with e -> []);
                   div ~a:[a_class ["doc_doc"]] html]
         | None ->
           error `root_directory_not_configured

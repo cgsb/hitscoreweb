@@ -118,12 +118,12 @@ let css_service_handler ~configuration () () =
   out ".content_table_number {text-align:right; font-family: monospace}\n";
 
   out "
-    @media (max-width: 73em) {
+    @media (max-width: 63em) {
       .doc_toc {
         margin-right: 1em;
       }
     }
-    @media (min-width: 73em) {
+    @media (min-width: 63em) {
       .doc_toc {
         position:fixed;
         overflow: auto; max-width: 40em;
