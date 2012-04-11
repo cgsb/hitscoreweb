@@ -147,9 +147,14 @@ let rec html_of_error poly_error =
   | `auth_state_exn e ->
     [pcdataf "Authentication-state exception: %s" (Exn.to_string e)]
   | `pg_exn e -> [pcdataf "PGOCaml exception: %s" (Exn.to_string e)]
-  | `no_person_with_that_email email ->
-    [pcdataf "There is no person with that email: ";
-     code [pcdata email];
+  | `person_not_found id ->
+    [pcdataf "There is no person with that identifier: ";
+     code [pcdata id];
+     pcdata "."]
+  | `broker_not_initialized -> [pcdata "The query broker has not been initialized"]
+  | `person_not_unique id ->
+    [pcdataf "There are too many persons with that identifier: ";
+     code [pcdata id];
      pcdata "."]
   | `no_flowcell_named name ->
     [pcdata "There is no flowcell with that serial name: ";
@@ -190,6 +195,10 @@ let rec html_of_error poly_error =
     [pcdataf "FASTX/Unaligned/ virtual volume does not have the expected structure"]
   | `parse_flowcell_demux_summary_error e ->
     [pcdataf "Error while parsing demux-summary: %s" (Exn.to_string e)]
+  | `auth_error e ->
+    pcdata "Authentication error: " :: html_of_error e 
+  | `person_edit_coservice_error exn ->
+    pcdata "Error while editing: " :: [pcdata (Exn.to_string exn)]
   | `layout_edit_coservice_error e ->
     pcdata "Error while editing: "
     :: (match e with
@@ -199,6 +208,7 @@ let rec html_of_error poly_error =
        [pcdata "You don't have enough access rights to do edit this.."]
      | `layout_inconsistency (`Record "log", _) -> 
        [pcdata "Error while logging (chances are that the editing actually worked!)"]
+     | `broker_not_initialized
      |  `layout_inconsistency _ | `io_exn _ | `pg_exn _ as e -> 
        html_of_error e)
   | `no_lane_index (fcid, pointer) ->

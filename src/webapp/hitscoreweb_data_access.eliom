@@ -34,12 +34,24 @@ let init ~loop_time ~configuration () =
   update ~configuration ()
 
 
-let find_person id =
+let find_person_opt id =
   broker ()
   >>= fun broker ->
   Broker.find_person broker id
     
-  
+let find_person id =
+  find_person_opt id
+  >>= fun op ->
+  begin match op with
+  | Some s -> return s
+  | None -> error (`person_not_found id)
+  end
+
+let modify_person ~dbh ~person =
+  broker ()
+  >>= fun broker ->
+  Broker.modify_person broker ~dbh ~person
+
 module File_cache = struct
 
   module String_map = Map.Make(String)

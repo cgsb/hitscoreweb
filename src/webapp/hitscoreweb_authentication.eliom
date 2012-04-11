@@ -10,7 +10,7 @@ module Queries = Hitscoreweb_queries
 
 type capability = [
 | `view of [`all 
-           | `self
+           | `person of Layout.Record_person.t
            | `all_evaluations
            | `all_flowcells
            | `layout
@@ -19,12 +19,16 @@ type capability = [
            | `libraries_of of Layout.Record_person.pointer list
            | `full_persons
            | `full_flowcell]
-| `edit of [`self | `layout]
+| `edit of [
+  | `person of Layout.Record_person.t
+  | `layout]
 ]
 
 let roles_allow ?person roles (cap:capability) =
+  let module P = Layout.Record_person in
+  let id_opt = Option.map person (fun p -> p.P.id) in
   match cap with
-  | `edit `self | `view `self -> person <> None
+  | `edit (`person p) | `view (`person p) when id_opt = Some p.P.g_id -> true
   | `edit something ->
     if List.exists roles (fun c -> c = `administrator) then
       true
@@ -42,7 +46,7 @@ let roles_allow ?person roles (cap:capability) =
         | `libraries_of people ->
           begin match person with
           | Some p ->
-            List.exists people (fun x -> Layout.Record_person.(x.id = p.g_id))
+            List.exists people (fun x -> P.(x.id = p.id))
           | None -> false
           end
         | _ -> false
@@ -51,7 +55,7 @@ let roles_allow ?person roles (cap:capability) =
 
 type user_logged = {
   id: string;
-  person: Layout.Record_person.t;
+  person: Layout.Record_person.pointer;
   roles: Layout.Enumeration_role.t list;
 }
     
@@ -102,7 +106,7 @@ let user_logged () =
   | _ -> return None
 
 let find_user login =
-  Data_access.find_person login
+  Data_access.find_person_opt login
   >>= fun found ->
   begin match found with
   | Some p -> return p
@@ -113,7 +117,8 @@ let find_user login =
     
 let make_user u = 
   let module P = Layout.Record_person in
-  { id = u.P.email; roles = Array.to_list u.P.roles; person = u}
+  { id = u.P.email; roles = Array.to_list u.P.roles;
+    person = P.unsafe_cast u.P.g_id}
 
 let pam_auth ?service ~user ~password () =
   let service =
@@ -161,19 +166,22 @@ let authorizes (cap:capability) =
 
 
 exception Authentication_error of
-    [ `auth_state_exn of exn
-    | `io_exn of exn
-    | `pg_exn of exn
-    | `layout_inconsistency of
-        [ `Record of string ] *
-          [ `insert_did_not_return_one_id of
-              string * int32 Hitscoreweb_std.List.container
-          | `more_than_one_flowcell_called of string
-          | `more_than_one_person_with_that_email
-          | `no_last_modified_timestamp of int32
-          | `select_did_not_return_one_tuple of string * int ]
-    | `non_https_login ]
-
+    [`auth_error of
+        [ `auth_state_exn of exn
+        | `broker_not_initialized
+        | `io_exn of exn
+        | `pg_exn of exn
+        | `layout_inconsistency of
+            [ `Record of string ] *
+              [ `insert_did_not_return_one_id of
+                  string * int32 Hitscoreweb_std.List.container
+              | `more_than_one_flowcell_called of string
+              | `more_than_one_person_with_that_email
+              | `no_last_modified_timestamp of int32
+              | `select_did_not_return_one_tuple of string * int ]
+        | `non_https_login ]
+    ]
+let coservice_fail e = Lwt.fail (Authentication_error (`auth_error e))
 let login_coservice = 
   let coserv = ref None in
   fun () ->
@@ -191,15 +199,12 @@ let login_coservice =
           (* ~https:true  --> Forces HTTPS *)
           ~post_params:Eliom_parameters.(string "user" ** string "pwd")
           (fun () (user, pwd) ->
-            if Eliom_request_info.get_ssl () then
-              (check (`user_password (user,pwd))
-               >>= function
-               | Ok () ->
-                 return ()
-               | Error e ->
-                 Lwt.fail (Authentication_error e))
-            else
-              (Lwt.fail (Authentication_error `non_https_login)))
+            if Eliom_request_info.get_ssl ()
+            then (check (`user_password (user,pwd))
+                  >>= function
+                  | Ok () -> return ()
+                  | Error e -> coservice_fail e)
+            else coservice_fail `non_https_login)
       in
       coserv := Some pam_handler;
       pam_handler
@@ -217,8 +222,7 @@ let logout_coservice =
           (fun () () -> 
             logout () >>= function
             | Ok () -> return ()
-            | Error e ->
-              Lwt.fail (Authentication_error e))
+            | Error e -> coservice_fail e)
       in
       coserv := Some handler;
       handler
@@ -281,7 +285,7 @@ let display_state ?in_progress_element () =
     | `user_logged u -> 
       span [
         pcdata "User: ";
-        Eliom_output.Html5.a ~service:(Services.self ()) [pcdataf "%s" u.id] ();
+        Eliom_output.Html5.a ~service:(Services.self ()) [pcdataf "%s" u.id] None;
         pcdataf " (%s)"
           (String.concat ~sep:", " (List.map u.roles 
                                       Layout.Enumeration_role.to_string));

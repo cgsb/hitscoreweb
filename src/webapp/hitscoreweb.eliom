@@ -114,61 +114,200 @@ module Persons_service = struct
 
 end
 
-module Self_service = struct
+module One_person_service = struct
 
-  let make_self_page ~configuration =
+  let make_view_page ~home ~configuration person =
     let open Html5 in
     let open Template in
     Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
-      Authentication.user_logged ()
-      >>= function
-      | None ->
-        return (content_paragraph [pcdataf "No User logged"])
-      | Some u ->
-        let open Layout.Record_person in
-        let person = u.Authentication.person in
-        let display title thing =
-          [strong [pcdataf "%s: " title]; em [pcdataf "%s." thing]] in
-        let display_opt title opt =
-          display title (Option.value ~default:"N/A" opt) in
-        let display_array title arr =
-          display title
-            (match arr with
-            | [| |] -> "N/A"
-            | s -> Array.to_list s |! String.concat ~sep:", ") in
-        return (content_paragraph
-                  [ul [
-                    li (display_opt "Print Name" person.print_name);
-                    li (display "Given Name" person.given_name);
-                    li (display_opt "Middle Name" person.middle_name);
-                    li (display "Family Name" person.family_name);
-                    li (display_opt "Nick Name" person.nickname);
-                    li (display "Primary Email" person.email);
-                    li (display_array "Secondary Emails" person.secondary_emails);
-                    li (display_opt "Login/NetID" person.login);
-                    li (display "Authentication"
-                          (match person.password_hash, person.login with
-                          | None, None -> "Impossible"
-                          | None, Some _ -> "NYU Only"
-                          | Some _, None -> "Gencore password set (No NYU)"
-                          | Some _, Some _ ->
-                            "Gencore Passowrd set + NYU Available"));
-                   ]])
+      let open Layout.Record_person in
+      let display title thing =
+        [strong [pcdataf "%s: " title]; em [pcdataf "%s." thing]] in
+      let display_opt title opt =
+        display title (Option.value ~default:"N/A" opt) in
+      let display_array title arr =
+        display title
+          (match arr with
+          | [| |] -> "N/A"
+          | s -> Array.to_list s |! String.concat ~sep:", ") in
+      Authentication.authorizes (`edit (`person person))
+      >>= fun can_edit ->
+      begin if can_edit
+        then 
+          return [Template.a_link
+                     (home "edit") [pcdata "You may edit part of this"] ();
+                  pcdata "."]
+        else
+          return [pcdata "You cannot edit your information."]
+      end
+      >>= fun edition_link ->
+      return (content_paragraph
+                [ul [
+                  li (display_opt "Print Name" person.print_name);
+                  li (display "Given Name" person.given_name);
+                  li (display_opt "Middle Name" person.middle_name);
+                  li (display "Family Name" person.family_name);
+                  li (display_opt "Nick Name" person.nickname);
+                  li (display "Primary Email" person.email);
+                  li (display_array "Secondary Emails" person.secondary_emails);
+                  li (display_opt "Login/NetID" person.login);
+                  li (display "Authentication"
+                        (match person.password_hash, person.login with
+                        | None, None -> "Impossible"
+                        | None, Some _ -> "NYU Only"
+                        | Some _, None -> "Gencore password set (No NYU)"
+                        | Some _, Some _ ->
+                          "Gencore Passowrd set + NYU Available"));
+                 ];
+                 div edition_link
+                ])
     )
-      
-  let make ~configuration =
-    (fun () () ->
-      Template.default ~title:"User Page"
-        (Authentication.authorizes (`view `self)
-         >>= function
-         | true ->
-           Template.make_content ~configuration ~main_title:"About Yourself" 
-             (make_self_page ~configuration)
-         | false ->
-           Template.make_authentication_error ~configuration
-             ~main_title:"User Page" 
-             (return [Html5.pcdataf "You shall not view nor edit anything there."])))
 
+  exception Edition_error of [ 
+    `person_edit_coservice_error of [
+    | `layout_inconsistency of [ `Record of string] *
+        [ `insert_cache_did_not_return_one_id of string * int32 list
+        | `insert_did_not_return_one_id of string * int32 list ]
+    | `broker_not_initialized
+    | `io_exn of exn
+    | `wrong_rights
+    | `pg_exn of exn
+    ]
+  ]
+
+  let coservice_error e =
+    Lwt.fail (Edition_error (`person_edit_coservice_error e))
+      
+  let one_time_post_coservice ~redirection ~configuration person =
+    Eliom_output.Redirection.register_post_coservice
+      ~scope:Eliom_common.session
+      ~max_use:1
+      ~fallback:Services.(home ())
+      ~post_params:Eliom_parameters.(
+        string "print_name"
+        ** string "given_name"
+        ** string "middle_name"
+        ** string "family_name"
+        ** string "nickname"
+      )
+      (fun () (print_name, (given_name, (middle_name, (family_name, nickname)))) ->
+        eprintf "%s %s\n%!" print_name given_name;
+        let modification =
+          Authentication.authorizes (`edit (`person person))
+          >>= fun can_edit ->
+          if can_edit && given_name <> "" && family_name <> ""
+          then 
+            let open Layout.Record_person in
+            let print_name = if print_name = "" then None else Some print_name in
+            let middle_name = if middle_name = "" then None else Some middle_name in
+            let nickname = if nickname = "" then None else Some nickname in
+            let person =
+              { person with print_name; given_name;
+                middle_name;
+                family_name;
+                nickname;
+              } in
+            Hitscore_lwt.with_database ~configuration
+              ~f:(Data_access.modify_person ~person)
+          else 
+            error `wrong_rights
+        in 
+        Lwt.bind modification (function
+        | Ok () ->
+          eprintf "%s %s\n%!" print_name given_name;
+          Lwt.return redirection
+        | Error e ->
+          coservice_error e))
+
+  let make_edit_page ~home ~configuration person =
+    let open Html5 in
+    let open Template in
+    Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
+      let open Layout.Record_person in
+      let form = 
+        let post_coservice =
+          one_time_post_coservice ~configuration
+            ~redirection:(home "view" ()) person in
+        Eliom_output.Html5.(
+          post_form ~service:post_coservice
+            (fun (print_name, (given_name, (middle_name, (family_name, nickname)))) ->
+              [ul [
+                li [pcdata "Print name: ";
+                    string_input ~input_type:`Text ~name:print_name
+                      ?value:person.print_name ();];
+                li [pcdata "Given name: ";
+                    string_input ~input_type:`Text ~name:given_name
+                      ~value:person.given_name ();];
+                li [pcdata "Middle name: ";
+                    string_input ~input_type:`Text ~name:middle_name
+                      ?value:person.middle_name ();];
+                li [pcdata "Family name: ";
+                    string_input ~input_type:`Text ~name:family_name
+                      ~value:person.family_name ();];
+                li [pcdata "Nickname: ";
+                    string_input ~input_type:`Text ~name:nickname
+                      ?value:person.nickname ();];
+               ]; 
+               Eliom_output.Html5.string_input ~input_type:`Submit ~value:"Go" ();
+              ]) ())
+      in
+      let page = content_paragraph [form] in
+      return page)
+      
+  let make_generic ~home ~configuration person action = 
+    begin match action with
+    | Some "edit" -> 
+      (Authentication.authorizes (`edit (`person person))
+       >>= function
+       | true ->
+         Template.make_content ~configuration
+           ~main_title:"Complete The Information About Yourself" 
+           (make_edit_page ~home ~configuration person)
+       | false ->
+         Template.make_authentication_error ~configuration
+           ~main_title:"User Page" 
+           (return [Html5.pcdataf "You shall not edit anything there."]))
+    | _ ->
+      (Authentication.authorizes (`view (`person person))
+       >>= function
+       | true ->
+         Template.make_content ~configuration ~main_title:"About Yourself" 
+           (make_view_page ~home ~configuration person)
+       | false ->
+         Template.make_authentication_error ~configuration
+           ~main_title:"User Page" 
+           (return [Html5.pcdataf "You shall not view anything there."]))
+    end
+
+  let make_self ~configuration =
+    (fun action () ->
+      Template.default ~title:"User Page"
+        begin
+          Authentication.user_logged ()
+          >>= function
+          | None ->
+            (Template.make_authentication_error ~configuration
+               ~main_title:"User Page" 
+               (return [Html5.pcdataf "You shall not view anything there."]))
+          | Some u ->
+            Data_access.find_person u.Authentication.id
+            >>= fun person ->
+            make_generic ~configuration person action
+              ~home:(fun a () ->
+                Eliom_services.preapply Services.(self ()) (Some a))
+        end)
+      
+  let make_person ~configuration =
+    (fun (id, action) () ->
+      Template.default ~title:"User Page"
+        begin
+          Data_access.find_person id
+          >>= fun person ->
+          make_generic ~configuration person action
+            ~home:(fun a () ->
+              Eliom_services.preapply Services.(person ()) (id, Some a))
+        end)
+      
 end
 
 module Flowcell_service = struct
@@ -1569,11 +1708,16 @@ let () =
           | Eliom_common.Eliom_404 -> send ~code:404 `eliom_404
           | Eliom_common.Eliom_Wrong_parameter -> send `eliom_wrong_parameter
           | Eliom_common.Eliom_Typing_Error l -> send (`eliom_typing_error l)
-          | Authentication.Authentication_error e ->
-            send (e :>
-              [> `auth_state_exn of exn | `io_exn of exn | `non_https_login ])
-          | Layout_service.Edition_error (`layout_edit_coservice_error e) ->
-            send (`layout_edit_coservice_error e)
+          (*
+TODO: All exceptions in coservices should be handled in some other way
+            | Authentication.Authentication_error (`auth_error e) -> *)
+            (* send (`auth_error e) *)
+          (* | Layout_service.Edition_error (`layout_edit_coservice_error e) -> *)
+            (* send (`layout_edit_coservice_error e) *)
+          | One_person_service.Edition_error (`person_edit_coservice_error e) as x ->
+            eprintf "exception !\n%!";
+            Lwt.fail x
+            (* send (`person_edit_coservice_error x) *)
           | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
       in
 
@@ -1656,7 +1800,10 @@ let () =
         Doc_service.(make ~configuration:hitscore_configuration);
 
       Services.(register self) 
-        Self_service.(make ~configuration:hitscore_configuration);
+        One_person_service.(make_self ~configuration:hitscore_configuration);
+
+      Services.(register person) 
+        One_person_service.(make_person ~configuration:hitscore_configuration);
 
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);

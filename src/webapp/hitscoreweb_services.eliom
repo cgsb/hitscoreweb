@@ -67,10 +67,16 @@ let doc =
   ~path:["doc"]
   ~get_params:Eliom_parameters.(suffix (all_suffix "path")))
 
+
 let self =
   make (Eliom_services.service
           ~path:["self"]
-          ~get_params:Eliom_parameters.unit)
+          ~get_params:Eliom_parameters.(opt (string "action")))
+let person =
+  make (Eliom_services.service
+          ~path:["person"]
+          ~get_params:Eliom_parameters.(string "id" ** opt (string "action")))
+  
     
 let register f =
   Output_app.register 
