@@ -1710,8 +1710,7 @@ let () =
           | Eliom_common.Eliom_Typing_Error l -> send (`eliom_typing_error l)
           (*
 TODO: All exceptions in coservices should be handled in some other way
-            | Authentication.Authentication_error (`auth_error e) -> *)
-            (* send (`auth_error e) *)
+          *)
           (* | Layout_service.Edition_error (`layout_edit_coservice_error e) -> *)
             (* send (`layout_edit_coservice_error e) *)
           | One_person_service.Edition_error (`person_edit_coservice_error e) as x ->

@@ -163,25 +163,6 @@ let authorizes (cap:capability) =
     end
 
 
-
-
-exception Authentication_error of
-    [`auth_error of
-        [ `auth_state_exn of exn
-        | `broker_not_initialized
-        | `io_exn of exn
-        | `pg_exn of exn
-        | `layout_inconsistency of
-            [ `Record of string ] *
-              [ `insert_did_not_return_one_id of
-                  string * int32 Hitscoreweb_std.List.container
-              | `more_than_one_flowcell_called of string
-              | `more_than_one_person_with_that_email
-              | `no_last_modified_timestamp of int32
-              | `select_did_not_return_one_tuple of string * int ]
-        | `non_https_login ]
-    ]
-let coservice_fail e = Lwt.fail (Authentication_error (`auth_error e))
 let login_coservice = 
   let coserv = ref None in
   fun () ->
@@ -196,15 +177,15 @@ let login_coservice =
            session-dependent stuff. *)
         Eliom_output.Action.register_post_coservice'
           (* ~fallback:Services.(home ()) *)
-          (* ~https:true  --> Forces HTTPS *)
+          ~https:true
           ~post_params:Eliom_parameters.(string "user" ** string "pwd")
           (fun () (user, pwd) ->
             if Eliom_request_info.get_ssl ()
             then (check (`user_password (user,pwd))
                   >>= function
                   | Ok () -> return ()
-                  | Error e -> coservice_fail e)
-            else coservice_fail `non_https_login)
+                  | Error e -> return ())
+            else return ())
       in
       coserv := Some pam_handler;
       pam_handler
@@ -222,7 +203,7 @@ let logout_coservice =
           (fun () () -> 
             logout () >>= function
             | Ok () -> return ()
-            | Error e -> coservice_fail e)
+            | Error e -> return ())
       in
       coserv := Some handler;
       handler

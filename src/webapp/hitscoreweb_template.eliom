@@ -139,7 +139,6 @@ let css_service_handler ~configuration () () =
 let rec html_of_error poly_error = 
   let open Html5 in
   match poly_error with
-  | `non_https_login -> [pcdata "Login service not on HTTPS: FORBIDDEN"]
   | `eliom_404 -> [pcdataf "Error 404."]
   | `eliom_wrong_parameter -> [pcdataf "Error 404 (wrong parameter)."]
   | `eliom_typing_error _ -> [pcdataf "Error 404 (wrong parameter types)."]
@@ -195,8 +194,6 @@ let rec html_of_error poly_error =
     [pcdataf "FASTX/Unaligned/ virtual volume does not have the expected structure"]
   | `parse_flowcell_demux_summary_error e ->
     [pcdataf "Error while parsing demux-summary: %s" (Exn.to_string e)]
-  | `auth_error e ->
-    pcdata "Authentication error: " :: html_of_error e 
   | `person_edit_coservice_error exn ->
     pcdata "Error while editing: " :: [pcdata (Exn.to_string exn)]
   | `layout_edit_coservice_error e ->
