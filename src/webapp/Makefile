@@ -19,6 +19,7 @@ COMMON_FILES := \
   hitscoreweb_authentication.eliom \
   hitscoreweb_template.eliom	   \
   hitscoreweb_layout_service.eliom \
+  hitscoreweb_one_person_service.eliom \
   hitscoreweb.eliom
 SERVER_FILES := $(COMMON_FILES)
 CLIENT_FILES := $(COMMON_FILES)

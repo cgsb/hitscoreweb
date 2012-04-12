@@ -119,6 +119,10 @@ let get_element s =
 module String = struct
   include String
 end
+
+let dbg fmt =
+  Printf.ksprintf (fun s -> Firebug.console##debug(Js.string s)) fmt
+  
 }}
 
 let pretty_string_of_float ?(sof=sprintf "%.3f") f = 
