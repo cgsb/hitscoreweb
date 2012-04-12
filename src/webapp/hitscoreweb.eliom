@@ -1308,8 +1308,8 @@ module Default_service = struct
         let welcome = [
           h2 [pcdata "Welcome"];
           p [
-            pcdata "This is Gencore's website; for library submission information\
-                    see ";
+            pcdata "This is Gencore's website; for library submission \
+                    information see ";
             Template.a_link Services.doc [pcdata "the FAQ"] ["help"; "faq.html"];
             pcdata " or ";
             a ~a:[
