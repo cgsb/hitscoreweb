@@ -17,8 +17,11 @@ type capability = [
            | `persons
            | `libraries
            | `libraries_of of Layout.Record_person.pointer list
+           | `lane_of of Layout.Record_person.pointer list
            | `full_persons
-           | `full_flowcell]
+           | `hiseq_raw_info
+           | `demux_info
+           | `flowcell]
 | `edit of [
   | `person of Layout.Record_person.t
   | `layout]
@@ -27,6 +30,12 @@ type capability = [
 let roles_allow ?person roles (cap:capability) =
   let module P = Layout.Record_person in
   let id_opt = Option.map person (fun p -> p.P.id) in
+  let is_part_of_crew people =
+    match person, people with
+    | Some p, more :: than_zero ->
+      List.exists people (fun x -> P.(x.id = p.id))
+    | _ -> false
+  in
   match cap with
   | `edit (`person p) | `view (`person p) when id_opt = Some p.P.g_id -> true
   | `edit something ->
@@ -41,14 +50,9 @@ let roles_allow ?person roles (cap:capability) =
       let is_user = List.exists roles ((=) `user)  in
       if is_user then
         match something with
-        | `persons | `libraries -> true
-        | `libraries_of [] -> false
-        | `libraries_of people ->
-          begin match person with
-          | Some p ->
-            List.exists people (fun x -> P.(x.id = p.id))
-          | None -> false
-          end
+        | `persons | `libraries | `flowcell -> true
+        | `libraries_of people when is_part_of_crew people -> true
+        | `lane_of people when is_part_of_crew people -> true
         | _ -> false
       else
         false

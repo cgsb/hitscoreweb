@@ -188,41 +188,45 @@ module Flowcell_service = struct
             Layout.Record_lane.(
               get ~dbh lane_t
               >>= fun {
-  	        seeding_concentration_pM ;
-  	        total_volume ;
-  	        libraries ;
-  	        pooled_percentages ;
-  	        requested_read_length_1 ;
-  	        requested_read_length_2 ;
+  	        seeding_concentration_pM ; total_volume ;
+  	        libraries ; pooled_percentages ;
+  	        requested_read_length_1 ; requested_read_length_2 ;
   	        contacts ; } ->
-              of_list_sequential (Array.to_list contacts) 
-                (Persons_service.person_essentials dbh)
-              >>= fun people ->
-              of_list_sequential
-                (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
-                (fun (i, ilibt) ->
-                  Layout.Record_input_library.(
-                    get ~dbh ilibt
-                    >>= fun { library; _ } ->
-                    Layout.Record_stock_library.(
-                      get ~dbh library
-                      >>= fun { name; project; _ } ->
-                      return (name, project))))
-              >>= fun libs ->
-              return Html5.(
-                let pcf = (ksprintf pcdata "%.0f") in
-                let of_float_opt o =
-                  Option.value_map o ~default:(`sortable ("", [pcdata ""]))
-                    ~f:(fun f ->
-                      `sortable (Float.to_string f, [pcf f])) in
-                [
-                  `sortable (Int.to_string !lane,
-                             [ksprintf pcdata "Lane %d" !lane]);
-                  of_float_opt seeding_concentration_pM;
-		  of_float_opt total_volume;
-		  `sortable (sortable_people_cell people);
-                  `sortable (sortable_libraries_cell libs);
-                ]))))
+              let people = Array.to_list contacts in
+              Authentication.authorizes (`view (`lane_of people))
+              >>= fun authorization ->
+              if authorization
+              then begin
+                of_list_sequential people (Persons_service.person_essentials dbh)
+                >>= fun people ->
+                of_list_sequential
+                  (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
+                  (fun (i, ilibt) ->
+                    Layout.Record_input_library.(
+                      get ~dbh ilibt
+                      >>= fun { library; _ } ->
+                      Layout.Record_stock_library.(
+                        get ~dbh library
+                        >>= fun { name; project; _ } ->
+                        return (name, project))))
+                >>= fun libs ->
+                return Html5.(
+                  let pcf = (ksprintf pcdata "%.0f") in
+                  let of_float_opt o =
+                    Option.value_map o ~default:(`sortable ("", [pcdata ""]))
+                      ~f:(fun f ->
+                        `sortable (Float.to_string f, [pcf f])) in
+                  [
+                    `sortable (Int.to_string !lane,
+                               [ksprintf pcdata "Lane %d" !lane]);
+                    of_float_opt seeding_concentration_pM;
+		    of_float_opt total_volume;
+		    `sortable (sortable_people_cell people);
+                    `sortable (sortable_libraries_cell libs);
+                  ])
+              end
+              else
+                return [])))
       in
       lanes >>= fun lanes ->
       return Template.(Html5.(
@@ -463,14 +467,27 @@ module Flowcell_service = struct
     (fun (serial_name) () ->
       let main_title = (sprintf "FC:%s" serial_name) in
       Template.default ~title:main_title
-        (Authentication.authorizes (`view `full_flowcell)
+        (Authentication.authorizes (`view `flowcell)
          >>= function
          | true ->
            flowcell_lanes_table ~serial_name configuration
            >>= fun tab_section ->
-           hiseq_raw_info ~configuration ~serial_name
+           Authentication.authorizes (`view `hiseq_raw_info)
+           >>= fun hiseq_raw_authorization ->
+           begin if hiseq_raw_authorization then
+               hiseq_raw_info ~configuration ~serial_name
+             else
+               return (content_paragraph [])
+           end
            >>= fun hr_section ->
-           demux_info ~configuration ~serial_name >>= fun demux_info ->
+           Authentication.authorizes (`view `demux_info)
+           >>= fun demux_info_auth ->
+           begin if demux_info_auth then
+               demux_info ~configuration ~serial_name
+             else
+               return (content_paragraph [])
+           end
+           >>= fun demux_info ->
            let content =
              return (content_list [tab_section; hr_section; demux_info]) in
            make_content ~configuration ~main_title content
