@@ -629,17 +629,24 @@ module Libraries_service = struct
           | _ -> error (`wrong_fastx_volume directory)))
         >>= fun fastx_unaligned_path_opt ->
         let f path read typ =
-          let ext = match typ with `fgz -> "fastq.gz" | `fxqs -> "fxqs" in
-          Option.map path ~f:(fun p ->
-            sprintf "%s/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.%s"
-              p lane_index libname libname
-              (Option.value ~default:"Undetermined" barcode)
-              lane_index read ext)
+          match typ with
+          | `fgz ->
+            Option.map path ~f:(fun p ->
+              sprintf "%s/Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.fastq.gz"
+                p lane_index libname libname
+                (Option.value ~default:"Undetermined" barcode)
+                lane_index read)
+          | `fxqs ->
+            Option.map path ~f:(fun p ->
+              sprintf "%s/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.fxqs"
+                p lane_index libname libname
+                (Option.value ~default:"Undetermined" barcode)
+                lane_index read)
         in
         return {
           delivery_dir = snd directory;
-          r1_fastq = Option.value_exn (f (Some unaligned_path) 1 `fgz);
-          r2_fastq = if is_paired_end then f (Some unaligned_path) 2 `fgz else None;
+          r1_fastq = Option.value_exn (f (Some (snd directory)) 1 `fgz);
+          r2_fastq = if is_paired_end then f (Some (snd directory)) 2 `fgz else None;
           r1_fastx = f fastx_unaligned_path_opt 1 `fxqs;
           r2_fastx =
             if is_paired_end then f fastx_unaligned_path_opt 2 `fxqs else None;
@@ -992,7 +999,7 @@ module Libraries_service = struct
              Template.hide_show_div
                ~show_message:"Show file paths"
                ~hide_message:"Hide file paths"
-               ([codef "%s" f.r1_fastq] @ opt f.r1_fastx show_file) in
+               [codef "%s" f.r1_fastq] in
            [Template.pretty_box [msg; div]])
         @ (Option.value_map f.r2_fastq ~default:[]
              ~f:(fun _ ->
@@ -1001,7 +1008,7 @@ module Libraries_service = struct
                     Template.hide_show_div
                       ~show_message:"Show file paths"
                       ~hide_message:"Hide file paths"
-                      (opt f.r2_fastq show_file @ opt f.r2_fastx show_file) in
+                      (opt f.r2_fastq show_file) in
                   [Template.pretty_box [msg; div]])))
       ))
     >>= fun files ->
