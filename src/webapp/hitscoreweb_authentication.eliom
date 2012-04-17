@@ -67,6 +67,13 @@ type authentication_state = [
 | `nothing
 | `user_logged of user_logged
 | `insufficient_credentials of string
+| `error of string *
+    [ `auth_state_exn of exn
+    | `broker_not_initialized
+    | `io_exn of exn
+    | `login_not_found of string
+    | `pam_exn of exn
+    | `person_not_unique of string ]
 ]
 
 let authentication_history =
@@ -91,6 +98,22 @@ let get_configuration () =
 
   
 let set_state s =
+  let prf fmt =
+    ksprintf Ocsigen_messages.accesslog ("Authentication-state: " ^^ fmt) in
+  begin match s with
+  | `nothing -> prf "NOTHING"
+  | `user_logged u -> prf "USER-LOGGED: %S" u.id
+  | `insufficient_credentials i -> prf "INSUFFICIENT-CREDENTIALS: %S" i
+  | `error (id, e) ->
+    prf "ERROR: %S -- %s" id
+      (match e with
+      | `auth_state_exn e
+      | `io_exn e
+      | `pam_exn e ->  (Exn.to_string e)
+      | `broker_not_initialized -> "broker_not_initialized"
+      | `login_not_found s -> sprintf "login_not_found: %S" s
+      | `person_not_unique s -> sprintf "person_not_unique: %S" s)
+  end;
   let on_exn e = `auth_state_exn e in
   wrap_io ~on_exn Eliom_references.get authentication_history
   >>= fun ah ->
@@ -114,9 +137,7 @@ let find_user login =
   >>= fun found ->
   begin match found with
   | Some p -> return p
-  | None ->
-    eprintf "login_not_found\n%!";
-    error (`login_not_found login)
+  | None -> error (`login_not_found login)
   end
     
 let make_user u = 
@@ -160,7 +181,7 @@ let check = function
     in
     double_bind checking_m
       ~ok:return
-      ~error:(fun e -> set_state (`insufficient_credentials identifier))
+      ~error:(fun e -> set_state (`error (identifier, e)))
 
 let logout () =
   set_state `nothing
@@ -281,6 +302,7 @@ let display_state ?in_progress_element () =
           (String.concat ~sep:", " (List.map u.roles 
                                       Layout.Enumeration_role.to_string));
       ]
+    | `error (s, _)
     | `insufficient_credentials s -> pcdataf "Wrong credentials for: %s" s
   in
   return (state
