@@ -74,6 +74,7 @@ exception Edition_error of [
   | `io_exn of exn
   | `wrong_rights
   | `pg_exn of exn
+  | `auth_state_exn of exn
   ]
 ]
 
