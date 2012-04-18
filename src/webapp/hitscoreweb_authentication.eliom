@@ -226,7 +226,7 @@ let login_coservice =
           ~post_params:Eliom_parameters.(string "user" ** string "pwd")
           (fun () (user, pwd) ->
             if Eliom_request_info.get_ssl ()
-            then (check (`user_password (user,pwd))
+            then (check (`user_password (String.strip user,pwd))
                   >>= function
                   | Ok () -> return ()
                   | Error e -> return ())
@@ -276,7 +276,7 @@ let start_impersonation_coservice =
           (fun () (user) ->
             Lwt.bind
               (if Eliom_request_info.get_ssl ()
-               then check_and_set user
+               then check_and_set (String.strip user)
                else return None)
               (fun _ -> Lwt.return ()))
       in
