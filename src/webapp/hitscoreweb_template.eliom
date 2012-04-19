@@ -150,6 +150,11 @@ let rec html_of_error poly_error =
     [pcdataf "There is no person with that identifier: ";
      code [pcdata id];
      pcdata "."]
+  | `broker_error e -> html_of_error e
+  | `wrong_rights ->
+    [pcdata "You don't have enough access rights to do edit this."]
+  | `non_emptiness_violation ->
+    [pcdata "You're trying to violate non-emptiness constraints!"]
   | `broker_not_initialized -> [pcdata "The query broker has not been initialized"]
   | `person_not_unique id ->
     [pcdataf "There are too many persons with that identifier: ";
@@ -233,6 +238,8 @@ let rec html_of_error poly_error =
         [pcdataf "Insert in %s did not return one id but %d." s (List.length l)]
       | `no_last_modified_timestamp _ ->
         [pcdataf "Missing last-modified information."]
+      | `insert_cache_did_not_return_one_id (s, l) ->
+        [pcdataf "Insert-cache in %s did not return one id but %d." s (List.length l)]
     in
     ([pcdata "Layout Inconsistency in "]
      @ place_presentation

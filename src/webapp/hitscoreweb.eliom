@@ -1543,10 +1543,6 @@ TODO: All exceptions in coservices should be handled in some other way
           *)
           (* | Layout_service.Edition_error (`layout_edit_coservice_error e) -> *)
             (* send (`layout_edit_coservice_error e) *)
-          | One_person_service.Edition_error (`person_edit_coservice_error e) as x ->
-            eprintf "exception !\n%!";
-            Lwt.fail x
-            (* send (`person_edit_coservice_error x) *)
           | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
       in
 

@@ -13,9 +13,34 @@ module Authentication = Hitscoreweb_authentication
 
 module Template = Hitscoreweb_template
 
+type one_time_post_coservice_error =
+[ `auth_state_exn of exn
+| `broker_error of
+    [ `broker_not_initialized
+    | `io_exn of exn
+    | `layout_inconsistency of
+        [ `File_system | `Function of string | `Record of string ] *
+          [ `insert_cache_did_not_return_one_id of
+                        string * int32 list
+          | `insert_did_not_return_one_id of string * int32 list
+                    | `select_did_not_return_one_tuple of string * int ]
+    | `pg_exn of exn ]
+| `io_exn of exn
+| `pg_exn of exn
+| `non_emptiness_violation
+| `wrong_rights ]
+
+let one_time_post_coservice_error =
+  Eliom_references.eref ~secure:true
+    ~scope:Eliom_common.client_process (None: one_time_post_coservice_error option)
+
 let make_view_page ~home ~configuration person =
   let open Html5 in
   let open Template in
+  wrap_io Eliom_references.get one_time_post_coservice_error
+  >>= fun potential_error_to_display ->
+  wrap_io (Eliom_references.set one_time_post_coservice_error) None
+  >>= fun () ->
   Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
     let open Layout.Record_person in
     let display title thing =
@@ -38,8 +63,27 @@ let make_view_page ~home ~configuration person =
         return [pcdata "You cannot edit your information."]
     end
     >>= fun edition_link ->
+    let error_message =
+      Option.value_map ~default:(span []) potential_error_to_display
+        ~f:(fun e ->
+          begin match e with
+          | `auth_state_exn _
+          | `io_exn _
+          | `pg_exn _
+          | `non_emptiness_violation
+          | `wrong_rights  as err ->
+            Template.(error_span (
+              pcdataf "There was an error while editing: " :: 
+                html_of_error (err)))
+          | `broker_error e ->
+            Template.(error_span (
+              pcdataf "There was an error while editing: " :: 
+                html_of_error (e)))
+          end)
+    in
     return (content_paragraph
-              [ul [
+              [error_message;
+               ul [
                 li (display_opt "Print Name" person.print_name);
                 li (display "Given Name" person.given_name);
                 li (display_opt "Middle Name" person.middle_name);
@@ -60,27 +104,7 @@ let make_view_page ~home ~configuration person =
               ])
   )
 
-  (* http://ocsigen.org/eliom/manual/outputs#h5o-39
-     "if you want to display a "wrong password" message after an
-     aborted connection. To transmit that kind of information, use
-     eliom references"
-  *)
-exception Edition_error of [ 
-  `person_edit_coservice_error of [
-  | `layout_inconsistency of [ `Record of string] *
-      [ `insert_cache_did_not_return_one_id of string * int32 list
-      | `insert_did_not_return_one_id of string * int32 list ]
-  | `broker_not_initialized
-  | `io_exn of exn
-  | `wrong_rights
-  | `pg_exn of exn
-  | `auth_state_exn of exn
-  ]
-]
 
-let coservice_error e =
-  Lwt.fail (Edition_error (`person_edit_coservice_error e))
-    
 let one_time_post_coservice ~redirection ~configuration person =
   Eliom_output.Redirection.register_post_coservice
     ~scope:Eliom_common.session
@@ -98,29 +122,35 @@ let one_time_post_coservice ~redirection ~configuration person =
       let modification =
         Authentication.authorizes (`edit (`person person))
         >>= fun can_edit ->
-        if can_edit && given_name <> "" && family_name <> ""
+        if can_edit 
         then 
-          let open Layout.Record_person in
-          let print_name = if print_name = "" then None else Some print_name in
-          let middle_name = if middle_name = "" then None else Some middle_name in
-          let nickname = if nickname = "" then None else Some nickname in
-          let person =
-            { person with print_name; given_name;
-              middle_name;
-              family_name;
-              nickname;
-            } in
-          Hitscore_lwt.with_database ~configuration
-            ~f:(Data_access.modify_person ~person)
+          if given_name <> "" && family_name <> ""
+          then 
+            let open Layout.Record_person in
+            let print_name = if print_name = "" then None else Some print_name in
+            let middle_name = if middle_name = "" then None else Some middle_name in
+            let nickname = if nickname = "" then None else Some nickname in
+            let person =
+              { person with print_name; given_name;
+                middle_name;
+                family_name;
+                nickname;
+              } in
+            Hitscore_lwt.with_database ~configuration
+              ~f:(Data_access.modify_person ~person)
+          else
+            error `non_emptiness_violation
         else 
           error `wrong_rights
       in 
-      Lwt.bind modification (function
-      | Ok () ->
-        eprintf "%s %s\n%!" print_name given_name;
-        Lwt.return redirection
-      | Error e ->
-        coservice_error e))
+      Lwt.(
+         modification >>= (function
+         | Ok () ->
+           return redirection
+         | Error e ->
+           Eliom_references.set one_time_post_coservice_error (Some e)
+           >>= fun () ->
+           return redirection)))
 
 let make_edit_page ~home ~configuration person =
   let open Html5 in
