@@ -1,7 +1,16 @@
 open Hitscoreweb_std
 open Hitscore_lwt
 
-let _global_broker : Hitscore_lwt.Broker.t option ref = ref None
+let _global_broker :
+    [ `broker_not_initialized
+    | `io_exn of exn
+    | `layout_inconsistency of
+        [ `File_system | `Function of string | `Record of string ] *
+             [ `insert_cache_did_not_return_one_id of string * int32 list
+             | `insert_did_not_return_one_id of string * int32 list
+             | `select_did_not_return_one_tuple of string * int ]
+    | `pg_exn of exn ] Hitscore_lwt.Broker.t option ref = ref None
+
 let _global_timeout = ref 500.
 
 let broker () =
@@ -24,7 +33,11 @@ let rec update  ~configuration () =
 let init ~loop_time ~configuration () =
   _global_timeout := loop_time;
   with_database configuration (fun ~dbh ->
-    Broker.create ~dbh ~configuration ()
+    let broker_mutex = Lwt_mutex.create () in
+    let mutex =
+      ((fun () -> wrap_io Lwt_mutex.lock broker_mutex),
+       (fun () -> Lwt_mutex.unlock broker_mutex)) in
+    Broker.create ~mutex ~dbh ~configuration ()
     >>= fun broker ->
     _global_broker := Some broker;
     return ())
@@ -48,9 +61,10 @@ let find_person id =
   end
 
 let modify_person ~dbh ~person =
-  broker ()
-  >>= fun broker ->
-  Broker.modify_person broker ~dbh ~person
+  bind_on_error (broker ()
+                 >>= fun broker ->
+                 Broker.modify_person broker ~dbh ~person)
+    (fun e -> error (`broker_error e))
 
 module File_cache = struct
 
