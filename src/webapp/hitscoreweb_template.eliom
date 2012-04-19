@@ -156,6 +156,13 @@ let rec html_of_error poly_error =
   | `non_emptiness_violation ->
     [pcdata "You're trying to violate non-emptiness constraints!"]
   | `broker_not_initialized -> [pcdata "The query broker has not been initialized"]
+
+  | `hiseq_runs e ->
+    [pcdataf "Service /hiseq_runs: %s"
+        (match e with
+        | `no_logged_user -> "No user logged"
+        | `cannot_retrieve_person_affairs person ->
+          "Cannot retrieve current person's stuff")]
   | `person_not_unique id ->
     [pcdataf "There are too many persons with that identifier: ";
      code [pcdata id];

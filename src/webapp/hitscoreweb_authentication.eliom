@@ -13,6 +13,7 @@ type capability = [
            | `person of Layout.Record_person.t
            | `all_evaluations
            | `all_flowcells
+           | `all_hiseq_runs
            | `layout
            | `persons
            | `libraries
@@ -58,7 +59,7 @@ let roles_allow ?(impersonation=false) ?person roles (cap:capability) =
       let is_user = List.exists roles ((=) `user)  in
       if is_user then
         match something with
-        | `persons | `libraries | `flowcell -> true
+        | `persons | `libraries | `flowcell | `all_flowcells -> true
         | `libraries_of people when is_part_of_crew people -> true
         | `lane_of people when is_part_of_crew people -> true
         | _ -> false

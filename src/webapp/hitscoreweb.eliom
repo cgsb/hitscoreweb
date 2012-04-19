@@ -1304,18 +1304,48 @@ module Hiseq_runs_service = struct
                    `head [pcdata "Flowcell B"]; ]
                  :: sorted)))
 
+  let person_flowcells ~configuration =
+    let open Html5 in
+    let open Template in
+    let module Broker = Hitscore_lwt.Broker in
+    Data_access.broker () >>= fun broker ->
+    Authentication.user_logged () >>= fun user_opt ->
+    begin match user_opt with
+    | Some {Authentication.person; _} ->
+      begin match Broker.person_affairs broker person.Layout.Record_person.id with
+      | Some affairs ->
+        let todo = [pcdataf "todo: %d" (List.length affairs.Broker.pa_flowcells)] in
+        let content =
+          content_paragraph todo
+        in
+        return content
+      | None ->
+        error (`hiseq_runs (`cannot_retrieve_person_affairs person))
+      end
+    | None ->
+      error (`hiseq_runs (`no_logged_user))
+    end
+
+      
   let make configuration =
     (fun () () ->
       Template.default ~title:"HiSeq 2000 Runs"
-        (Authentication.authorizes (`view `all_flowcells)
-         >>= function
-         | true ->
+        (Authentication.authorizes (`view `all_hiseq_runs)
+         >>= fun can_view_hiseq_runs ->
+         Authentication.authorizes (`view `all_flowcells)
+         >>= fun can_view_all_flowcells ->
+         if can_view_hiseq_runs
+         then
            Template.make_content ~configuration
              ~main_title:"HiSeq 2000 Runs" (hiseq_runs configuration)
-         | false ->
+         else if can_view_all_flowcells
+         then
+           Template.make_content ~configuration
+             ~main_title:"HiSeq 2000 Runs" (person_flowcells ~configuration)
+         else
            Template.make_authentication_error ~configuration
              ~main_title:"HiSeq 2000 Runs" 
-             (return [Html5.pcdataf "You may not view all the flowcells."])))
+             (return [Html5.pcdataf "You may not view anything here."])))
 end
 
 module Default_service = struct
