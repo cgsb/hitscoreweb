@@ -1304,27 +1304,66 @@ module Hiseq_runs_service = struct
                    `head [pcdata "Flowcell B"]; ]
                  :: sorted)))
 
+  let lanes_table broker lanes =
+    let open Html5 in
+    let open Template in
+    let module Broker = Hitscore_lwt.Broker in
+    let open Option in
+    let lib_name (_, p, n) =
+      sprintf "%s%s" Option.(value_map p ~default:"" ~f:(sprintf "%s.")) n in
+    let lib_link l =
+      Template.a_link Services.libraries
+        [pcdata (lib_name l)] ([`basic], [lib_name l]) in
+    let one_lane l =
+      `subtable 
+        (List.map l.Broker.lane_libraries (fun lib ->
+          let name = lib_name lib in
+          [ `sortable (name, [lib_link lib])])) 
+    in
+    content_table
+      ([ `head [pcdata "Lane"]; `head [pcdata "Library"] ]
+       ::
+         (List.map lanes (fun l ->
+           [ `text [pcdataf "Lane %d" l.Broker.lane_index];
+             one_lane l ])))
+         
   let person_flowcells ~configuration =
     let open Html5 in
     let open Template in
     let module Broker = Hitscore_lwt.Broker in
+
+    (* Testing flow-stuff: *)
+    let (>>!) m f = bind_on_error m ~f in
+    let flow_some opt ~err =
+      match opt with
+      | Some s -> return s
+      | None -> error err in
+    
     Data_access.broker () >>= fun broker ->
     Authentication.user_logged () >>= fun user_opt ->
-    begin match user_opt with
-    | Some {Authentication.person; _} ->
-      begin match Broker.person_affairs broker person.Layout.Record_person.id with
-      | Some affairs ->
-        let todo = [pcdataf "todo: %d" (List.length affairs.Broker.pa_flowcells)] in
-        let content =
-          content_paragraph todo
+    flow_some user_opt (`hiseq_runs (`no_logged_user))
+    >>= fun {Authentication.person; _} ->
+    Broker.person_affairs broker person.Layout.Record_person.id
+    >>! (function
+    | `person_not_found person ->
+      error (`hiseq_runs (`cannot_retrieve_person_affairs person)))
+    >>= fun affairs ->
+    let sections =
+      List.map affairs.Broker.pa_flowcells (fun fc ->
+        let lanes = lanes_table broker fc.Broker.ff_lanes in
+        let subsections =
+          List.map fc.Broker.ff_runs (fun hrt ->
+            let date = hrt.Layout.Record_hiseq_run.date in
+            content_section (pcdataf "%s Run"
+                               (Time.to_local_date date |! Date.to_string))
+              lanes)
         in
-        return content
-      | None ->
-        error (`hiseq_runs (`cannot_retrieve_person_affairs person))
-      end
-    | None ->
-      error (`hiseq_runs (`no_logged_user))
-    end
+        content_section (pcdataf "Flowcell %s" fc.Broker.ff_id)
+          (content_list subsections))
+    in
+    let content = content_list sections in
+    return content
+
 
       
   let make configuration =
