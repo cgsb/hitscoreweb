@@ -1304,12 +1304,14 @@ module Hiseq_runs_service = struct
                    `head [pcdata "Flowcell B"]; ]
                  :: sorted)))
 
-  let lanes_table broker lanes =
+  let lanes_table broker lanes dmux_sum_opt =
     let open Html5 in
     let open Template in
     let module Broker = Hitscore_lwt.Broker in
     let open Option in
-    let lib_name (_, p, n) =
+    let lib_name lib_in_lan =
+      let p = lib_in_lan.Broker.lil_stock.Layout.Record_stock_library.project in
+      let n = lib_in_lan.Broker.lil_stock.Layout.Record_stock_library.name in
       sprintf "%s%s" Option.(value_map p ~default:"" ~f:(sprintf "%s.")) n in
     let lib_link l =
       Template.a_link Services.libraries
@@ -1317,16 +1319,40 @@ module Hiseq_runs_service = struct
     let one_lane l =
       `subtable 
         (List.map l.Broker.lane_libraries (fun lib ->
+          let stats =
+            let module Bui = Hitscore_interfaces.B2F_unaligned_information in
+            dmux_sum_opt
+            >>= fun dmx ->
+            List.find dmx.(l.Broker.lane_index - 1)
+              (fun x ->
+                x.Bui.name = lib.Broker.lil_stock.Layout.Record_stock_library.name)
+            >>= fun found ->
+            return [`sortable (Float.to_string found.Bui.cluster_count,
+                               [pcdataf "%s"
+                                   (pretty_string_of_float ~sof:(sprintf "%.0f")
+                                      found.Bui.cluster_count)])]
+          in
           let name = lib_name lib in
-          [ `sortable (name, [lib_link lib])])) 
+          [ `sortable (name, [lib_link lib])] @ (value ~default:[] stats))) 
     in
-    content_table
-      ([ `head [pcdata "Lane"]; `head [pcdata "Library"] ]
-       ::
-         (List.map lanes (fun l ->
-           [ `text [pcdataf "Lane %d" l.Broker.lane_index];
+    let base_head = [ `head [pcdata "Lane"]; `head [pcdata "Library"] ] in
+    let summary_head =
+      match dmux_sum_opt with
+      | None -> []
+      | Some o -> [ `head [pcdata "Nb of reads"]] in
+    ((base_head @ summary_head)
+     ::
+       (List.map lanes (fun l ->
+         [ `text [pcdataf "Lane %d" l.Broker.lane_index];
              one_lane l ])))
-         
+      
+  let simple_lanes_table broker lanes =
+    lanes_table broker lanes None
+
+  let lanes_table_with_stats broker lanes dmux_sum =
+    lanes_table broker lanes dmux_sum
+        
+    
   let person_flowcells ~configuration =
     let open Html5 in
     let open Template in
@@ -1343,24 +1369,70 @@ module Hiseq_runs_service = struct
     Authentication.user_logged () >>= fun user_opt ->
     flow_some user_opt (`hiseq_runs (`no_logged_user))
     >>= fun {Authentication.person; _} ->
-    Broker.person_affairs broker person.Layout.Record_person.id
-    >>! (function
-    | `person_not_found person ->
-      error (`hiseq_runs (`cannot_retrieve_person_affairs person)))
+    (Broker.person_affairs broker person.Layout.Record_person.id
+     >>! (function
+     | `person_not_found person ->
+       error (`hiseq_runs (`cannot_retrieve_person_affairs person))))
     >>= fun affairs ->
-    let sections =
-      List.map affairs.Broker.pa_flowcells (fun fc ->
-        let lanes = lanes_table broker fc.Broker.ff_lanes in
-        let subsections =
-          List.map fc.Broker.ff_runs (fun hrt ->
-            let date = hrt.Layout.Record_hiseq_run.date in
-            content_section (pcdataf "%s Run"
-                               (Time.to_local_date date |! Date.to_string))
-              lanes)
-        in
-        content_section (pcdataf "Flowcell %s" fc.Broker.ff_id)
-          (content_list subsections))
-    in
+    of_list_sequential affairs.Broker.pa_flowcells (fun fc ->
+      of_list_sequential  fc.Broker.ff_runs (fun run ->
+        Broker.delivered_demultiplexings broker run
+        >>| List.filter_map ~f:(fun ddmux ->
+          let person_deliveries =
+            List.filter ddmux.Broker.ddmux_deliveries ~f:(fun (fpud, cfd) ->
+              List.exists fc.Broker.ff_lanes
+                ~f:(fun lane ->
+                  List.exists lane.Broker.lane_invoices
+                  ~f:(fun invoice ->
+                    fpud.Layout.Function_prepare_unaligned_delivery.
+                      invoice.Layout.Record_invoicing.id  
+                    = invoice.Layout.Record_invoicing.g_id)))
+          in
+          if person_deliveries = []
+          then None
+          else Some (ddmux, person_deliveries))
+        >>= fun run_deliveries ->
+        of_list_sequential run_deliveries ~f:(fun (ddmux, pdeliv) ->
+          let dmux_summary_m =
+            Data_access.File_cache.get_demux_summary ddmux.Broker.ddmux_summary_path
+          in
+          double_bind dmux_summary_m
+            ~ok:(fun dmux_summary -> return (ddmux, pdeliv, Some dmux_summary))
+            ~error:(fun e ->
+              eprintf "Error getting: %s\n%!" ddmux.Broker.ddmux_summary_path;
+              return (ddmux, pdeliv, None)))
+        >>= fun run_deliveries_with_stats ->
+        return (run, run_deliveries_with_stats))
+      >>= fun runs_and_deliveries ->
+      let run_subsections =
+        List.map runs_and_deliveries (fun (hrt, deliveries) ->
+          let date = hrt.Broker.hr_t.Layout.Record_hiseq_run.date in
+          let run_title =
+            pcdataf "%s Run" (Time.to_local_date date |! Date.to_string) in
+          let deliveries_list =
+            let delivery_title cfd =
+              span [
+                pcdata "Delivery ";
+                codef "%s" cfd.Layout.Record_client_fastqs_dir.directory;
+              ] in
+              List.map deliveries (fun (ddmux, delivp, dmux_sum) ->
+                List.map delivp (fun (fpub, cfd) ->
+                  content_section (delivery_title cfd)
+                    (lanes_table_with_stats broker fc.Broker.ff_lanes dmux_sum
+                     |! content_table))
+                ) |! List.flatten;
+          in
+          if deliveries = []
+          then 
+            content_section run_title
+              (simple_lanes_table broker fc.Broker.ff_lanes |! content_table)
+          else
+            content_section run_title (content_list deliveries_list)
+        )
+      in
+      return (content_section (pcdataf "Flowcell %s" fc.Broker.ff_id)
+                (content_list run_subsections)))
+    >>= fun sections ->
     let content = content_list sections in
     return content
 
