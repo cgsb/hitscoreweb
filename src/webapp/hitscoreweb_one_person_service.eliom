@@ -1,6 +1,7 @@
 
 {shared{
 open Hitscoreweb_std
+open Printf
 }}
 
 module Data_access = Hitscoreweb_data_access
@@ -34,6 +35,169 @@ let one_time_post_coservice_error =
   Eliom_references.eref ~secure:true
     ~scope:Eliom_common.client_process (None: one_time_post_coservice_error option)
 
+
+
+    
+{shared{
+type up_message =
+| Change_password of string * string * string  (* email, pwd1, pwd2 *)
+deriving (Json)
+
+type down_message = 
+| Password_changed
+| Error_string of string
+
+let password_minimum_size = 8
+}}
+
+let caml_service =
+  make_delayed (Eliom_services.service 
+          ~path:["one_person_caml_service"]
+          ~get_params:Eliom_parameters.(caml "param" Json.t<up_message>))
+
+let reply ~configuration =
+  function
+  | Change_password (id, pw1, pw2) ->
+    if pw1 <> pw2 then
+      return (Error_string "Trying to mess around? passwords are not equal")
+    else if String.length pw1 < password_minimum_size then
+      return (Error_string "Trying to mess around? passwords are not long enough")
+    else (
+      let edition_m =
+        Data_access.find_person id
+        >>= fun person ->
+        Authentication.authorizes (`edit (`password_of_person person))
+        >>= fun can_edit ->
+        if can_edit 
+        then 
+          let open Layout.Record_person in
+          let new_hash =
+            Authentication.hash_password person.g_id pw1 in
+          let person = { person with password_hash = Some new_hash } in
+          Hitscore_lwt.with_database ~configuration
+            ~f:(Data_access.modify_person ~person)
+           >>= fun () ->
+          return Password_changed
+        else
+          return (Error_string "Trying to mess around? \
+                    You do not have the right to modify this")
+      in
+      double_bind edition_m ~ok:return
+        ~error:(function
+        | e ->
+          return (Error_string "Edition error … deeply sorry.")))
+      
+let init_caml_service ~configuration =
+  let already = ref false in
+  fun () ->
+    if !already then () else (
+      already := true;
+      let fail fmt =
+        ksprintf
+          (fun s -> Lwt.fail (Failure ("wrong reply from server: " ^ s)))
+          fmt
+      in
+      Eliom_output.Caml.register ~service:(caml_service ())
+        (fun param () ->
+          Lwt.bind (reply ~configuration param) (function
+          | Ok o -> Lwt.return (o : down_message)
+          | Error e -> fail "unknown error")))
+        
+let change_password_onload div_id person_email =
+  let caml = caml_service () in
+  Eliom_services.onload {{
+    let open Html5 in
+    let open Lwt in
+    try
+      begin
+        
+        let call_caml msg =
+          Eliom_client.call_caml_service ~service: %caml msg () in
+        
+        let the_span = get_element_exn %div_id in
+        the_span##onclick <-
+          Dom_html.(handler (fun ev ->
+            the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            the_span##innerHTML <-
+              Js.string "Please, enter a <strong>good</strong> password twice: ";
+            the_span##classList##remove(Js.string "like_link"); 
+            let pw1, pw2, submit =
+              let open Eliom_output.Html5 in
+              (string_input ~input_type:`Password (),
+               string_input ~input_type:`Password (),
+               button ~a:[a_style "visibility:hidden"]
+                 ~button_type:`Button [pcdata "submit"]) in
+            let check_handler in1 in2 subm msg =
+              Dom_html.handler (fun _ ->
+                let s1 = Js.to_string in1##value in
+                let s2 = Js.to_string in2##value in
+                if max (String.length s1) (String.length s2) < password_minimum_size
+                then (
+                  msg##innerHTML <-
+                    ksprintf Js.string "Your password must be \
+                                 <strong>at least %d characters long</strong>."
+                    password_minimum_size;
+                  subm##style##visibility <- Js.string "hidden";
+                  msg##style##visibility <- Js.string "visible";
+                ) else if s1 <> s2 then (
+                  msg##innerHTML <-
+                    Js.string "The two entries are <strong>not equal</strong>.";
+                  subm##style##visibility <- Js.string "hidden";
+                  msg##style##visibility <- Js.string "visible";
+                ) else if password_minimum_size <= String.length s1 && s1 = s2
+                  then (
+                    subm##style##visibility <- Js.string "visible";
+                    msg##style##visibility <- Js.string "hidden";
+                    );
+                  Js._true)
+            in
+            let i_elt_1 = Eliom_client.Html5.of_input pw1 in
+            let i_elt_2 = Eliom_client.Html5.of_input pw2 in
+            let btn_elt = Eliom_client.Html5.of_button submit in
+            let msg_elt =
+              Eliom_client.Html5.of_element
+                (span ~a:[a_style " color: red; "] []) in
+            i_elt_1##onchange  <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
+            i_elt_1##onkeyup   <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
+            i_elt_1##onmouseup <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
+            i_elt_2##onchange  <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
+            i_elt_2##onkeyup   <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
+            i_elt_2##onmouseup <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
+            btn_elt##onclick <- Dom_html.handler(fun _ ->
+              the_span##innerHTML <- Js.string "<b>Processing …</b>";
+              Lwt.ignore_result 
+                begin
+                  let s1 = Js.to_string i_elt_1##value in
+                  let s2 = Js.to_string i_elt_2##value in
+                  call_caml (Change_password ( %person_email, s1, s2))
+                  >>= fun msg ->
+                  begin match msg with
+                  | Password_changed ->
+                    the_span##innerHTML <- Js.string "<b>Done.</b>";
+                      return ()
+                    | Error_string s ->
+                      dbg "Got Error: %S" s;
+                      the_span##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                      return ()
+                  end
+                end;
+              Js._true
+            );
+              (* let form = Eliom_client.Html5.of_div (div [pw1; pw2; submit]) in *)
+            Dom.appendChild the_span i_elt_1;
+            Dom.appendChild the_span i_elt_2;
+            Dom.appendChild the_span btn_elt;
+            Dom.appendChild the_span msg_elt;
+            Js._true
+          ));
+        
+      end
+    with e -> 
+      dbg "Exception in onload for %S: %s" %div_id (Printexc.to_string e);
+      ()
+  }}
+
+    
 let make_view_page ~home ~configuration person =
   let open Html5 in
   let open Template in
@@ -52,17 +216,19 @@ let make_view_page ~home ~configuration person =
         (match arr with
         | [| |] -> "N/A"
         | s -> Array.to_list s |! String.concat ~sep:", ") in
-    Authentication.authorizes (`edit (`person person))
-    >>= fun can_edit ->
-    begin if can_edit
+    Authentication.authorizes (`edit (`names_of_person person))
+    >>= fun can_edit_names ->
+    begin if can_edit_names
       then 
         return [Template.a_link
-                   (home "edit") [pcdata "You may edit part of this"] ();
+                   (home "edit") [pcdata "You may edit names"] ();
                 pcdata "."]
       else
         return [pcdata "You cannot edit your information."]
     end
     >>= fun edition_link ->
+    Authentication.authorizes (`edit (`password_of_person person))
+    >>= fun can_edit_password ->
     let error_message =
       Option.value_map ~default:(span []) potential_error_to_display
         ~f:(fun e ->
@@ -81,6 +247,15 @@ let make_view_page ~home ~configuration person =
                 html_of_error (e)))
           end)
     in
+    let change_password_link =
+      if not can_edit_password
+      then []
+      else (
+        let chgpwd_id = unique_id "change_password" in
+        change_password_onload chgpwd_id person.Layout.Record_person.email;
+        [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
+            [pcdata "You may change your GenCore password"]]
+      ) in
     return (content_paragraph
               [error_message;
                ul [
@@ -100,7 +275,8 @@ let make_view_page ~home ~configuration person =
                       | Some _, Some _ ->
                         "Gencore Passowrd set + NYU Available"));
                ];
-               div edition_link
+               div edition_link;
+               div change_password_link;
               ])
   )
 
@@ -120,7 +296,7 @@ let one_time_post_coservice ~redirection ~configuration person =
     (fun () (print_name, (given_name, (middle_name, (family_name, nickname)))) ->
       eprintf "%s %s\n%!" print_name given_name;
       let modification =
-        Authentication.authorizes (`edit (`person person))
+        Authentication.authorizes (`edit (`names_of_person person))
         >>= fun can_edit ->
         if can_edit 
         then 
@@ -242,7 +418,7 @@ let make_edit_page ~home ~configuration person =
 let make_generic ~home ~configuration person action = 
   begin match action with
   | Some "edit" -> 
-    (Authentication.authorizes (`edit (`person person))
+    (Authentication.authorizes (`edit (`names_of_person person))
      >>= function
      | true ->
        Template.make_content ~configuration

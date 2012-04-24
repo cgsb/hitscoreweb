@@ -2,10 +2,10 @@ include Core.Std
 (* include Lwt *)
 
 let (|>) x f = f x
-
+{shared{
 module Html5 = struct
   include Eliom_pervasives.HTML5.M
-    
+  open Printf 
   let pcdataf fmt = ksprintf pcdata fmt
 
   let codef fmt = ksprintf (fun s -> code [pcdata s]) fmt
@@ -14,6 +14,7 @@ module Html5 = struct
 
 
 end
+}}
 module Output_app =
   Eliom_output.Eliom_appl (struct
     let application_name = "hitscoreweb"
