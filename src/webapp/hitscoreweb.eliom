@@ -1316,9 +1316,16 @@ module Hiseq_runs_service = struct
     let lib_link l =
       Template.a_link Services.libraries
         [pcdata (lib_name l)] ([`basic], [lib_name l]) in
+    let nb0 f = `number (sprintf "%.0f", f) in 
+    let nb2 f = `number (sprintf "%.2f", f) in 
     let one_lane l =
+      let without_phix =
+        List.filter l.Broker.lane_libraries ~f:(fun lib ->
+          lib.Broker.lil_stock.Layout.Record_stock_library.name <> "PhiX_v3"
+          && lib.Broker.lil_stock.Layout.Record_stock_library.name <> "PhiX_v2")
+      in
       `subtable 
-        (List.map l.Broker.lane_libraries (fun lib ->
+        (List.map without_phix (fun lib ->
           let stats =
             let module Bui = Hitscore_interfaces.B2F_unaligned_information in
             dmux_sum_opt
@@ -1327,19 +1334,28 @@ module Hiseq_runs_service = struct
               (fun x ->
                 x.Bui.name = lib.Broker.lil_stock.Layout.Record_stock_library.name)
             >>= fun found ->
-            return [`sortable (Float.to_string found.Bui.cluster_count,
-                               [pcdataf "%s"
-                                   (pretty_string_of_float ~sof:(sprintf "%.0f")
-                                      found.Bui.cluster_count)])]
+            return [nb0 found.Bui.cluster_count;
+                    nb2 (100. *. found.Bui.yield_q30 /. found.Bui.yield);
+                    nb2 (found.Bui.quality_score_sum /. found.Bui.yield)]
           in
           let name = lib_name lib in
-          [ `sortable (name, [lib_link lib])] @ (value ~default:[] stats))) 
+          let desc =
+            value ~default:""
+              lib.Broker.lil_stock.Layout.Record_stock_library.description in
+          [ `sortable (name, [lib_link lib]);
+            `sortable (desc, [pcdata desc]) ] 
+          @ (value ~default:[] stats))) 
     in
-    let base_head = [ `head [pcdata "Lane"]; `head [pcdata "Library"] ] in
+    let base_head =
+      [ `head [pcdata "Lane"]; `head [pcdata "Library"];
+        `head [pcdata "Description"]] in
     let summary_head =
       match dmux_sum_opt with
       | None -> []
-      | Some o -> [ `head [pcdata "Nb of reads"]] in
+      | Some o ->
+        [ `head [pcdata "Nb of reads"];
+          `head [pcdata "% bases ≥ Q30"];
+          `head [pcdata "Mean QS (PF)"]] in
     ((base_head @ summary_head)
      ::
        (List.map lanes (fun l ->
