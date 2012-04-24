@@ -18,6 +18,8 @@ COMMON_FILES := \
   hitscoreweb_services.eliom	    \
   hitscoreweb_authentication.eliom \
   hitscoreweb_template.eliom	   \
+  hitscoreweb_persons.eliom	   \
+  hitscoreweb_hiseq_runs.eliom	   \
   hitscoreweb_layout_service.eliom \
   hitscoreweb_one_person_service.eliom \
   hitscoreweb.eliom
