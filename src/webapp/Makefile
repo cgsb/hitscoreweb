@@ -70,7 +70,7 @@ opt:: ${APP_NAME}.cmxs
 SERVER_INC  := ${addprefix -package ,${SERVER_PACKAGES}}
 
 SERVER_OBJS := $(patsubst %.eliom,${ELIOM_SERVER_DIR}/%.cmo, ${SERVER_FILES})
-SERVER_OBJS := $(patsubst %.ml,${ELIOM_SERVER_DIR}/%.cmo, ${SERVER_OBJS})
+#SERVER_OBJS := $(patsubst %.ml,${ELIOM_SERVER_DIR}/%.cmo, ${SERVER_OBJS})
 
 ${APP_NAME}.cma: ${SERVER_OBJS}
 	${ELIOMC} -a -o $@ $^
@@ -84,14 +84,14 @@ ${ELIOM_SERVER_DIR}/%.cmi: %.mli
 	${ELIOMC} -c ${SERVER_INC} $<
 
 ${ELIOM_SERVER_DIR}/%.cmo: %.ml
-	${ELIOMC} -c ${SERVER_INC} $<
+	${ELIOMC} -c ${SERVER_INC} -o $@ $<
 ${ELIOM_SERVER_DIR}/%.cmo: %.eliom
-	${ELIOMC} -c -noinfer ${SERVER_INC} $<
+	${ELIOMC} -c -noinfer ${SERVER_INC} -o $@ $<
 
 ${ELIOM_SERVER_DIR}/%.cmx: %.ml
-	${ELIOMOPT} -c ${SERVER_INC} $<
+	${ELIOMOPT} -c ${SERVER_INC} -o $@ $<
 ${ELIOM_SERVER_DIR}/%.cmx: %.eliom
-	${ELIOMOPT} -c -noinfer ${SERVER_INC} $<
+	${ELIOMOPT} -c -noinfer ${SERVER_INC} -o $@ $<
 
 %.cmxs: %.cmxa
 	$(ELIOMOPT) -shared -linkall -o $@ $<
