@@ -121,7 +121,7 @@ ${APP_NAME}.js: ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB}
 ${ELIOM_CLIENT_DIR}/%.cmi: %.eliom
 	${JS_OF_ELIOM} -c ${CLIENT_INC} $<
 
-${ELIOM_CLIENT_DIR}/%.cmo: %.eliom
+${ELIOM_CLIENT_DIR}/%.cmo: %.eliom %.type_mli
 	${JS_OF_ELIOM} -c ${CLIENT_INC} $<
 ${ELIOM_CLIENT_DIR}/%.cmo: %.ml
 	${JS_OF_ELIOM} -c ${CLIENT_INC} $<

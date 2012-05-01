@@ -68,14 +68,15 @@ let modify_person ~dbh ~person =
 
 module File_cache = struct
 
-  module String_map = Map.Make(String)
+  module String_map = Core.Std.Map.Poly
 
   let _run_param_cache =
     ref (String_map.empty:
-           Hitscore_interfaces.Hiseq_raw_information.clusters_info option array
+           (string,
+            Hitscore_interfaces.Hiseq_raw_information.clusters_info option array)
            String_map.t)
       
-  let get_clusters_info path =
+  let get_clusters_info (path:string) =
     let make file = 
       read_file file >>= fun xml_s ->
       let xml =
@@ -91,7 +92,8 @@ module File_cache = struct
         
   let _demux_summary_cache =
     ref (String_map.empty:
-           Hitscore_interfaces.B2F_unaligned_information.demux_summary String_map.t)
+           (string,
+            Hitscore_interfaces.B2F_unaligned_information.demux_summary) String_map.t)
       
   let get_demux_summary path =
     let make file = 
@@ -132,7 +134,7 @@ module File_cache = struct
   type fastx_quality_stats = bp_fastx_quality_stats list
       
   let _fastx_quality_stats_cache =
-    ref (String_map.empty: fastx_quality_stats String_map.t)
+    ref (String_map.empty: (string, fastx_quality_stats) String_map.t)
       
   let get_fastx_quality_stats path =
     match String_map.find !_fastx_quality_stats_cache path with

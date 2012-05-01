@@ -439,9 +439,9 @@ let flatten_table l =
           after_the_row := t;
           h
         | any_other -> [`with_geometry (max_height, 1, any_other)])
-      |! List.flatten in
+      |! List.concat in
     the_row :: !after_the_row
-  ) |! List.flatten
+  ) |! List.concat
     
 let rec html_of_content ?(section_level=2) content =
   let open Html5 in

@@ -41,7 +41,7 @@ let flowcell_cell ~dbh fc_p =
     let info_on_lanes =
       interleave_list ~sep:[ br () ]
         (List.map keys ~f:(fun k ->
-          let vals = List.find_all lanes_info ~f:(fun a -> fst a = k) in
+          let vals = List.filter lanes_info ~f:(fun a -> fst a = k) in
           let plural = if List.length vals = 1 then "" else "s" in
           let lanes = List.map vals snd |! lanes_of in
             (* Put lane numbers first to allow sorting and then removing them *)
@@ -59,7 +59,7 @@ let flowcell_cell ~dbh fc_p =
         fc.serial_name in
     return (`sortable (fc.serial_name,
                        [link; pcdataf " — %s" run_type; br ()]
-                       @ (List.flatten info_on_lanes))))
+                       @ (List.concat info_on_lanes))))
     
 let hiseq_runs ~configuration =
   let open Html5 in
@@ -223,7 +223,7 @@ let person_flowcells ~configuration =
               content_section (delivery_title cfd)
                 (lanes_table_with_stats broker fc.Broker.ff_lanes dmux_sum
                  |! content_table))
-          ) |! List.flatten;
+          ) |! List.concat;
         in
         if deliveries = []
         then 

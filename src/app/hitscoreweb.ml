@@ -172,13 +172,13 @@ let config
 
 let syscmd s =
   match Unix.system s with
-  | `Exited 0 -> Ok ()
-  | e -> Error (Failure (Unix.Process_status.to_string_hum e))
+  | Ok () -> Ok ()
+  | e -> Error (Failure (Unix.Exit_or_signal.to_string_hum e))
 
 let syscmdf fmt =
   ksprintf syscmd fmt
 
-let syscmd_exn s = syscmd s |> Result.raise_error
+let syscmd_exn s = syscmd s |> Result.ok_exn
 
 let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
   let runtime_root = "/tmp/hitscoreweb" in
@@ -189,7 +189,7 @@ let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
   let open Result in
   syscmd (sprintf "rm -fr %s/static/ && mkdir -p %s/static/"
-            runtime_root runtime_root) |> raise_error;
+            runtime_root runtime_root) |> ok_exn;
   let open Out_channel in
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
@@ -198,10 +198,10 @@ let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
       ?debug ~static_dirs:[runtime_root ^ "/static"; www_dir]
       ~port ~runtime_root kind (output_string o));
   syscmdf "cp _build/hitscoreweb/hitscoreweb.js %s/static/" 
-    runtime_root |! raise_error;
+    runtime_root |! ok_exn;
   syscmdf "cp _build/hitscoreweb/hitscoreweb.css %s/static/" 
-    runtime_root |! raise_error;
-  syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> raise_error
+    runtime_root |! ok_exn;
+  syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> ok_exn
 
 
 let sysv_init_file
@@ -338,7 +338,7 @@ let rpm_build ?authentication ?(release=1) ?ssl ?ssl_dir () =
     match Unix.system 
       "test \"`ocamlfind list | grep batteries | grep 1.4 | wc -l`\" -eq 0"
     with
-    | `Exited 1 -> 
+    | Error (`Exit_non_zero 1) -> 
       printf
         "ERR: It seems to be the wrong version of Batteries, \
           I won't continue:\n";

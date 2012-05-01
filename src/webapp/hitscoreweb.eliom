@@ -28,7 +28,7 @@ module Flowcell_service = struct
         [ 
           Template.a_link Services.persons
             [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
-          br () ]) |! List.flatten)
+          br () ]) |! List.concat)
       @ [
         if List.length people > 1 then
           small [
@@ -286,7 +286,7 @@ module Flowcell_service = struct
               ~filter ~lane_index:(i + 1) ~library_name:ls.name
               ~only_one_in_the_lane ~f:make_row))
       in
-      return (first_row, List.flatten other_rows)
+      return (first_row, List.concat other_rows)
     in
     let dmux_sum = Filename.concat path "Flowcell_demux_summary.xml" in
     make dmux_sum
@@ -437,7 +437,7 @@ module Libraries_service = struct
                           | t, Some i -> Some (sprintf "%s:%ld" t i))
                                        |! String.concat ~sep:",")]))
         >>= fun pcdatas ->
-        return (List.flatten pcdatas)
+        return (List.concat pcdatas)
     in
     custom_barcodes >>= fun custom ->
     let non_custom =
@@ -487,10 +487,10 @@ module Libraries_service = struct
       let { fcid; lane; contacts } = submission in
       Flowcell_service.get_flowcell_by_serial_name ~dbh fcid >>= fun fc_p ->
       Layout.Record_flowcell.(get ~dbh fc_p >>= fun {lanes} ->
-                              return (Array.findi lanes ((=) lane)))
+                              return (Array.findi lanes (fun _ -> (=) lane)))
       >>= function
       | None -> error (`no_lane_index (fcid, lane))
-      | Some lane_index_minus_one ->
+      | Some (lane_index_minus_one, _) ->
         Queries.delivered_unaligned_directories_of_lane ~dbh lane
         >>= fun delivered_unaligned_dirs_and_client_dirs ->
         of_list_sequential delivered_unaligned_dirs_and_client_dirs
@@ -593,7 +593,7 @@ module Libraries_service = struct
         >>| List.map ~f:(function
         | `sortable _ :: `sortable _ :: t -> first_cell :: t
         | any_row -> any_row))
-      >>| List.flatten
+      >>| List.concat
       >>= fun fi ->
       submission.fastq_info <- Some fi;
       return fi
@@ -614,7 +614,7 @@ module Libraries_service = struct
     let all_rows_m =
       of_list_sequential submissions (fun submission ->
         submission_fastq_info ~dbh ~configuration lib submission)
-      >>| List.flatten in
+      >>| List.concat in
     double_bind all_rows_m
       ~ok:(function
       | [] -> return (List.init (List.length fastq_header)
@@ -677,7 +677,7 @@ module Libraries_service = struct
               make_submission ~fcid ~lane ~contacts)
         >>= fun submissions ->
         let people = 
-          submissions |! List.map ~f:(fun s -> s.contacts) |! List.flatten in
+          submissions |! List.map ~f:(fun s -> s.contacts) |! List.concat in
         Authentication.authorizes (`view (`libraries_of people))
         >>= function
         | true -> return (Some (result_item, submissions))
@@ -846,7 +846,7 @@ module Libraries_service = struct
             "T", bfxqs_T_Count;
             "N", bfxqs_N_Count;],
           (bfxqs_lW, bfxqs_Q1, bfxqs_med, bfxqs_Q3, bfxqs_rW)))
-      >>| List.split
+      >>| List.unzip
       >>= fun (acgtn, by5) ->
       Highchart.make ~more_y:5. ~y_axis_title:"Q Score"
         ~plot_title:"Quality Plot" [`box_whisker by5]
@@ -939,7 +939,7 @@ module Libraries_service = struct
       try 
         List.map2_exn files rows ~f:(fun file row ->
           li (file @ row))
-      with e -> List.map files ~f:(fun file -> li (file @ (List.flatten rows)))
+      with e -> List.map files ~f:(fun file -> li (file @ (List.concat rows)))
     in
     return [li [title; ul file_info_ul]]
 
@@ -970,7 +970,7 @@ module Libraries_service = struct
     >>= fun fastq_paths ->
     return [
       content_section (pcdataf "Library Details") 
-        (content_paragraph [ul (List.flatten fastq_paths)])
+        (content_paragraph [ul (List.concat fastq_paths)])
     ]
       
   let libraries ~showing ?(qualified_names=[]) ~configuration  =
@@ -979,6 +979,7 @@ module Libraries_service = struct
       fetch_and_filter_libs ~dbh qualified_names >>= fun libs_filtered ->
       make_libs_table ~dbh ~configuration ~showing libs_filtered
       >>= fun main_table ->
+      (* List.iter qualified_names (eprintf "QN: %S\n%!"); *)
       begin match libs_filtered with
       | [ one ] -> details_for_one_lib ~dbh ~configuration one
       | l -> return []
@@ -1171,7 +1172,7 @@ module Doc_service = struct
             | Xml_tree.Error (p, e) -> error (`xml_parsing_error (p, e))
           end
           >>= fun xml ->
-          let continue l f = List.map l f |! List.flatten in
+          let continue l f = List.map l f |! List.concat in
           let find_attr name attrs =
             List.find_map attrs (fun ((_, attr), value) ->
               if name = attr then Some value else None) in
