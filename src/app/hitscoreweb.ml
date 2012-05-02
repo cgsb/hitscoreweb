@@ -95,6 +95,7 @@ let config
       sprintf "
     <extension findlib-package=\"ocsigenserver.ext.staticmod\"/>
     <extension findlib-package=\"core\"/>
+    <extension findlib-package=\"core_extended\"/>
     <extension findlib-package=\"pgocaml\"/>
     <extension findlib-package=\"hitscore\"/>
     <extension module=\"_build/src/simple_pam/hitscorewebpam.cma\"/>

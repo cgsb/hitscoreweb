@@ -4,7 +4,7 @@
 APP_NAME := hitscoreweb
 
 ## Packages required to build the server part of the application
-SERVER_PACKAGES := hitscoregen threads core hitscore
+SERVER_PACKAGES := hitscoregen threads core hitscore core_extended
 
 ## Packages to be linked in the client part
 

@@ -56,6 +56,20 @@ end
 let read_file file =
   wrap_io Lwt_io.(fun () -> with_file ~mode:input file (fun i -> read i)) ()
 
+(*
+  https://bitbucket.org/yminsky/ocaml-core/src/c0e9df7b574d/base/core/extended/lib/sendmail.mli
+*)
+let send_mail ?sender ?cc ?bcc ?reply_to ?content_type ~recipients content =
+  let m =
+    wrap_io
+      (Lwt_preemptive.detach
+         (Core_extended.Sendmail.send ?sender ?cc ?bcc ?reply_to
+            ?content_type ~recipients))
+      content
+  in
+  double_bind m ~ok:return ~error:(function
+  | `io_exn e -> error (`sendmail e))
+    
 let rec interleave_list ~sep = function
   | [] -> []
   | [one] -> [one]
