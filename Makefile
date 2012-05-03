@@ -15,14 +15,19 @@ mount_hitscoreweb:: _build/hitscoreweb $(TO_MOUNT)
 
 build: mount_hitscoreweb
 	ocaml setup.ml -build hitscorewebpam.mllib
-	make -C _build/hitscoreweb all
+	make -C _build/hitscoreweb byte js css
 	ocaml setup.ml -build
 
-static: install
+build_opt: mount_hitscoreweb
+	ocaml setup.ml -build hitscorewebpam.mllib
+	make -C _build/hitscoreweb byte opt js css
+	ocaml setup.ml -build
+
+static: build_opt install
 	ocamlfind ocamlopt -linkall \
 	    -package ocsigenserver,ocsigenserver.ext.ocsipersist-sqlite  \
 	    -package eliom.server,ocsigenserver.ext.staticmod  \
-	    -package hitscore,hitscorewebpam \
+	    -package hitscore,hitscorewebpam,core_extended \
 	     _build/hitscoreweb/hitscoreweb.cmxa \
 	     server_main.cmx -o hitscoreserver -linkpkg -thread
 

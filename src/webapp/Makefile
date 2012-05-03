@@ -61,7 +61,9 @@ export ELIOM_TYPE_DIR   := .
 
 #####################################
 
-all: byte opt ${APP_NAME}.css ${APP_NAME}.js
+all: byte opt js css
+js::  ${APP_NAME}.js
+css::  ${APP_NAME}.css
 byte:: ${APP_NAME}.cma 
 opt:: ${APP_NAME}.cmxs 
 
