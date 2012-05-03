@@ -60,6 +60,13 @@ let find_person id =
   | None -> error (`person_not_found id)
   end
 
+let person_by_pointer p =
+  broker ()
+  >>= fun broker ->
+  let c = 
+    new Classy_layout.layout (Broker.current_dump broker) in
+  return (c#person#get32_exn p.Layout.Record_person.id)
+  
 let modify_person ~dbh ~person =
   bind_on_error (broker ()
                  >>= fun broker ->
