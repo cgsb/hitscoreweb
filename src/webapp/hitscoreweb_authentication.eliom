@@ -28,6 +28,7 @@ type capability = [
 | `edit of [
   | `password_of_person of Layout.Record_person.t
   | `names_of_person of Layout.Record_person.t
+  | `emails_of_person of Layout.Record_person.t
   | `layout]
 | `impersonate of [`person of Layout.Record_person.t | `users]
 ]
@@ -49,7 +50,9 @@ let roles_allow ?(impersonation=false) ?person roles (cap:capability) =
     && Array.for_all pp.Layout.Record_person.roles
       ~f:(fun r -> r <> `auditor && r <> `administrator)
   | `edit something when impersonation -> false
-  | `edit (`names_of_person p) | `view (`person p) when id_opt = Some p.P.g_id -> true
+  | `edit (`names_of_person p)
+  | `edit (`emails_of_person p)
+  | `view (`person p) when id_opt = Some p.P.g_id -> true
   | `edit (`password_of_person p) when id_opt = Some p.P.g_id ->
     p.P.password_hash <> None
   | `edit something ->

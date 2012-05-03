@@ -36,15 +36,89 @@ let one_time_post_coservice_error =
     ~scope:Eliom_common.client_process (None: one_time_post_coservice_error option)
 
 
+let email_verification_tokens =
+  Eliom_references.eref ~secure:true
+    ~scope:Eliom_common.global ([]: (string * string * string) list)
 
+let email_verification_service =
+  make_delayed (Eliom_services.service
+                  ~path:["email_verification"]
+                  ~get_params:Eliom_parameters.(string "identifier"
+                                                ** string "new_email"
+                                                ** opt (string "old_email")
+                                                ** string "key")) 
+
+let init_email_verification_service ~configuration =
+  let open Html5 in
+  Output_app.register ~service:(email_verification_service ())
+    (fun (id, (new_email, (old_email, key))) () ->
+      let work_m =
+        Data_access.find_person id
+        >>= fun person ->
+        Authentication.authorizes (`edit (`emails_of_person person))
+        >>= fun can_edit ->
+        if can_edit 
+        then (
+          wrap_io Eliom_references.get email_verification_tokens
+          >>= fun tokens ->
+          begin match List.find tokens ~f:(fun (i, _, k) -> i = id && k = key) with
+          | Some (_, next, _) ->
+            let open Layout.Record_person in
+            begin match old_email with
+            | None ->
+              let person =
+                { person with
+                  secondary_emails =
+                    Array.append [| new_email |] person.secondary_emails } in
+              Hitscore_lwt.with_database ~configuration
+                ~f:(Data_access.modify_person ~person)
+            | Some old ->
+              if person.email = old then
+                let person = { person with email = new_email } in
+                Hitscore_lwt.with_database ~configuration
+                  ~f:(Data_access.modify_person ~person)
+              else 
+                begin match Array.findi person.secondary_emails (fun _ -> (=) old) with
+                | Some (idx, _) ->
+                  person.secondary_emails.(idx) <- new_email;
+                  Hitscore_lwt.with_database ~configuration
+                    ~f:(Data_access.modify_person ~person)
+                | None ->
+                  error (`email_verification (`cannot_find_old_email old))
+                end
+            end
+            >>= fun () ->
+            let new_tokens =
+              List.filter tokens ~f:(fun (i, _, k) -> not (i = id && k = key)) in
+            wrap_io (Eliom_references.set email_verification_tokens) new_tokens
+            >>= fun () ->
+            return [pcdata  "Your new email was successfully verified"]
+          | None ->
+            error (`email_verification (`cannot_find_user_key (id, key)))
+          end)
+        else
+          Template.make_authentication_error ~configuration
+            ~main_title:"Email Verification Page" 
+            (return [Html5.pcdataf
+                        "You should maybe login to complete this action."])
+      in
+      Template.default ~title:"Email Verification Page" work_m
+    )
     
+
+      
 {shared{
 type up_message =
 | Change_password of string * string * string  (* email, pwd1, pwd2 *)
+| Change_email of string * string
+| Set_primary_email of string
+| Delete_email of string
+| Add_secondary_email of string * string
 deriving (Json)
 
 type down_message = 
-| Password_changed
+| Success
+| Email_verification_in_progress of int * string
 | Error_string of string
 
 let password_minimum_size = 8
@@ -55,6 +129,55 @@ let caml_service =
           ~path:["one_person_caml_service"]
           ~get_params:Eliom_parameters.(caml "param" Json.t<up_message>))
 
+let do_edition id cap edition =
+  let edition_m =
+    Data_access.find_person id
+    >>= fun person ->
+    Authentication.authorizes (`edit (cap person))
+    >>= fun can_edit ->
+    if can_edit 
+    then (edition person >>= fun () -> return Success)
+    else
+      return (Error_string "Trying to mess around? \
+                    You do not have the right to modify this")
+  in
+  double_bind edition_m ~ok:return
+    ~error:(function
+    | `cannot_find_secondary_email ->
+      return (Error_string "Did not find that secondary email")
+    | `email_verification_in_progress (42, next) ->
+      return (Email_verification_in_progress (40, next))
+    | e ->
+      return (Error_string "Edition error … deeply sorry."))
+
+let add_or_change_email ~id ?current ~next person =
+  let key =
+    let rng = Cryptokit.Random.pseudo_rng Time.(now () |! to_string) in
+    let s = String.make 42 'B' in
+    rng#random_bytes s 0 42;
+    let b64 = Cryptokit.Base64.encode_compact () in
+    b64#put_string s;
+    b64#get_string in
+  let service = 
+    Eliom_services.preapply (email_verification_service ())
+      (id, (next, (current, key))) in
+  let uri = Eliom_output.Html5.make_string_uri ~absolute:true ~service () in
+  wrap_io Lwt.(fun () ->
+    Eliom_references.get email_verification_tokens
+    >>= fun tokens ->
+    Eliom_references.set email_verification_tokens ((id, next, key) :: tokens)) ()
+  >>= fun () ->
+  send_mail ~sender:"gencore.bio@nyu.edu"
+    ~subject:"Gencore Email Verification"
+    ~reply_to:["noreply"]
+    ~bcc:["sebastien.mondet@gmail.com"]
+    ~recipients:[next ]
+    (sprintf "Please, click on that link this link to verify \
+                    your email address:\n\n%s\n\n" uri)
+  >>= fun () ->
+  error (`email_verification_in_progress (42, next))
+
+    
 let reply ~configuration =
   function
   | Change_password (id, pw1, pw2) ->
@@ -62,30 +185,43 @@ let reply ~configuration =
       return (Error_string "Trying to mess around? passwords are not equal")
     else if String.length pw1 < password_minimum_size then
       return (Error_string "Trying to mess around? passwords are not long enough")
-    else (
-      let edition_m =
-        Data_access.find_person id
-        >>= fun person ->
-        Authentication.authorizes (`edit (`password_of_person person))
-        >>= fun can_edit ->
-        if can_edit 
-        then 
-          let open Layout.Record_person in
-          let new_hash =
-            Authentication.hash_password person.g_id pw1 in
-          let person = { person with password_hash = Some new_hash } in
-          Hitscore_lwt.with_database ~configuration
-            ~f:(Data_access.modify_person ~person)
-           >>= fun () ->
-          return Password_changed
-        else
-          return (Error_string "Trying to mess around? \
-                    You do not have the right to modify this")
-      in
-      double_bind edition_m ~ok:return
-        ~error:(function
-        | e ->
-          return (Error_string "Edition error … deeply sorry.")))
+    else 
+      do_edition id (fun p -> `password_of_person p) (fun person ->
+        let open Layout.Record_person in
+        let new_hash =
+          Authentication.hash_password person.g_id pw1 in
+        let person = { person with password_hash = Some new_hash } in
+        Hitscore_lwt.with_database ~configuration
+          ~f:(Data_access.modify_person ~person))
+  | Set_primary_email email ->
+    do_edition email (fun p -> `emails_of_person p) (fun person ->
+      let open Layout.Record_person in
+      begin match Array.findi person.secondary_emails (fun _ -> (=) email) with
+      | Some (idx, _) ->
+        person.secondary_emails.(idx) <- person.email;
+        let person = { person with email = email } in
+        Hitscore_lwt.with_database ~configuration
+          ~f:(Data_access.modify_person ~person)
+      | None -> error (`cannot_find_secondary_email)
+      end)
+  | Delete_email email ->
+    do_edition email (fun p -> `emails_of_person p) (fun person ->
+      let open Layout.Record_person in
+      begin match Array.findi person.secondary_emails (fun _ -> (=) email) with
+      | Some (idx, _) ->
+        let secondary_emails =
+          Array.filter person.secondary_emails ~f:((<>) email) in
+        let person = { person with secondary_emails } in
+        Hitscore_lwt.with_database ~configuration
+          ~f:(Data_access.modify_person ~person)
+      | None -> error (`cannot_find_secondary_email)
+      end)
+  | Change_email (current, next) ->
+    do_edition current (fun p -> `emails_of_person p)
+      (add_or_change_email ~id:current ~current ~next)
+  | Add_secondary_email (id, next) ->
+    do_edition id (fun p -> `emails_of_person p)
+      (add_or_change_email ~id ~next)
       
 let init_caml_service ~configuration =
   let already = ref false in
@@ -177,13 +313,19 @@ let change_password_interface person_email =
                   call_caml (Change_password ( %person_email, s1, s2))
                   >>= fun msg ->
                   begin match msg with
-                  | Password_changed ->
+                  | Success ->
                     the_span##innerHTML <- Js.string "<b>Done.</b>";
-                      return ()
-                    | Error_string s ->
-                      dbg "Got Error: %S" s;
-                      the_span##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
-                      return ()
+                    return ()
+                  | Error_string s ->
+                    dbg "Got Error: %S" s;
+                    the_span##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                    return ()
+                  | Email_verification_in_progress _ ->
+                    dbg "Wut?";
+                    the_span##innerHTML <-
+                      ksprintf Js.string
+                      "<b>Error: Unexpected response from server</b>";
+                    return ()
                   end
                 end;
               Js._true
@@ -204,6 +346,221 @@ let change_password_interface person_email =
   the_link_like
 
     
+let change_emails_interface person_email secondary_emails =
+  let chgpwd_id = unique_id "change_emails" in
+  let the_link_like =
+    let open Html5 in
+    [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
+        [pcdata "You may change your emails"]] in
+  let caml = caml_service () in
+  Eliom_services.onload {{
+    let open Html5 in
+    let open Lwt in
+    try
+      begin
+        
+        let call_caml msg =
+          Eliom_client.call_caml_service ~service: %caml msg () in
+        
+        let change_email_button email =
+          let span = 
+            unique (span ~a:[a_class ["like_link"]] [pcdata "change"]) in
+          let elt = Eliom_client.Html5.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "change %s" email;
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
+            elt##innerHTML <- Js.string "change: ";
+            elt##classList##remove(Js.string "like_link"); 
+            elt##style##fontWeight <- Js.string "bold";
+            let field, submit =
+              let open Eliom_output.Html5 in
+              (string_input ~input_type:`Text ~value:email (),
+               button ~button_type:`Button [pcdata "submit"]) in
+            let submit_elt = Eliom_client.Html5.of_element submit in
+            let field_elt = Eliom_client.Html5.of_input field in
+            submit_elt##onclick <- Dom_html.(handler (fun ev ->
+              elt##innerHTML <- Js.string "<b>In progress …</b>";
+              Lwt.ignore_result 
+                begin
+                  let s = Js.to_string field_elt##value in
+                  call_caml (Change_email (email, s))
+                  >>= fun msg ->
+                  begin match msg with
+                  | Success ->
+                    dbg "Wut?";
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>Error: Unexpected response from server</b>";
+                    return ()
+                  | Email_verification_in_progress (t, s) ->
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>An email has been sent to %S to verify the address \
+                      (the link will expire in %d minutes).</b>" s t;
+                    return ()
+                  | Error_string s ->
+                    dbg "Got Error: %S" s;
+                    elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                    return ()
+                  end
+                end;
+              Js._true)); 
+            Dom.appendChild elt field_elt;
+            Dom.appendChild elt submit_elt;
+            Js._true));
+          span
+        in
+
+        let add_email_button person_email =
+          let span = 
+            unique (span ~a:[a_class ["like_link"]]
+                      [pcdata "add an email address"]) in
+          let elt = Eliom_client.Html5.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "add email";
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
+            elt##innerHTML <- Js.string "enter a valid email address: ";
+            elt##classList##remove(Js.string "like_link"); 
+            elt##style##fontWeight <- Js.string "bold";
+            let field, submit =
+              let open Eliom_output.Html5 in
+              (string_input ~input_type:`Text (),
+               button ~button_type:`Button [pcdata "submit"]) in
+            let submit_elt = Eliom_client.Html5.of_element submit in
+            let field_elt = Eliom_client.Html5.of_input field in
+            submit_elt##onclick <- Dom_html.(handler (fun ev ->
+              elt##innerHTML <- Js.string "<b>In progress …</b>";
+              Lwt.ignore_result 
+                begin
+                  let s = Js.to_string field_elt##value in
+                  call_caml (Add_secondary_email (person_email, s))
+                  >>= fun msg ->
+                  begin match msg with
+                  | Email_verification_in_progress (t, s) ->
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>An email has been sent to %S to verify the address \
+                      (the link will expire in %d minutes).</b>" s t;
+                    return ()
+                  | Error_string s ->
+                    dbg "Got Error: %S" s;
+                    elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                    return ()
+                  | Success ->
+                    dbg "Wut?";
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>Error: Unexpected response from server</b>";
+                    return ()
+                  end
+                end;
+              Js._true)); 
+            Dom.appendChild elt field_elt;
+            Dom.appendChild elt submit_elt;
+            Js._true));
+          span
+        in
+          
+        let set_primary_email_button email =
+          let span = 
+            unique (span ~a:[a_class ["like_link"]] [pcdata "set as primary"]) in
+          let elt = Eliom_client.Html5.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "set_primary_email_button %s" email;
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
+            elt##innerHTML <- Js.string "<b>In progress …</b>";
+            elt##classList##remove(Js.string "like_link"); 
+            elt##style##fontWeight <- Js.string "bold";
+            Lwt.ignore_result 
+              begin
+                call_caml (Set_primary_email email)
+                >>= fun msg ->
+                begin match msg with
+                | Success ->
+                  elt##innerHTML <-
+                    ksprintf Js.string "<b>Done.</b>";
+                  return ()
+                | Error_string s ->
+                  dbg "Got Error: %S" s;
+                  elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                  return ()
+                | Email_verification_in_progress _ ->
+                  dbg "Wut?";
+                  elt##innerHTML <- ksprintf Js.string
+                    "<b>Error: Unexpected response from server</b>";
+                  return ()
+                end
+              end;
+            Js._true));
+          span
+        in
+            
+        let delete_email_button email =
+          let span = 
+            unique (span ~a:[a_class ["like_link"]] [pcdata "delete"]) in
+          let elt = Eliom_client.Html5.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "delete_email_button %s" email;
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
+            elt##innerHTML <- Js.string "<b>In progress …</b>";
+            elt##classList##remove(Js.string "like_link"); 
+            elt##style##fontWeight <- Js.string "bold";
+            Lwt.ignore_result 
+              begin
+                call_caml (Delete_email email)
+                >>= fun msg ->
+                begin match msg with
+                | Success ->
+                  elt##innerHTML <-
+                    ksprintf Js.string "<b>Done.</b>";
+                  return ()
+                | Error_string s ->
+                  dbg "Got Error: %S" s;
+                  elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                  return ()
+                | Email_verification_in_progress _ ->
+                  dbg "Wut?";
+                  elt##innerHTML <- ksprintf Js.string
+                    "<b>Error: Unexpected response from server</b>";
+                  return ()
+                end
+              end;
+            Js._true));
+          span
+        in
+
+        let the_span = get_element_exn %chgpwd_id in
+        the_span##onclick <-
+          Dom_html.(handler (fun ev ->
+            the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            the_span##innerHTML <-
+              Js.string "Please, configure your email addresses: ";
+            the_span##classList##remove(Js.string "like_link"); 
+            let to_attach =
+              Eliom_client.Html5.of_div
+                (div [ul
+                         (li [pcdata %person_email;
+                              pcdata " (primary) → ";
+                              change_email_button %person_email;]
+                          :: li [add_email_button %person_email;]
+                          :: (List.map (fun e ->
+                            li [pcdata e; pcdata " → ";
+                                change_email_button e; pcdata ", ";
+                                delete_email_button e; pcdata ", or ";
+                                set_primary_email_button e])
+                                (Array.to_list %secondary_emails)))
+                     ]) in
+            Dom.appendChild the_span to_attach;
+            Js._true
+          ));
+        
+      end
+    with e -> 
+      dbg "Exception in onload for %S: %s" %chgpwd_id (Printexc.to_string e);
+      ()
+  }};
+  the_link_like
+
 let make_view_page ~home ~configuration person =
   let open Html5 in
   let open Template in
@@ -235,6 +592,8 @@ let make_view_page ~home ~configuration person =
     >>= fun edition_link ->
     Authentication.authorizes (`edit (`password_of_person person))
     >>= fun can_edit_password ->
+    Authentication.authorizes (`edit (`emails_of_person person))
+    >>= fun can_edit_emails ->
     let error_message =
       Option.value_map ~default:(span []) potential_error_to_display
         ~f:(fun e ->
@@ -250,13 +609,15 @@ let make_view_page ~home ~configuration person =
           | `broker_error e ->
             Template.(error_span (
               pcdataf "There was an error while editing: " :: 
-                html_of_error (e)))
+                html_of_error (`broker_error e)))
           end)
     in
     let change_password_link =
       if not can_edit_password then []
-      else change_password_interface person.Layout.Record_person.email
-    in
+      else change_password_interface person.Layout.Record_person.email in
+    let change_emails_link =
+      if not can_edit_emails then []
+      else change_emails_interface person.email person.secondary_emails in
     return (content_paragraph
               [error_message;
                ul [
@@ -278,6 +639,7 @@ let make_view_page ~home ~configuration person =
                ];
                div edition_link;
                div change_password_link;
+               div change_emails_link;
               ])
   )
 

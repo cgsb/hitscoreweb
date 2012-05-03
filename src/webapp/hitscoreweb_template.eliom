@@ -136,7 +136,7 @@ let css_service_handler ~configuration () () =
 
   Lwt.return (Buffer.contents css)
 
-let rec html_of_error poly_error = 
+let html_of_error_sublevel poly_error = 
   let open Html5 in
   match poly_error with
   | `eliom_404 -> [pcdataf "Error 404."]
@@ -150,7 +150,6 @@ let rec html_of_error poly_error =
     [pcdataf "There is no person with that identifier: ";
      code [pcdata id];
      pcdata "."]
-  | `broker_error e -> html_of_error e
   | `wrong_rights ->
     [pcdata "You don't have enough access rights to do edit this."]
   | `non_emptiness_violation ->
@@ -208,23 +207,19 @@ let rec html_of_error poly_error =
     [pcdataf "Error while parsing demux-summary: %s" (Exn.to_string e)]
   | `person_edit_coservice_error exn ->
     pcdata "Error while editing: " :: [pcdata (Exn.to_string exn)]
-  | `layout_edit_coservice_error e ->
-    pcdata "Error while editing: "
-    :: (match e with
-     | `fields_wrong_typing -> [pcdata "Fields have wrong types"]
-     | `wrong_id -> [pcdata "Could not get a decent g_id value"]
-     | `wrong_rights ->
-       [pcdata "You don't have enough access rights to do edit this.."]
-     | `layout_inconsistency (`Record "log", _) -> 
-       [pcdata "Error while logging (chances are that the editing actually worked!)"]
-     | `broker_not_initialized
-     |  `layout_inconsistency _ | `io_exn _ | `pg_exn _ as e -> 
-       html_of_error e)
   | `no_lane_index (fcid, pointer) ->
     [pcdataf "no_lane_index: %S (lane %ld)" fcid pointer.Layout.Record_lane.id]
   | `xml_parsing_error ((l, c), e) ->
     [pcdataf "Error while parsing the XML: Line %d, Character %d: %s"
         l c (Xml_tree.error_message e)]
+  | `email_verification e ->
+    [pcdataf "Error while verifying email: %s"
+        (match e with
+        | `cannot_find_old_email old ->
+          sprintf "old email not there: %S" old
+        | `cannot_find_user_key (id, key) ->
+          sprintf "cannot find find user %s with key %s" id key)]
+
   | `layout_inconsistency (place, problem) ->
     let place_presentation =
       match place with
@@ -252,6 +247,27 @@ let rec html_of_error poly_error =
      @ place_presentation
      @ [pcdata ":"; br ()]
      @ error_message)
+  | `broker_error _ -> []
+  | `layout_edit_coservice_error _ -> []
+
+
+let html_of_error  poly_error = 
+  let open Html5 in
+  match poly_error with
+  | `broker_error e -> html_of_error_sublevel e
+  | `layout_edit_coservice_error e ->
+    pcdata "Error while editing: "
+    :: (match e with
+     | `fields_wrong_typing -> [pcdata "Fields have wrong types"]
+     | `wrong_id -> [pcdata "Could not get a decent g_id value"]
+     | `wrong_rights ->
+       [pcdata "You don't have enough access rights to do edit this.."]
+     | `layout_inconsistency (`Record "log", _) -> 
+       [pcdata "Error while logging (chances are that the editing actually worked!)"]
+     | `broker_not_initialized
+     |  `layout_inconsistency _ | `io_exn _ | `pg_exn _ as e -> 
+       html_of_error_sublevel e)
+  | e -> html_of_error_sublevel e
 
 let a_link ?(a=[]) ?fragment service content args =
   let unique_elt =

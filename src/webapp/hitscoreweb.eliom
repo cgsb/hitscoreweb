@@ -1432,7 +1432,8 @@ TODO: All exceptions in coservices should be handled in some other way
       
       One_person_service.init_caml_service
         ~configuration:hitscore_configuration ();
-
+      One_person_service.init_email_verification_service
+        ~configuration:hitscore_configuration;
       Services.(register self) 
         One_person_service.(make_self ~configuration:hitscore_configuration);
 

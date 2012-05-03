@@ -59,11 +59,11 @@ let read_file file =
 (*
   https://bitbucket.org/yminsky/ocaml-core/src/c0e9df7b574d/base/core/extended/lib/sendmail.mli
 *)
-let send_mail ?sender ?cc ?bcc ?reply_to ?content_type ~recipients content =
+let send_mail ?subject ?sender ?cc ?bcc ?reply_to ?content_type ~recipients content =
   let m =
     wrap_io
       (Lwt_preemptive.detach
-         (Core_extended.Sendmail.send ?sender ?cc ?bcc ?reply_to
+         (Core_extended.Sendmail.send ?subject ?sender ?cc ?bcc ?reply_to
             ?content_type ~recipients))
       content
   in
