@@ -103,7 +103,12 @@ let init_caml_service ~configuration =
           | Ok o -> Lwt.return (o : down_message)
           | Error e -> fail "unknown error")))
         
-let change_password_onload div_id person_email =
+let change_password_interface person_email =
+  let chgpwd_id = unique_id "change_password" in
+  let the_link_like =
+    let open Html5 in
+    [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
+        [pcdata "You may change your GenCore password"]] in
   let caml = caml_service () in
   Eliom_services.onload {{
     let open Html5 in
@@ -114,7 +119,7 @@ let change_password_onload div_id person_email =
         let call_caml msg =
           Eliom_client.call_caml_service ~service: %caml msg () in
         
-        let the_span = get_element_exn %div_id in
+        let the_span = get_element_exn %chgpwd_id in
         the_span##onclick <-
           Dom_html.(handler (fun ev ->
             the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
@@ -193,9 +198,10 @@ let change_password_onload div_id person_email =
         
       end
     with e -> 
-      dbg "Exception in onload for %S: %s" %div_id (Printexc.to_string e);
+      dbg "Exception in onload for %S: %s" %chgpwd_id (Printexc.to_string e);
       ()
-  }}
+  }};
+  the_link_like
 
     
 let make_view_page ~home ~configuration person =
@@ -248,14 +254,9 @@ let make_view_page ~home ~configuration person =
           end)
     in
     let change_password_link =
-      if not can_edit_password
-      then []
-      else (
-        let chgpwd_id = unique_id "change_password" in
-        change_password_onload chgpwd_id person.Layout.Record_person.email;
-        [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
-            [pcdata "You may change your GenCore password"]]
-      ) in
+      if not can_edit_password then []
+      else change_password_interface person.Layout.Record_person.email
+    in
     return (content_paragraph
               [error_message;
                ul [
