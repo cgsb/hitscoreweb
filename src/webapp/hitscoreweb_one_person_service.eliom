@@ -814,7 +814,9 @@ let make_self ~configuration =
              ~main_title:"User Page" 
              (return [Html5.pcdataf "You shall not view anything there."]))
         | Some u ->
-          Data_access.find_person u.Authentication.id
+          Data_access.person_by_pointer u.Authentication.person
+          >>= fun c ->
+          Data_access.find_person c#email
           >>= fun person ->
           make_generic ~configuration person action
             ~home:(fun a () ->

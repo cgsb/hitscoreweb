@@ -75,7 +75,6 @@ let roles_allow ?(impersonation=false) ?person roles (cap:capability) =
         false
 
 type user_logged = {
-  id: string;
   person: Layout.Record_person.pointer;
   roles: Layout.Enumeration_role.t list;
 }
@@ -116,13 +115,15 @@ let get_configuration () =
 
   
 let set_state s =
+  let module LRP = Layout.Record_person in
   let prf fmt =
     ksprintf Ocsigen_messages.accesslog ("Authentication-state: " ^^ fmt) in
   begin match s with
   | `nothing -> prf "NOTHING"
-  | `user_logged u -> prf "USER-LOGGED: %S" u.id
+  | `user_logged u -> prf "USER-LOGGED: %ld" u.person.LRP.id
   | `insufficient_credentials i -> prf "INSUFFICIENT-CREDENTIALS: %S" i
-  | `user_impersonating (a, u) -> prf "USER %S IMPERSONATING %S" a.id u.id
+  | `user_impersonating (a, u) ->
+    prf "USER %ld IMPERSONATING %ld" a.person.LRP.id u.person.LRP.id
   | `error (id, e) ->
     prf "ERROR: %S -- %s" id
       (match e with
@@ -162,7 +163,7 @@ let find_user login =
     
 let make_user u = 
   let module P = Layout.Record_person in
-  { id = u.P.email; roles = Array.to_list u.P.roles;
+  { roles = Array.to_list u.P.roles;
     person = P.unsafe_cast u.P.g_id}
 
 let pam_auth ?service ~user ~password () =
@@ -385,36 +386,49 @@ let stop_impersonating_form () =
   
 let display_state ?in_progress_element () =
   let open Html5 in
+  let module LRP = Layout.Record_person in
   get_state () >>= fun s ->
   authorizes (`impersonate `users) >>= fun can_impersonate ->
-  let state =
-    match s with
-    | `nothing -> pcdataf "No user"
-    | `user_impersonating (a, u) ->
-      span [
-        pcdata "User: ";
-        Eliom_output.Html5.a ~service:(Services.person ())
-          [pcdataf "%s" a.id] (a.id, None);
-        pcdataf " (%s) impersonating "
-          (String.concat ~sep:", " (List.map a.roles 
-                                      Layout.Enumeration_role.to_string));
-        Eliom_output.Html5.a ~service:(Services.person ())
-          [pcdataf "%s" u.id] (u.id, None);
+  begin match s with
+  | `nothing -> return (pcdataf "No user")
+  | `user_impersonating (a, u) ->
+    Data_access.person_by_pointer a.person
+    >>= fun admin ->
+    Data_access.person_by_pointer u.person
+    >>= fun impersonated ->
+    return (span [
+      pcdata "User: ";
+      Eliom_output.Html5.a ~service:(Services.person ())
+        [pcdataf "%s" admin#email] (admin#email, None);
+      pcdataf " (%s) impersonating "
+        (String.concat ~sep:", " Array.(map admin#roles 
+                                          ~f:Layout.Enumeration_role.to_string
+                                        |! to_list));
+      Eliom_output.Html5.a ~service:(Services.person ())
+        [pcdataf "%s" impersonated#email]
+        (impersonated#email, None);
         pcdataf " (%s) "
-          (String.concat ~sep:", " (List.map u.roles 
-                                      Layout.Enumeration_role.to_string));
-      ]
+          (String.concat ~sep:", " Array.(map impersonated#roles 
+                                            ~f:Layout.Enumeration_role.to_string
+                                          |! to_list));
+      ])
     | `user_logged u -> 
-      span [
+      Data_access.person_by_pointer u.person
+      >>= fun user ->
+      return (span [
         pcdata "User: ";
-        Eliom_output.Html5.a ~service:(Services.self ()) [pcdataf "%s" u.id] None;
+        Eliom_output.Html5.a ~service:(Services.self ())
+          [pcdataf "%s" user#email] None;
         pcdataf " (%s)"
-          (String.concat ~sep:", " (List.map u.roles 
-                                      Layout.Enumeration_role.to_string));
-      ]
+          (String.concat ~sep:", " Array.(map user#roles 
+                                            ~f:Layout.Enumeration_role.to_string
+                                          |! to_list));
+      ])
     | `error (s, _)
-    | `insufficient_credentials s -> pcdataf "Wrong credentials for: %s" s
-  in
+    | `insufficient_credentials s ->
+      return (pcdataf "Wrong credentials for: %s" s)
+  end
+  >>= fun state ->
   let impersonation_form =
     if can_impersonate then [pcdata "; "; start_impersonating_form ()] else [] in
   return (state
