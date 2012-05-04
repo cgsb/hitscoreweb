@@ -145,6 +145,8 @@ let do_edition id cap edition =
     ~error:(function
     | `cannot_find_secondary_email ->
       return (Error_string "Did not find that secondary email")
+    | `wrong_parameter s ->
+      return (Error_string (sprintf "Wrong Parameter(s): %s" s))
     | `email_verification_in_progress (42, next) ->
       return (Email_verification_in_progress (40, next))
     | e ->
@@ -181,12 +183,13 @@ let add_or_change_email ~id ?current ~next person =
 let reply ~configuration =
   function
   | Change_password (id, pw1, pw2) ->
-    if pw1 <> pw2 then
-      return (Error_string "Trying to mess around? passwords are not equal")
-    else if String.length pw1 < password_minimum_size then
-      return (Error_string "Trying to mess around? passwords are not long enough")
-    else 
-      do_edition id (fun p -> `password_of_person p) (fun person ->
+    do_edition id (fun p -> `password_of_person p) (fun person ->
+      if pw1 <> pw2 then
+        error (`wrong_parameter "Trying to mess around? passwords are not equal")
+      else if String.length pw1 < password_minimum_size then
+        error (`wrong_parameter
+                  "Trying to mess around? passwords are not long enough")
+      else 
         let open Layout.Record_person in
         let new_hash =
           Authentication.hash_password person.g_id pw1 in
