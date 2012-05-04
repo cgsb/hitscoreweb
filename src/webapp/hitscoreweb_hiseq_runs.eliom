@@ -134,15 +134,15 @@ let lanes_table broker lanes dmux_sum_opt =
         @ (value ~default:[] stats))) 
   in
   let base_head =
-    [ `head [pcdata "Lane"]; `head [pcdata "Library"];
-      `head [pcdata "Description"]] in
+    [ `head_cell Msg.lane; `head_cell Msg.library_qn;
+      `head_cell Msg.library_description ] in
   let summary_head =
     match dmux_sum_opt with
     | None -> []
     | Some o ->
-      [ `head [pcdata "Nb of reads"];
-        `head [pcdata "% bases ≥ Q30"];
-        `head [pcdata "Mean QS (PF)"]] in
+      [ `head_cell Msg.number_of_reads;
+        `head_cell Msg.percent_bases_over_q30;
+        `head_cell Msg.mean_qs ] in
   ((base_head @ summary_head)
    ::
      (List.map lanes (fun l ->

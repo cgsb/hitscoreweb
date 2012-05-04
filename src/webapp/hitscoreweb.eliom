@@ -1,5 +1,7 @@
 open Hitscoreweb_std
 
+module Msg = Hitscoreweb_messages
+  
 module Data_access = Hitscoreweb_data_access
 
 module Queries = Hitscoreweb_queries
@@ -133,11 +135,11 @@ module Flowcell_service = struct
         content_section 
           (ksprintf pcdata "Lanes of %s" serial_name)
           (content_table 
-             ([ `head [pcdata "Lane Nb"]; 
-	        `head [pcdata "Seeding C."];
-	        `head [pcdata "Vol."];
-	        `head [pcdata "Contacts"];
-	        `head [pcdata "Libraries"];]
+             ([ `head_cell Msg.lane;
+	        `head_cell Msg.seeding_concentration;
+	        `head_cell Msg.volume;
+	        `head_cell Msg.contacts_of_lane;
+	        `head_cell Msg.libraries_of_lane; ]
               :: lanes)))))
 
   let get_clusters_info ~configuration path =
@@ -250,15 +252,13 @@ module Flowcell_service = struct
       Data_access.File_cache.get_demux_summary dmux_sum >>= fun ls_la ->
       let open Html5 in
       let open Template in
-      let column_names = [
-        "Lane";
-        "Lib ID";
-        "# Reads";
-        "% 0 mismatch";
-        "% bases ≥ Q30";
-        "Mean QS (PF)";
-      ] in
-      let first_row = List.map column_names (fun s -> `head [pcdata s]) in
+      let first_row = [
+        `head_cell Msg.lane;
+        `head_cell Msg.library_name;
+        `head_cell Msg.number_of_reads;
+        `head_cell Msg.percent_bases_over_q30;
+        `head_cell Msg.zero_mismatch;
+        `head_cell Msg.mean_qs] in
       let other_rows =
         List.mapi (Array.to_list ls_la) (fun i ls_l ->
           let only_one_in_the_lane = List.length ls_l = 1 in

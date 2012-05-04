@@ -4,6 +4,7 @@ module Services = Hitscoreweb_services
 }}
 module Authentication = Hitscoreweb_authentication
 
+module Msg = Hitscoreweb_messages
 
 let make_unsafe_eval_string_onload to_run =
   Eliom_services.onload {{
@@ -360,6 +361,7 @@ type table_cell_html5 = HTML5_types.flow5 Html5.elt list
 
 type table_cell =
 [ `head of HTML5_types.span_content_fun Html5.elt list
+| `head_cell of Msg.head_cell
 | `text of table_cell_html5
 | `sortable of string * table_cell_html5
 | `number of (float -> string) * float
@@ -512,6 +514,10 @@ let rec html_of_content ?(section_level=2) content =
         td ~a:[a_id cell_id; a_class ["content_table_head"];
               a_rowspan rowspan; a_colspan colspan]
           ([span c] @ buttons)
+      | `head_cell c -> 
+        td ~a:[a_id cell_id; a_title c#tooltip; a_class ["content_table_head"];
+              a_rowspan rowspan; a_colspan colspan]
+          ([span c#cell] @ buttons)
       | `sortable (title, cell) ->
         td  ~a:[ a_title title; a_class ["content_table_text"];
                a_rowspan rowspan; a_colspan colspan] cell

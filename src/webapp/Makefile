@@ -13,6 +13,7 @@ CLIENT_PACKAGES := oclosure
 ## Source files for the server part
 COMMON_FILES := \
   hitscoreweb_std.eliom	    \
+  hitscoreweb_messages.eliom	    \
   hitscoreweb_data_access.eliom	    \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_services.eliom	    \
