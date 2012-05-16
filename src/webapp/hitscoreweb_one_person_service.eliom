@@ -16,16 +16,8 @@ module Template = Hitscoreweb_template
 
 type one_time_post_coservice_error =
 [ `auth_state_exn of exn
-| `broker_error of
-    [ `broker_not_initialized
-    | `io_exn of exn
-    | `layout_inconsistency of
-        [ `File_system | `Function of string | `Record of string ] *
-          [ `insert_cache_did_not_return_one_id of
-                        string * int32 list
-          | `insert_did_not_return_one_id of string * int32 list
-                    | `select_did_not_return_one_tuple of string * int ]
-    | `pg_exn of exn ]
+| `broker_error of Data_access.broker_error
+| `db_backend_error of Backend.error
 | `io_exn of exn
 | `pg_exn of exn
 | `non_emptiness_violation
@@ -67,22 +59,24 @@ let init_email_verification_service ~configuration =
             begin match old_email with
             | None ->
               let person =
-                { person with
-                  secondary_emails =
-                    Array.append [| new_email |] person.secondary_emails } in
-              Hitscore_lwt.with_database ~configuration
-                ~f:(Data_access.modify_person ~person)
+                let g_value =
+                  {person.g_value with
+                    secondary_emails = Array.append [| new_email |]
+                      person.g_value.secondary_emails } in
+                { person with g_value } in
+              with_database ~configuration (Data_access.modify_person ~person)
             | Some old ->
-              if person.email = old then
-                let person = { person with email = new_email } in
-                Hitscore_lwt.with_database ~configuration
-                  ~f:(Data_access.modify_person ~person)
+              if person.g_value.email = old then
+                let person =
+                  let g_value = {person.g_value with email = new_email} in
+                  { person with g_value } in
+                with_database ~configuration (Data_access.modify_person ~person)
               else 
-                begin match Array.findi person.secondary_emails (fun _ -> (=) old) with
+                begin match Array.findi person.g_value.secondary_emails
+                    (fun _ -> (=) old) with
                 | Some (idx, _) ->
-                  person.secondary_emails.(idx) <- new_email;
-                  Hitscore_lwt.with_database ~configuration
-                    ~f:(Data_access.modify_person ~person)
+                  person.g_value.secondary_emails.(idx) <- new_email;
+                  with_database ~configuration (Data_access.modify_person ~person)
                 | None ->
                   error (`email_verification (`cannot_find_old_email old))
                 end
@@ -193,30 +187,34 @@ let reply ~configuration =
         let open Layout.Record_person in
         let new_hash =
           Authentication.hash_password person.g_id pw1 in
-        let person = { person with password_hash = Some new_hash } in
-        Hitscore_lwt.with_database ~configuration
-          ~f:(Data_access.modify_person ~person))
+        let person =
+          let g_value = { person.g_value with password_hash = Some new_hash } in
+          { person with g_value } in
+        with_database ~configuration (Data_access.modify_person ~person))
   | Set_primary_email email ->
     do_edition email (fun p -> `emails_of_person p) (fun person ->
       let open Layout.Record_person in
-      begin match Array.findi person.secondary_emails (fun _ -> (=) email) with
+      begin match Array.findi person.g_value.secondary_emails (fun _ -> (=) email) with
       | Some (idx, _) ->
-        person.secondary_emails.(idx) <- person.email;
-        let person = { person with email = email } in
-        Hitscore_lwt.with_database ~configuration
-          ~f:(Data_access.modify_person ~person)
+        person.g_value.secondary_emails.(idx) <- person.g_value.email;
+        let person =
+          let g_value = { person.g_value with email = email } in
+          { person with g_value } in
+        with_database ~configuration (Data_access.modify_person ~person)
       | None -> error (`cannot_find_secondary_email)
       end)
   | Delete_email email ->
     do_edition email (fun p -> `emails_of_person p) (fun person ->
       let open Layout.Record_person in
-      begin match Array.findi person.secondary_emails (fun _ -> (=) email) with
+      begin match Array.findi person.g_value.secondary_emails
+          (fun _ -> (=) email) with
       | Some (idx, _) ->
         let secondary_emails =
-          Array.filter person.secondary_emails ~f:((<>) email) in
-        let person = { person with secondary_emails } in
-        Hitscore_lwt.with_database ~configuration
-          ~f:(Data_access.modify_person ~person)
+          Array.filter person.g_value.secondary_emails ~f:((<>) email) in
+        let person =
+          let g_value = { person.g_value with secondary_emails } in
+          { person with g_value } in
+        with_database ~configuration (Data_access.modify_person ~person)
       | None -> error (`cannot_find_secondary_email)
       end)
   | Change_email (current, next) ->
@@ -571,7 +569,7 @@ let make_view_page ~home ~configuration person =
   >>= fun potential_error_to_display ->
   wrap_io (Eliom_references.set one_time_post_coservice_error) None
   >>= fun () ->
-  Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
+  with_database ~configuration (fun ~dbh ->
     let open Layout.Record_person in
     let display title thing =
       [strong [pcdataf "%s: " title]; em [pcdataf "%s." thing]] in
@@ -602,6 +600,7 @@ let make_view_page ~home ~configuration person =
         ~f:(fun e ->
           begin match e with
           | `auth_state_exn _
+          | `db_backend_error _
           | `io_exn _
           | `pg_exn _
           | `non_emptiness_violation
@@ -617,23 +616,25 @@ let make_view_page ~home ~configuration person =
     in
     let change_password_link =
       if not can_edit_password then []
-      else change_password_interface person.Layout.Record_person.email in
+      else change_password_interface person.g_value.email in
     let change_emails_link =
       if not can_edit_emails then []
-      else change_emails_interface person.email person.secondary_emails in
+      else change_emails_interface
+        person.g_value.email person.g_value.secondary_emails in
+    let pv = person.g_value in
     return (content_paragraph
               [error_message;
                ul [
-                li (display_opt "Print Name" person.print_name);
-                li (display "Given Name" person.given_name);
-                li (display_opt "Middle Name" person.middle_name);
-                li (display "Family Name" person.family_name);
-                li (display_opt "Nick Name" person.nickname);
-                li (display "Primary Email" person.email);
-                li (display_array "Secondary Emails" person.secondary_emails);
-                li (display_opt "Login/NetID" person.login);
+                li (display_opt "Print Name" pv.print_name);
+                li (display "Given Name" pv.given_name);
+                li (display_opt "Middle Name" pv.middle_name);
+                li (display "Family Name" pv.family_name);
+                li (display_opt "Nick Name" pv.nickname);
+                li (display "Primary Email" pv.email);
+                li (display_array "Secondary Emails" pv.secondary_emails);
+                li (display_opt "Login/NetID" pv.login);
                 li (display "Authentication"
-                      (match person.password_hash, person.login with
+                      (match pv.password_hash, pv.login with
                       | None, None -> "Impossible"
                       | None, Some _ -> "NYU Only"
                       | Some _, None -> "Gencore password set (No NYU)"
@@ -673,13 +674,11 @@ let one_time_post_coservice ~redirection ~configuration person =
             let middle_name = if middle_name = "" then None else Some middle_name in
             let nickname = if nickname = "" then None else Some nickname in
             let person =
-              { person with print_name; given_name;
-                middle_name;
-                family_name;
-                nickname;
-              } in
-            Hitscore_lwt.with_database ~configuration
-              ~f:(Data_access.modify_person ~person)
+              let g_value =
+                { person.g_value with print_name; given_name;
+                    middle_name; family_name; nickname; } in
+              { person with g_value} in
+            with_database ~configuration (Data_access.modify_person ~person)
           else
             error `non_emptiness_violation
         else 
@@ -697,7 +696,7 @@ let one_time_post_coservice ~redirection ~configuration person =
 let make_edit_page ~home ~configuration person =
   let open Html5 in
   let open Template in
-  Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
+  with_database ~configuration (fun ~dbh ->
     let open Layout.Record_person in
     let not_nulls = ref [] in
     let not_null_id () =
@@ -725,17 +724,17 @@ let make_edit_page ~home ~configuration person =
             [ul [
               li [pcdata "Print name: ";
                   string_input ~input_type:`Text ~name:print_name
-                    ?value:person.print_name ();];
+                    ?value:person.g_value.print_name ();];
               li [not_null_string_input_item ~item_name:"Given Name"
-                     ~name:given_name ~value:person.given_name];
+                     ~name:given_name ~value:person.g_value.given_name];
               li [pcdata "Middle name: ";
                   string_input ~input_type:`Text ~name:middle_name
-                    ?value:person.middle_name ();];
+                    ?value:person.g_value.middle_name ();];
               li [not_null_string_input_item ~item_name:"Family name"
-                     ~name:family_name ~value:person.family_name ];
+                     ~name:family_name ~value:person.g_value.family_name ];
               li [pcdata "Nickname: ";
                   string_input ~input_type:`Text ~name:nickname
-                    ?value:person.nickname ();];
+                    ?value:person.g_value.nickname ();];
              ]; 
              Eliom_output.Html5.string_input
                ~a:[ a_id "edit_submit"] ~input_type:`Submit ~value:"Go" ();
@@ -819,7 +818,7 @@ let make_self ~configuration =
         | Some u ->
           Data_access.person_by_pointer u.Authentication.person
           >>= fun c ->
-          Data_access.find_person c#email
+          Data_access.find_person Layout.Record_person.(c.g_value.email)
           >>= fun person ->
           make_generic ~configuration person action
             ~home:(fun a () ->

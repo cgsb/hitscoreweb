@@ -54,7 +54,7 @@ let find_node dsl nodename =
 
 let find_enumeration_values name =
   let open LDSL in
-  List.find_map (Layout.Meta.layout ()).nodes 
+  List.find_map (Meta.layout ()).nodes 
     (function
     | Enumeration (enum, vals) when enum = name -> Some vals
     | _ -> None)
@@ -68,6 +68,8 @@ let typed_values_in_table l =
       i [codef "%s" (LDSL.string_of_dsl_type t)]]) 
 
 let get_all_generic ?(only=[]) ?(more_where=[]) dbh name =
+  return []
+    (*
   let module PG = Layout.PGOCaml in
   let sanitize_name name =
     String.map name (function
@@ -87,9 +89,10 @@ let get_all_generic ?(only=[]) ?(more_where=[]) dbh name =
             |! String.concat ~sep:" or ") 
     in
     sprintf  "select * from %s%s" (sanitize_name name) where in
-  pg_raw_query ?with_log:None ~dbh ~query
+  pg_raw_query ?with_log:None ~dbh ~query *)
 
-let generic_to_table type_info current_name r =
+let generic_to_table type_info current_name r = []
+  (*
   let open Html5 in
   let rec display_typed s  =
     let open LDSL in
@@ -130,7 +133,8 @@ let generic_to_table type_info current_name r =
             ~f:(fun s -> display_typed s t)))
   with
     e -> []
-
+  *)
+  
 let volume_to_table name toplevel rows =
   let open Html5 in
   List.map rows
@@ -142,9 +146,9 @@ let volume_to_table name toplevel rows =
 
 let view_layout ~configuration ~main_title ~types ~values =
   let content =
-    Hitscore_lwt.db_connect configuration >>= fun dbh ->
+    db_connect configuration >>= fun dbh ->
 
-    let layout = Layout.Meta.layout () in
+    let layout = Meta.layout () in
     let nodes =
       Html5.(span (List.map layout.LDSL.nodes node_link
                    |! interleave_list ~sep:(pcdata ", "))) 
@@ -219,7 +223,7 @@ let view_layout ~configuration ~main_title ~types ~values =
                [pcdataf "The element %S was not found" elt]))
     )
     >>= fun displayed_nodes ->
-    Hitscore_lwt.db_disconnect configuration dbh >>= fun () -> 
+    db_disconnect configuration dbh >>= fun () -> 
     return (content_list (
       [content_section (pcdataf "The Layout") (content_paragraph [nodes]);] 
       @ displayed_nodes
@@ -227,7 +231,8 @@ let view_layout ~configuration ~main_title ~types ~values =
   in
   Template.make_content ~configuration ~main_title content 
 
-let raw_update ~configuration ~table ~g_id ~fields =
+let raw_update ~configuration ~table ~g_id ~fields = return ()
+  (*
   let query =
     sprintf "UPDATE %s SET %s WHERE g_id = %d" table
       (List.map fields (fun (n,_,v) -> 
@@ -237,11 +242,13 @@ let raw_update ~configuration ~table ~g_id ~fields =
       g_id
   in
   eprintf "QUERY: %s\n" query;
-  Hitscore_lwt.with_database ~configuration 
+  with_database ~configuration 
     ~f:(pg_raw_query ~with_log:"web_raw_update" ~query)
   >>= fun _ -> return ()
-
-let raw_insert  ~configuration ~table ~fields =
+  *)
+  
+let raw_insert  ~configuration ~table ~fields = return ()
+  (*
   let query =
     sprintf "INSERT INTO %s (%s) VALUES (%s)" table
       (List.map fields (fun (n,_,_) -> n) |! String.concat ~sep:", ")
@@ -252,19 +259,20 @@ let raw_insert  ~configuration ~table ~fields =
   eprintf "QUERY: %s\n" query;
   Hitscore_lwt.with_database ~configuration 
     ~f:(pg_raw_query ~with_log:"web_raw_insert" ~query)
-  >>= fun _ -> return ()
+  >>= fun _ -> return () *)
 
 exception Edition_error of [ 
   `layout_edit_coservice_error of [
-  | `fields_wrong_typing
+(*  | `fields_wrong_typing
   | `wrong_id
-  | `wrong_rights
+   | `wrong_rights *)
   | `io_exn of exn
-  | `layout_inconsistency of [ `Record of string] *
+  (*| `layout_inconsistency of [ `Record of string] *
       [ `insert_did_not_return_one_id of string * int32 list ]
-  | `pg_exn of exn
+  | `pg_exn of exn *)
   ]
 ]
+    (*
 let coservice_error e =
   Lwt.fail (Edition_error (`layout_edit_coservice_error e))
 
@@ -488,7 +496,8 @@ let edit_layout ~configuration ~main_title ~types ~values =
     | _ -> error (`not_implemented "editing anything else than records")
     end
   | _, _ -> error (`not_implemented "editing more than one 'thing'")
-
+    *)
+    
 let make ~configuration =
   (fun (action, (types, values)) () ->
     let main_title = "The Layout Navigaditor" in
@@ -502,12 +511,14 @@ let make ~configuration =
            Template.make_authentication_error ~configuration ~main_title
              (return [Html5.pcdataf "You may not view the whole Layout."]))
     | "edit" ->
+      Template.default ~title:main_title (error (`not_implemented "reedit layout"))
+        (*
       Template.default ~title:main_title
         (Authentication.authorizes (`edit `layout)
          >>= function
          | true -> edit_layout ~configuration ~main_title ~types ~values
          | false ->
            Template.make_authentication_error ~configuration ~main_title
-             (return [Html5.pcdataf "You may not edit the Layout."]))
+             (return [Html5.pcdataf "You may not edit the Layout."])) *)
     | s ->
       Template.default ~title:main_title (error (`unknown_layout_action s)))

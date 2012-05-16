@@ -20,31 +20,10 @@ module Output_app =
     let application_name = "hitscoreweb"
   end)
 
-module Lwt_config = struct
-  include Lwt
-  include Lwt_chan
-  let map_sequential l ~f = Lwt_list.map_s f l
-  let log_error s = output_string Lwt_io.stderr s >>= fun () -> flush Lwt_io.stderr
-    
-  exception System_command_error of Lwt_unix.process_status
-  let system_command s = 
-    Lwt_unix.(
-      system s >>= function
-      | WEXITED 0 -> return ()
-      | e -> fail (System_command_error e))
+module PGOCaml = struct end
 
-  let write_string_to_file s f =
-    Lwt_io.(
-      with_file ~mode:output f (fun o ->
-        output_string o s))
-
-end
-module Hitscore_lwt = Hitscore.Make(Lwt_config)
-module Layout = Hitscore_lwt.Layout
-module PGOCaml = Layout.PGOCaml
-module Configuration = Hitscore_lwt.Configuration
-
-include Hitscore_lwt.Flow
+include Hitscore
+include Flow
 
 module Xml_tree = struct
   include Xmlm
@@ -80,10 +59,9 @@ let array_to_list_intermap ~sep ~f a =
 
 
 let layout_log ~dbh fmt =
-  let f log =
-    Layout.Record_log.add_value ~dbh ~log >>= fun _ -> return () in
-  ksprintf f fmt
+  ksprintf (Common.add_log ~dbh) fmt
 
+(*
 let pg_raw_query ?with_log ~dbh ~query =
   let module PG = Layout.PGOCaml in
   let name = "todo_change_this" in
@@ -110,6 +88,7 @@ let pg_raw_query ?with_log ~dbh ~query =
         >>= fun () -> 
         error err
       | err -> error err)
+*)
 
 {client{
 let (|!) x f = f x

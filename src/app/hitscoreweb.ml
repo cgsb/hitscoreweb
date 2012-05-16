@@ -141,7 +141,7 @@ let config
     ksprintf output_string " <static dir=\"%s/\" />\n" static_dir;
   );
   ksprintf output_string " %s\n" hitscore_module;
-  Hitscore_configuration.(Option.(
+  Hitscore_configuration.Configuration.(Option.(
     let (>>) x f = iter x ~f in
     !global_hitscore_configuration >> (fun c ->
       db_host c     >> ksprintf output_string "  <pghost>%s</pghost>\n";
@@ -185,7 +185,8 @@ let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
   let runtime_root = "/tmp/hitscoreweb" in
   let www_dir =
     Option.(bind !global_hitscore_configuration
-              Hitscore_configuration.root_path |! value_exn) ^ "/www" in
+              Hitscore_configuration.Configuration.root_path |! value_exn)
+    ^ "/www" in
   let exec =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
   let open Result in
@@ -376,7 +377,7 @@ let rpm_build ?authentication ?(release=1) ?ssl ?ssl_dir () =
   
   let static_www =
     match Option.bind !global_hitscore_configuration
-      Hitscore_configuration.root_path with
+      Hitscore_configuration.Configuration.root_path with
       | Some rp -> sprintf "%s/www/" rp
       | None -> failwithf "Root path not configured" ()
   in
@@ -500,7 +501,7 @@ let () =
     let config = In_channel.(with_file config_file ~f:input_all) in
     let hitscore_config =
       let open Result in
-      Hitscore_configuration.(
+      Hitscore_configuration.Configuration.(
         parse_str config >>= fun c -> use_profile c profile_name)
       |! function
         | Ok o -> o

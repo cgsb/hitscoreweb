@@ -1,11 +1,14 @@
+open Hitscore_std
 
 (* WARNING: Do not open Hitscore_std, Core.Std, etc ... PGOCaml hates it. *)
-
+(*
 module Flow = Hitscoreweb_std.Hitscore_lwt.Flow
 module PGOCaml = Hitscoreweb_std.PGOCaml
 module Layout = Hitscoreweb_std.Hitscore_lwt.Layout
+*)
 
-let full_libraries dbh =
+let full_libraries dbh = return []
+  (*
   let query () =
     PGSQL (dbh) "nullable-results"
       "SELECT stock.g_id, stock.name, stock.project,
@@ -23,8 +26,10 @@ let full_libraries dbh =
          ORDER BY stock.name"
   in
   Flow.wrap_pgocaml ~query ~on_result:Flow.return
+  *)
    
-let library_submissions ~lib_id dbh =
+let library_submissions ~lib_id dbh = return []
+  (*
   let query () =
     PGSQL (dbh)
       "SELECT flowcell.serial_name, lane.g_id, lane.contacts FROM
@@ -34,8 +39,11 @@ let library_submissions ~lib_id dbh =
         AND input.library = $lib_id"
   in
   Flow.wrap_pgocaml ~query ~on_result:Flow.return
-
+  *)
+  
 let sample_sheet_kind ~dbh sample_sheet =
+  error (`sample_sheet_kind_not_found sample_sheet)
+  (*
   let sample_sheet = sample_sheet.Layout.Record_sample_sheet.id in
   let query () =
     PGSQL (dbh)
@@ -52,8 +60,10 @@ let sample_sheet_kind ~dbh sample_sheet =
           | Core.Std.Result.Error e -> error (`sample_sheet_kind_of_string e)
       end
     | _ -> error (`sample_sheet_kind_not_found sample_sheet))
-
+  *)
 let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
+  return []
+    (*
   let lane_id = lane_pointer.Layout.Record_lane.id in
   let query () =
     PGSQL (dbh)
@@ -73,9 +83,11 @@ let delivered_unaligned_directories_of_lane ~dbh lane_pointer =
       |! List.map ~f:(fun (vol, cfd) ->
         (Layout.File_system.unsafe_cast vol,
          Layout.Record_client_fastqs_dir.unsafe_cast cfd))
-      |! return))
+      |! return)) *)
 
 let fastx_stats_of_unaligned_volume ~dbh unaligned_pointer =
+  return None
+    (*
   let link_hack =
     Printf.sprintf "(Link ((id %ld)))" unaligned_pointer.Layout.File_system.id in
   let query () =
@@ -96,8 +108,8 @@ let fastx_stats_of_unaligned_volume ~dbh unaligned_pointer =
     wrap_pgocaml ~query ~on_result:(fun l ->
       List.last l
       |! Option.map ~f:Layout.File_system.unsafe_cast
-      |! return))
-
+      |! return)) *)
+(*
 let person_of_any_identifier ~dbh identifier =
   let query () =
     PGSQL (dbh)
@@ -107,3 +119,4 @@ let person_of_any_identifier ~dbh identifier =
   Hitscoreweb_std.(
     wrap_pgocaml ~query
       ~on_result:(fun l -> return (List.map l Layout.Record_person.unsafe_cast)))
+    *)

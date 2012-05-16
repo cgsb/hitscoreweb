@@ -13,11 +13,11 @@ module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 
 
-let person_essentials dbh person_t =
-  Layout.Record_person.(
-    get ~dbh person_t
-    >>= fun { given_name; family_name; email; _ } ->
-    return (given_name, family_name, email))
+let person_essentials dbh person_p =
+  let layout = Classy.make dbh in
+  layout#person#get person_p
+  >>= fun p ->
+  return (p#given_name, p#family_name, p#email)
 
 let person_link ?(style=`full_name) dbh person_t =
   person_essentials dbh person_t >>= fun (f, l, e) ->
@@ -29,49 +29,42 @@ let person_link ?(style=`full_name) dbh person_t =
 
 
 let persons ~full_view ?(transpose=false) ?(highlight=[]) hsc =
-  Hitscore_lwt.db_connect hsc
-  >>= fun dbh ->
-  Layout.Record_person.(
-    get_all ~dbh >>= fun plist ->
-    let rows_m =
-      of_list_sequential plist (fun p ->
-        get ~dbh p
-        >>= fun {print_name; given_name; middle_name; family_name;
-  	         email; secondary_emails; roles; login; nickname; note;} ->
-        let opt f m = Option.value_map ~f ~default:(f "") m in
-        let is_vip = List.exists highlight ((=) email) in
-        if not is_vip && (highlight <> []) then
-          return None
-        else Html5.(
-          let email_field =
-            let style = if is_vip then "color: green" else "" in
-            `sortable (email, [code ~a:[a_id email; a_style style]
-                                  [pcdata email]])
-          in
-          let text s = `sortable (s, [pcdata s]) in
-          let opttext o = opt text o in
-          let default = [
-            opttext print_name;
-            text given_name;
-            opttext middle_name;
-            text family_name;
-            opttext nickname;
-            email_field;
-            `text (array_to_list_intermap secondary_emails ~sep:(pcdata ", ")
-                     ~f:(codef "%s\n"));
-            opttext login;
-          ] in
-          let supplement = 
-            if not full_view then [] else [
-              `text (array_to_list_intermap roles ~sep:(br ())
-                       ~f:(fun s -> pcdataf "%s" 
-                         (Layout.Enumeration_role.to_string s)));
-              opttext note;]
-          in
-          return (Some (default @ supplement)))) in
-    rows_m >>= fun rows ->
-    Hitscore_lwt.db_disconnect hsc dbh
-    >>= fun _ ->
+  with_database hsc (fun ~dbh ->
+    let layout = Classy.make dbh in
+    layout#person#all >>= fun people ->
+    of_list_sequential people (fun person ->
+      let opt f m = Option.value_map ~f ~default:(f "") m in
+      let is_vip = List.exists highlight ((=) person#email) in
+      if not is_vip && (highlight <> []) then
+        return None
+      else Html5.(
+        let email_field =
+          let style = if is_vip then "color: green" else "" in
+          `sortable (person#email, [code ~a:[a_id person#email; a_style style]
+                                       [pcdata person#email]])
+        in
+        let text s = `sortable (s, [pcdata s]) in
+        let opttext o = opt text o in
+        let default = [
+          opttext person#print_name;
+          text person#given_name;
+          opttext person#middle_name;
+          text person#family_name;
+          opttext person#nickname;
+          email_field;
+          `text (array_to_list_intermap person#secondary_emails ~sep:(pcdata ", ")
+                   ~f:(codef "%s\n"));
+          opttext person#login;
+        ] in
+        let supplement = 
+          if not full_view then [] else [
+            `text (array_to_list_intermap person#roles ~sep:(br ())
+                     ~f:(fun s -> pcdataf "%s" 
+                       (Layout.Enumeration_role.to_string s)));
+            opttext person#note;]
+        in
+        return (Some (default @ supplement))))
+    >>= fun rows ->
     let actual_rows = List.filter_opt rows in
     let nrows = List.length actual_rows in
     return Template.(Html5.(

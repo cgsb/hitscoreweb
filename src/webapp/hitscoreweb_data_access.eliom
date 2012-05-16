@@ -1,15 +1,15 @@
 open Hitscoreweb_std
-open Hitscore_lwt
 
-let _global_broker :
-    [ `broker_not_initialized
-    | `io_exn of exn
-    | `layout_inconsistency of
-        [ `File_system | `Function of string | `Record of string ] *
-             [ `insert_cache_did_not_return_one_id of string * int32 list
-             | `insert_did_not_return_one_id of string * int32 list
-             | `select_did_not_return_one_tuple of string * int ]
-    | `pg_exn of exn ] Hitscore_lwt.Broker.t option ref = ref None
+type broker_error =
+[ `broker_not_initialized
+| `io_exn of exn
+| `db_backend_error of Hitscoreweb_std.Backend.error
+| `Layout of
+        Hitscore_layout.Layout.error_location *
+          Hitscore_layout.Layout.error_cause
+| `pg_exn of exn ]
+  
+let _global_broker : broker_error Broker.t option ref = ref None
 
 let _global_timeout = ref 500.
 
@@ -61,12 +61,12 @@ let find_person id =
   end
 
 let person_by_pointer p =
+  let open Layout.Record_person in
   broker ()
   >>= fun broker ->
-  let c = 
-    new Classy_layout.layout (Broker.current_dump broker) in
-  return (c#person#get32_exn p.Layout.Record_person.id)
-  
+  let c = Broker.current_dump broker in
+  return (List.find_exn c.Layout.person ~f:(fun x -> x.g_id = p.id))
+    
 let modify_person ~dbh ~person =
   bind_on_error (broker ()
                  >>= fun broker ->
@@ -88,7 +88,7 @@ module File_cache = struct
       read_file file >>= fun xml_s ->
       let xml =
         Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
-      Hitscore_lwt.Hiseq_raw.clusters_summary (snd xml) |! of_result
+      Hiseq_raw.clusters_summary (snd xml) |! of_result
     in
     match String_map.find !_run_param_cache path with
     | Some r -> return r
@@ -107,7 +107,7 @@ module File_cache = struct
       read_file file >>= fun xml_s ->
       let xml =
         Xml_tree.(in_tree (make_input (`String (0, xml_s)))) in
-      Hitscore_lwt.B2F_unaligned.flowcell_demux_summary (snd xml)
+      B2F_unaligned.flowcell_demux_summary (snd xml)
       |! of_result
     in
     match String_map.find !_demux_summary_cache path with

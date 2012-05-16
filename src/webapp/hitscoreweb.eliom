@@ -70,25 +70,28 @@ module Flowcell_service = struct
     (sortability, cell)
 
   let get_flowcell_by_serial_name ~dbh serial_name = 
-    Layout.Search.record_flowcell_by_serial_name ~dbh serial_name
-    >>= function
+    Access.Flowcell.get_all ~dbh
+    >>| List.filter ~f:(fun f ->
+      Layout.Record_flowcell.(f.g_value.serial_name) = serial_name)
+    >>= fun search ->
+    match search with
     | [ one ] -> return one
     | [] -> error (`no_flowcell_named serial_name)
     | more ->
-      error (`layout_inconsistency (`Record "flowcell", 
-                                    `more_than_one_flowcell_called serial_name))
+      error (`more_than_one_flowcell_called serial_name)
       
   let flowcell_lanes_table hsc ~serial_name =
-    Hitscore_lwt.with_database hsc (fun ~dbh ->
+    with_database hsc (fun ~dbh ->
       get_flowcell_by_serial_name ~dbh serial_name >>= fun one ->
       let lanes =
         let lane = ref 0 in
         Layout.Record_flowcell.(
-          get ~dbh one >>= fun {serial_name; lanes} ->
+          return one.g_value
+          >>= fun {serial_name; lanes} ->
           of_list_sequential (Array.to_list lanes) (fun lane_t ->
             incr lane;
             Layout.Record_lane.(
-              get ~dbh lane_t
+              Access.Lane.get ~dbh lane_t >>| (fun l -> l.g_value)
               >>= fun {
   	        seeding_concentration_pM ; total_volume ;
   	        libraries ; pooled_percentages ;
@@ -105,10 +108,10 @@ module Flowcell_service = struct
                   (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
                   (fun (i, ilibt) ->
                     Layout.Record_input_library.(
-                      get ~dbh ilibt
+                      Access.Input_library.get ~dbh ilibt >>| (fun f -> f.g_value)
                       >>= fun { library; _ } ->
                       Layout.Record_stock_library.(
-                        get ~dbh library
+                        Access.Stock_library.get ~dbh library  >>| (fun f -> f.g_value)
                         >>= fun { name; project; _ } ->
                         return (name, project))))
                 >>= fun libs ->
@@ -173,55 +176,50 @@ module Flowcell_service = struct
   let hiseq_raw_info ~configuration ~serial_name =
     let open Html5 in
     let open Template in
-    Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
-      Layout.Search.record_hiseq_raw_by_flowcell_name ~dbh serial_name
+    with_database ~configuration (fun ~dbh ->
+      let layout = Classy.make dbh in
+      layout#hiseq_raw#all >>| List.filter ~f:(fun h -> h#flowcell_name = serial_name)
       >>= fun dirs ->
       of_list_sequential dirs ~f:(fun d ->
-        let m =
-          Hitscore_lwt.Common.check_hiseq_raw_availability ~dbh ~hiseq_raw:d in
+        let m = Common.check_hiseq_raw_availability ~dbh ~hiseq_raw:d#g_pointer in
         double_bind m
           ~error:(fun e -> 
             match e with
             | `hiseq_dir_deleted -> return false
-            |  `pg_exn _ | `io_exn _ | `layout_inconsistency (_, _)
-            | `no_flowcell_named _ as e -> error e)
+            | `Layout _ as e -> error e)
           ~ok:(fun _ -> return true)
         >>= fun available ->
-        if available then 
-          Layout.Record_hiseq_raw.(
-            get ~dbh d
-            >>= fun {read_length_1; read_length_index; read_length_2; 
-                     run_date; host; hiseq_dir_name; with_intensities} ->
-            Hitscore_lwt.Common.hiseq_raw_full_path ~configuration hiseq_dir_name
-            >>= fun hsdata_path ->
-            double_bind (get_clusters_info ~configuration hsdata_path)
-              ~ok:(fun tab ->
-                return (content_section (pcdataf "Clusters Info") tab))
-              ~error:(fun e ->
-                return
-                  (content_section (pcdataf "Clusters Info")
-                     (content_paragraph [strong [codef "not available"]])))
-            >>= fun cluster_stats_subsection ->
-            let intro_paragraph =
-              content_paragraph [
-                ul [            
-                  li [ strong [pcdataf "Host:" ]; pcdataf " %s" host; ];
-                  li [ strong [pcdataf "Path: "]; codef "%s" hiseq_dir_name];
-                  li [ strong [pcdataf "Run-type: "]; 
-                       pcdataf "%ld%s%s."
-                         read_length_1
-                         (Option.value_map ~default:""
-                            ~f:(sprintf " x %ld") read_length_index)
-                         (Option.value_map ~default:""
-                            ~f:(sprintf " x %ld") read_length_2) ];
-                  li [ strong [pcdataf "With Intensities: "];
-                       codef "%b" with_intensities ];
-                ]] in
-            let section =
-              content_section
-                (pcdataf "%s Run" (run_date |! Time.to_local_date |! Date.to_string))
-                (content_list [intro_paragraph; cluster_stats_subsection]) in
-            return (Some section))
+        if available then (
+          Common.hiseq_raw_full_path ~configuration d#hiseq_dir_name
+          >>= fun hsdata_path ->
+          double_bind (get_clusters_info ~configuration hsdata_path)
+            ~ok:(fun tab ->
+              return (content_section (pcdataf "Clusters Info") tab))
+            ~error:(fun e ->
+              return
+                (content_section (pcdataf "Clusters Info")
+                   (content_paragraph [strong [codef "not available"]])))
+          >>= fun cluster_stats_subsection ->
+          let intro_paragraph =
+            content_paragraph [
+              ul [            
+                li [ strong [pcdataf "Host:" ]; pcdataf " %s" d#host; ];
+                li [ strong [pcdataf "Path: "]; codef "%s" d#hiseq_dir_name];
+                li [ strong [pcdataf "Run-type: "]; 
+                     pcdataf "%d%s%s."
+                       d#read_length_1
+                       (Option.value_map ~default:""
+                          ~f:(sprintf " x %d") d#read_length_index)
+                       (Option.value_map ~default:""
+                          ~f:(sprintf " x %d") d#read_length_2) ];
+                li [ strong [pcdataf "With Intensities: "];
+                     codef "%b" d#with_intensities ];
+              ]] in
+          let section =
+            content_section
+              (pcdataf "%s Run" (d#run_date |! Time.to_local_date |! Date.to_string))
+              (content_list [intro_paragraph; cluster_stats_subsection]) in
+          return (Some section))
         else
           return None)
       >>= fun l ->
@@ -292,7 +290,7 @@ module Flowcell_service = struct
     make dmux_sum
       
   let basecall_stats_path_of_unaligned ~configuration ~dbh directory serial_name =
-    Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh directory
+    Common.all_paths_of_volume ~configuration ~dbh directory
     >>= (function
     | [one] -> return one
     | _ -> error (`wrong_unaligned_volume directory))
@@ -303,25 +301,26 @@ module Flowcell_service = struct
   let demux_info ~configuration ~serial_name =
     let open Template in
     let open Html5 in
-    Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
-      Layout.Function_bcl_to_fastq.(
-        get_all_succeeded ~dbh >>= fun successes ->
-        of_list_sequential successes ~f:(fun b2f ->
-          get ~dbh b2f >>= fun b2f_eval ->
-          Layout.Record_hiseq_raw.(
-            get ~dbh b2f_eval.raw_data >>| fun x -> x.flowcell_name)
-          >>= fun b2f_fcid ->
-          if b2f_fcid <> serial_name then
-            return None
-          else
-            begin
-            Layout.Record_bcl_to_fastq_unaligned.(
-              match b2f_eval.g_result with
-              | None -> error (`bcl_to_fastq_succeeded_without_result b2f)
-              | Some r ->
-                get ~dbh r >>= fun {directory} ->
-                basecall_stats_path_of_unaligned ~configuration ~dbh
-                  directory serial_name)
+    with_database ~configuration (fun ~dbh ->
+      let layout = Classy.make dbh in
+      layout#bcl_to_fastq#all >>| List.filter ~f:(fun b -> b#g_status = `Succeeded)
+      >>= fun successes ->
+      of_list_sequential successes ~f:(fun b2f_eval ->
+        b2f_eval#raw_data#get >>| (fun x -> x#flowcell_name)
+        >>= fun b2f_fcid ->
+        if b2f_fcid <> serial_name then
+          return None
+        else
+          begin
+            begin match b2f_eval#g_result with
+            | None ->
+              error (`bcl_to_fastq_succeeded_without_result b2f_eval#g_pointer)
+            | Some r ->
+              r#get >>| (fun x -> x#directory)
+              >>= fun directory ->
+              basecall_stats_path_of_unaligned ~configuration ~dbh
+                directory#pointer serial_name
+            end
             >>= fun stat_path ->
             double_bind (get_demux_stats ~configuration stat_path)
               ~ok:(fun (h, rs) ->
@@ -334,33 +333,33 @@ module Flowcell_service = struct
             >>= fun stats ->
             let optmap f x = Option.value_map ~default:"—" ~f x in
             let opt x = Option.value ~default:"—" x in
-            let title = codef "Bcl_to_fastq %ld" b2f_eval.g_id in
+            let title = codef "Bcl_to_fastq %d" b2f_eval#g_id in
             let intro = content_paragraph [
               pcdata "Ran from ";
-              strong [codef "%s" (optmap Time.to_string b2f_eval.g_started)];
+              strong [codef "%s" (optmap Time.to_string b2f_eval#g_started)];
               pcdata " to ";
-              strong [codef "%s" (optmap Time.to_string b2f_eval.g_completed)];
+              strong [codef "%s" (optmap Time.to_string b2f_eval#g_completed)];
               pcdata ".";
               br ();
-              strong [pcdataf "Mismatch: "]; pcdataf "%ld, " b2f_eval.mismatch;
-              strong [pcdataf "Version: "]; pcdataf "%s, " b2f_eval.version;
-              strong [pcdataf "Tiles: "]; pcdataf "%s, " (opt b2f_eval.tiles);
+              strong [pcdataf "Mismatch: "]; pcdataf "%d, " b2f_eval#mismatch;
+              strong [pcdataf "Version: "]; pcdataf "%s, " b2f_eval#version;
+              strong [pcdataf "Tiles: "]; pcdataf "%s, " (opt b2f_eval#tiles);
               strong [pcdataf "Bases-Mask: "]; pcdataf "%s, "
-                (opt b2f_eval.bases_mask);
+                (opt b2f_eval#bases_mask);
             ] in
             let section =
               content_section title (content_list (intro :: stats :: [])) in
             return (Some section)
-              end
+          end
         )
-        >>| List.filter_opt >>= fun b2f_evals ->
-        let title =
-          match b2f_evals with
-          | [] -> "Never Demultiplexed"
-          | [one] -> "Demultiplexing"
-          | more -> "Demultiplexings" in
-        return (content_section (pcdata title)
-                  (content_list b2f_evals))))
+      >>| List.filter_opt >>= fun b2f_evals ->
+      let title =
+        match b2f_evals with
+        | [] -> "Never Demultiplexed"
+        | [one] -> "Demultiplexing"
+        | more -> "Demultiplexings" in
+      return (content_section (pcdata title)
+                (content_list b2f_evals)))
 
   let make configuration =
     let open Template in
@@ -415,7 +414,7 @@ module Libraries_service = struct
     let open Html5 in
     let barcodes_list =
       String.concat ~sep:"," 
-        (List.map ~f:(sprintf "%ld") 
+        (List.map ~f:(sprintf "%d") 
            (Array.to_list (Option.value ~default:[| |] barcodes))) in
     let custom_barcodes =
       match bartoms with
@@ -424,7 +423,7 @@ module Libraries_service = struct
         let l = Array.to_list a in
         Layout.Record_custom_barcode.(
           of_list_sequential l (fun id ->
-            get ~dbh (unsafe_cast id)
+            Access.Custom_barcode.get ~dbh (unsafe_cast id) >>| (fun x -> x.g_value)
             >>= fun {position_in_r1; position_in_r2; 
                      position_in_index; sequence} ->
             return [ br ();
@@ -434,7 +433,7 @@ module Libraries_service = struct
                          "I", position_in_index; "R2", position_in_r2]
                         |! List.filter_map ~f:(function
                           | _, None -> None
-                          | t, Some i -> Some (sprintf "%s:%ld" t i))
+                          | t, Some i -> Some (sprintf "%s:%d" t i))
                                        |! String.concat ~sep:",")]))
         >>= fun pcdatas ->
         return (List.concat pcdatas)
@@ -485,9 +484,10 @@ module Libraries_service = struct
     | Some e -> return e
     | None ->
       let { fcid; lane; contacts } = submission in
-      Flowcell_service.get_flowcell_by_serial_name ~dbh fcid >>= fun fc_p ->
-      Layout.Record_flowcell.(get ~dbh fc_p >>= fun {lanes} ->
-                              return (Array.findi lanes (fun _ -> (=) lane)))
+      Flowcell_service.get_flowcell_by_serial_name ~dbh fcid >>= fun fc ->
+      Layout.Record_flowcell.(
+        let lanes = fc.g_value.lanes in
+        return (Array.findi lanes (fun _ -> (=) lane)))
       >>= function
       | None -> error (`no_lane_index (fcid, lane))
       | Some (lane_index_minus_one, _) ->
@@ -496,7 +496,8 @@ module Libraries_service = struct
         of_list_sequential delivered_unaligned_dirs_and_client_dirs
           (fun (vol, cfd) ->
             Layout.Record_client_fastqs_dir.(
-              get ~dbh cfd >>= fun {directory} ->
+              Access.Client_fastqs_dir.get ~dbh cfd
+              >>| (fun x -> x.g_value) >>= fun {directory} ->
               return (vol, directory)))
         >>= fun delivered_unaligned_dirs ->
         let e = {lane_index = lane_index_minus_one + 1; delivered_unaligned_dirs} in
@@ -510,12 +511,13 @@ module Libraries_service = struct
     | None ->
       submission_enrichment ~dbh submission
       >>= fun {lane_index; delivered_unaligned_dirs} ->
-      Layout.Record_lane.(get ~dbh submission.lane
-                          >>= fun { requested_read_length_2 } ->
-                          return (requested_read_length_2 <> None))
+      Layout.Record_lane.(
+        Access.Lane.get ~dbh submission.lane
+        >>| (fun x -> x.g_value) >>= fun { requested_read_length_2 } ->
+        return (requested_read_length_2 <> None))
       >>= fun is_paired_end ->
       of_list_sequential delivered_unaligned_dirs (fun directory ->
-        Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh (fst directory)
+        Common.all_paths_of_volume ~configuration ~dbh (fst directory)
         >>= (function
         | [one] -> return one
         | _ -> error (`wrong_unaligned_volume directory))
@@ -523,7 +525,7 @@ module Libraries_service = struct
         Queries.fastx_stats_of_unaligned_volume ~dbh (fst directory)
         >>= fun fastx_result_dir_opt ->
         of_option fastx_result_dir_opt (fun frd ->
-          Hitscore_lwt.Common.all_paths_of_volume ~configuration ~dbh frd
+          Common.all_paths_of_volume ~configuration ~dbh frd
           >>= (function
           | [one] -> return one
           | _ -> error (`wrong_fastx_volume directory)))
@@ -710,7 +712,7 @@ module Libraries_service = struct
         let i32opt i32 =
           Option.value_map i32 ~default:(`sortable ("", []))
             ~f:(fun i ->
-              `sortable (Int32.to_string i, [pcdataf "%ld" i])) in
+              `sortable (Int.to_string i, [pcdataf "%d" i])) in
         let mandatory_stuff =
           let liblink =
             Option.value_map name
@@ -960,10 +962,10 @@ module Libraries_service = struct
         match Layout.Enumeration_barcode_provider.of_string t with
         | Ok `bioo ->
           Option.bind (List.hd barcodes)
-            (List.Assoc.find Hitscore_lwt.Assemble_sample_sheet.bioo_barcodes)
+            (List.Assoc.find Assemble_sample_sheet.bioo_barcodes)
         | Ok `illumina ->
           Option.bind (List.hd barcodes)
-            (List.Assoc.find Hitscore_lwt.Assemble_sample_sheet.illumina_barcodes)
+            (List.Assoc.find Assemble_sample_sheet.illumina_barcodes)
         | _ -> None) in
     of_list_sequential submissions
       (submission_list_item ~dbh ~configuration (fst lib_filtered) libname barcode)
@@ -975,7 +977,7 @@ module Libraries_service = struct
       
   let libraries ~showing ?(qualified_names=[]) ~configuration  =
     let open Html5 in
-    Hitscore_lwt.with_database configuration (fun ~dbh ->
+    with_database configuration (fun ~dbh ->
       fetch_and_filter_libs ~dbh qualified_names >>= fun libs_filtered ->
       make_libs_table ~dbh ~configuration ~showing libs_filtered
       >>= fun main_table ->
@@ -1020,6 +1022,7 @@ module Evaluations_service = struct
     let module B2F = Layout.Function_bcl_to_fastq in
     let module HSR = Layout.Record_hiseq_raw in
     let module FS = Layout.File_system in
+    (*
     if List.length b2fs > 0 then (
       of_list_sequential b2fs ~f:(fun b2f ->
         B2F.get ~dbh b2f
@@ -1039,9 +1042,9 @@ module Evaluations_service = struct
         let fc_link = 
           Template.a_link Services.flowcell [pcdata flowcell_name] (flowcell_name) in
         return [
-          `sortable (sprintf "%ld" g_id, [codef "%ld" g_id]);
+          `sortable (sprintf "%d" g_id, [codef "%d" g_id]);
           `sortable (flowcell_name, [fc_link]);
-          `sortable (Int32.to_string mismatch, [pcdataf "%ld" mismatch]);
+          `sortable (Int32.to_string mismatch, [pcdataf "%d" mismatch]);
           `sortable (version, [pcdataf "%s" version]);
           (let tiles = (Option.value ~default:"" tiles) in
           `sortable (tiles, [codef "%s" tiles]));
@@ -1075,11 +1078,14 @@ module Evaluations_service = struct
         in
         content_section (pcdataf "%s: %d" name (List.length b2fs)) tab))
     else
+    *)
       return (Template.content_paragraph [])
 
   let evaluations configuration =
+    return (Template.content_paragraph [])
+      (*
     let open Html5 in
-    Hitscore_lwt.db_connect configuration
+    db_connect configuration
     >>= fun dbh ->
     (* Bcl_to_fastqs *)
     Layout.Function_bcl_to_fastq.get_all_inserted ~dbh
@@ -1105,7 +1111,7 @@ module Evaluations_service = struct
     return Template.(
       content_list [
         content_section (pcdataf "Bcl_to_fastq") b2f_content;
-      ])
+      ]) *)
 
   let make ~configuration =
     (fun () () ->
@@ -1390,12 +1396,12 @@ TODO: All exceptions in coservices should be handled in some other way
         let db_configuration =
           match !pghost, !pgport, !pgdb, !pguser, !pgpass with
           | Some host, Some port, Some database, Some username, Some password ->
-            Some (Hitscore_lwt.Configuration.db_configuration 
+            Some (Configuration.db_configuration 
                     ~host ~port ~database ~username ~password)
           | _ -> None
         in
         let config =
-          Hitscore_lwt.Configuration.configure
+          Configuration.configure
             ?vol_directory:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
             ?root_path:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;

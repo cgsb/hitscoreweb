@@ -137,6 +137,50 @@ let css_service_handler ~configuration () () =
 
   Lwt.return (Buffer.contents css)
 
+let string_of_backend_error e =
+  begin match e with
+  | `exn e
+  | `connection e
+  | `disconnection e
+  | `query  (_, e) -> 
+    sprintf "DB BACKEND ERROR: %s" (Exn.to_string e)
+  end
+    
+let html_of_layout_error (where, what) =
+  let open Html5 in
+  [pcdataf "LAYOUT-ERROR (%s): %s"
+      (match where with
+      | `Dump -> "Dump"
+      | `File_system -> "File-system"
+      | `Function f -> sprintf  "function %S" f
+      | `Record r -> sprintf "record %S" r) 
+      (match what with
+      | `db_backend_error (`query (q, e)) ->
+        sprintf "Query %S failed: %s" q (Exn.to_string e)
+      | `db_backend_error e ->
+        string_of_backend_error e
+      | `parse_evaluation_error (sol, e)
+      | `parse_value_error (sol, e)
+      | `parse_volume_error (sol, e) ->
+        sprintf "error while parsing result [%s]: %s"
+          (String.concat ~sep:", "
+             (List.map sol (Option.value ~default:"NONE"))) (Exn.to_string e)
+      | `parse_sexp_error (sexp, e) ->
+        sprintf "S-Exp parsing error: %S: %s"
+          (Sexp.to_string_hum sexp) (Exn.to_string e)
+      | `result_not_unique soll ->
+        sprintf "result_not_unique: [%s]"
+          (String.concat ~sep:", "
+             (List.map soll (fun sol ->
+               String.concat ~sep:", "
+                 (List.map sol (Option.value ~default:"NONE")))))
+      | `wrong_add_value ->
+        sprintf "WRONG-ADD-VALUE"
+      | `wrong_version (v1, v2) ->
+        sprintf "Wrong version: %s Vs %s" v1 v2)
+  ]
+    
+    
 let html_of_error_sublevel poly_error = 
   let open Html5 in
   match poly_error with
@@ -172,15 +216,15 @@ let html_of_error_sublevel poly_error =
      code [pcdata name];
      pcdata "."]
   | `sample_sheet_kind_not_found i ->
-    [pcdataf "Cannot find this sample-sheet: %ld." i]
+    [pcdataf "Cannot find this sample-sheet: %d." i]
   | `sample_sheet_should_a_lonely_file p ->
-    [pcdataf "This sample-sheet should be lonely in its volume: %ld."
+    [pcdataf "This sample-sheet should be lonely in its volume: %d."
         p.Layout.Record_sample_sheet.id]
   | `cannot_recognize_file_type s ->
     [pcdataf "The file-system is in a bad state, cannot recognize this \
               file-type: %s." s]
   | `inconsistency_inode_not_found inode ->
-    [pcdataf "The file-system is in a bad state, cannot find file: %ld." inode]
+    [pcdataf "The file-system is in a bad state, cannot find file: %d." inode]
   | `sample_sheet_kind_of_string s ->
     [pcdataf "Could not transform %S to a sample-sheet kind." s;]
   | `nothing_to_edit (types, values) ->
@@ -209,7 +253,7 @@ let html_of_error_sublevel poly_error =
   | `person_edit_coservice_error exn ->
     pcdata "Error while editing: " :: [pcdata (Exn.to_string exn)]
   | `no_lane_index (fcid, pointer) ->
-    [pcdataf "no_lane_index: %S (lane %ld)" fcid pointer.Layout.Record_lane.id]
+    [pcdataf "no_lane_index: %S (lane %d)" fcid pointer.Layout.Record_lane.id]
   | `xml_parsing_error ((l, c), e) ->
     [pcdataf "Error while parsing the XML: Line %d, Character %d: %s"
         l c (Xml_tree.error_message e)]
@@ -220,6 +264,9 @@ let html_of_error_sublevel poly_error =
           sprintf "old email not there: %S" old
         | `cannot_find_user_key (id, key) ->
           sprintf "cannot find find user %s with key %s" id key)]
+  | `more_than_one_flowcell_called serial_name ->
+    [pcdataf "More than one flowcell is called: %s" serial_name]
+(*
 
   | `layout_inconsistency (place, problem) ->
     let place_presentation =
@@ -248,6 +295,10 @@ let html_of_error_sublevel poly_error =
      @ place_presentation
      @ [pcdata ":"; br ()]
      @ error_message)
+*)
+  | `Layout l -> html_of_layout_error l
+  | `db_backend_error e ->
+    [pcdataf "DB-Backend-Error: %s" (string_of_backend_error e)]
   | `broker_error _ -> []
   | `layout_edit_coservice_error _ -> []
 
@@ -256,9 +307,12 @@ let html_of_error  poly_error =
   let open Html5 in
   match poly_error with
   | `broker_error e -> html_of_error_sublevel e
+    (*
   | `layout_edit_coservice_error e ->
     pcdata "Error while editing: "
     :: (match e with
+    | `fields_wrong_typing -> [pcdata "Fields have wrong types"]
+      (*
      | `fields_wrong_typing -> [pcdata "Fields have wrong types"]
      | `wrong_id -> [pcdata "Could not get a decent g_id value"]
      | `wrong_rights ->
@@ -266,8 +320,9 @@ let html_of_error  poly_error =
      | `layout_inconsistency (`Record "log", _) -> 
        [pcdata "Error while logging (chances are that the editing actually worked!)"]
      | `broker_not_initialized
-     |  `layout_inconsistency _ | `io_exn _ | `pg_exn _ as e -> 
-       html_of_error_sublevel e)
+     |  `io_exn _ | `pg_exn _ as e -> 
+       html_of_error_sublevel e *)
+    ) *)
   | e -> html_of_error_sublevel e
 
 let a_link ?(a=[]) ?fragment service content args =

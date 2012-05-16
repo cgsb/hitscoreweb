@@ -47,14 +47,14 @@ let roles_allow ?(impersonation=false) ?person roles (cap:capability) =
     List.exists roles (fun c -> c = `auditor || c = `administrator)
   | `impersonate (`person pp)  ->
     List.exists roles (fun c -> c = `auditor || c = `administrator)
-    && Array.for_all pp.Layout.Record_person.roles
+    && Array.for_all pp.P.g_value.P.roles
       ~f:(fun r -> r <> `auditor && r <> `administrator)
   | `edit something when impersonation -> false
   | `edit (`names_of_person p)
   (* | `edit (`emails_of_person p) *)
   | `view (`person p) when id_opt = Some p.P.g_id -> true
   | `edit (`password_of_person p) when id_opt = Some p.P.g_id ->
-    p.P.password_hash <> None
+    p.P.g_value.P.password_hash <> None
   | `edit something ->
     if List.exists roles (fun c -> c = `administrator) then
       true
@@ -120,10 +120,10 @@ let set_state s =
     ksprintf Ocsigen_messages.accesslog ("Authentication-state: " ^^ fmt) in
   begin match s with
   | `nothing -> prf "NOTHING"
-  | `user_logged u -> prf "USER-LOGGED: %ld" u.person.LRP.id
+  | `user_logged u -> prf "USER-LOGGED: %d" u.person.LRP.id
   | `insufficient_credentials i -> prf "INSUFFICIENT-CREDENTIALS: %S" i
   | `user_impersonating (a, u) ->
-    prf "USER %ld IMPERSONATING %ld" a.person.LRP.id u.person.LRP.id
+    prf "USER %d IMPERSONATING %d" a.person.LRP.id u.person.LRP.id
   | `error (id, e) ->
     prf "ERROR: %S -- %s" id
       (match e with
@@ -163,7 +163,7 @@ let find_user login =
     
 let make_user u = 
   let module P = Layout.Record_person in
-  { roles = Array.to_list u.P.roles;
+  { roles = Array.to_list u.P.g_value.P.roles;
     person = P.unsafe_cast u.P.g_id}
 
 let pam_auth ?service ~user ~password () =
@@ -178,7 +178,7 @@ let pam_auth ?service ~user ~password () =
 let hash_password person_id password =
   let open Cryptokit in
   let open Layout.Record_person in
-  let to_hash = sprintf "gencore:%ld:%s" person_id password in
+  let to_hash = sprintf "gencore:%d:%s" person_id password in
   transform_string (Hexa.encode ()) (hash_string (Hash.sha256 ()) to_hash)
   
 let check = function
@@ -186,12 +186,12 @@ let check = function
     let open Layout.Record_person in
     let checking_m =
       find_user identifier >>= fun person ->
-      if person.password_hash = Some (hash_password person.g_id password)
+      if person.g_value.password_hash = Some (hash_password person.g_id password)
       then
         set_state (`user_logged (make_user person))
       else
         begin
-          of_option person.login (fun user -> pam_auth ~user ~password ())
+          of_option person.g_value.login (fun user -> pam_auth ~user ~password ())
           >>= fun pammed ->
           if pammed = Some ()
           then
@@ -399,16 +399,17 @@ let display_state ?in_progress_element () =
     return (span [
       pcdata "User: ";
       Eliom_output.Html5.a ~service:(Services.person ())
-        [pcdataf "%s" admin#email] (admin#email, None);
+        [pcdataf "%s" admin.LRP.g_value.LRP.email]
+        (admin.LRP.g_value.LRP.email, None);
       pcdataf " (%s) impersonating "
-        (String.concat ~sep:", " Array.(map admin#roles 
+        (String.concat ~sep:", " Array.(map admin.LRP.g_value.LRP.roles 
                                           ~f:Layout.Enumeration_role.to_string
                                         |! to_list));
       Eliom_output.Html5.a ~service:(Services.person ())
-        [pcdataf "%s" impersonated#email]
-        (impersonated#email, None);
+        [pcdataf "%s" impersonated.LRP.g_value.LRP.email]
+        (impersonated.LRP.g_value.LRP.email, None);
         pcdataf " (%s) "
-          (String.concat ~sep:", " Array.(map impersonated#roles 
+          (String.concat ~sep:", " Array.(map impersonated.LRP.g_value.LRP.roles 
                                             ~f:Layout.Enumeration_role.to_string
                                           |! to_list));
       ])
@@ -418,9 +419,9 @@ let display_state ?in_progress_element () =
       return (span [
         pcdata "User: ";
         Eliom_output.Html5.a ~service:(Services.self ())
-          [pcdataf "%s" user#email] None;
+          [pcdataf "%s" user.LRP.g_value.LRP.email] None;
         pcdataf " (%s)"
-          (String.concat ~sep:", " Array.(map user#roles 
+          (String.concat ~sep:", " Array.(map user.LRP.g_value.LRP.roles 
                                             ~f:Layout.Enumeration_role.to_string
                                           |! to_list));
       ])
