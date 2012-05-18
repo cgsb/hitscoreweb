@@ -97,7 +97,13 @@ let get_all_evaluations ?(only=[])  dbh function_name =
       >>= fun r -> of_result (Sql_query.should_be_single r)
       >>= fun r -> of_result (Sql_query.parse_evaluation r))
   end
-let get_all_volumes ?(only=[])  dbh volume_kind =
+let get_all_volumes ~configuration ?(only=[]) dbh volume_kind =
+  let enhance_volume v =
+    let open Layout.File_system in
+    Common.path_of_volume ~dbh ~configuration (unsafe_cast v.Sql_query.v_id)
+    >>= fun path ->
+    return (v, path)
+  in
   begin match only with
   | [] -> 
     let query = Sql_query.get_all_volumes_sexp () in
@@ -106,14 +112,17 @@ let get_all_volumes ?(only=[])  dbh volume_kind =
     of_list_sequential results ~f:(fun row ->
       of_result (Sql_query.parse_volume row)
       >>= fun v ->
-      if v.Sql_query.v_kind = volume_kind then return (Some v) else return None)
+      (if v.Sql_query.v_kind = volume_kind then return (Some v) else return None)
+      >>= fun opt ->
+      of_option opt enhance_volume)
     >>| List.filter_opt
   | a_bunch ->
     of_list_sequential a_bunch (fun id ->
       let query = Sql_query.get_volume_sexp id in
       Backend.query ~dbh query
       >>= fun r -> of_result (Sql_query.should_be_single r)
-      >>= fun r -> of_result (Sql_query.parse_volume r))
+      >>= fun r -> of_result (Sql_query.parse_volume r)
+      >>= enhance_volume)
   end
  
 
@@ -216,10 +225,11 @@ let evaluations_to_table type_info result_type r =
   
 let volumes_to_table name toplevel r = 
   try
-    List.map r ~f:(fun vol ->
+    List.map r ~f:(fun (vol, path) ->
       let open Sql_query in
       sortable_link (string_of_int vol.v_id) vol.v_kind
       :: sortable_text (Sexp.to_string_hum vol.v_sexp)
+      :: sortable_text path
       :: [])
   with e -> [[ `head [Html5.pcdataf "ERROR: %S" (Exn.to_string e)]]]
 
@@ -293,12 +303,12 @@ let view_layout ~configuration ~main_title ~types ~values =
             function_standard_fields res @ ["S-Exp", String] @ args in
           table_section "function" name (typed_values_in_table all_typed :: table)
         | Volume (name, toplevel) ->
-          get_all_volumes ~only:values dbh name
+          get_all_volumes ~configuration ~only:values dbh name
           >>| volumes_to_table name toplevel
           >>= fun table ->
           let head s = List.map s (fun s -> `head [pcdataf "%s" s]) in
           table_section "volume" name
-            (head ["Id"; "S-Exp"] :: table)
+            (head ["Id"; "S-Exp"; "Path"] :: table)
         end
       | None -> 
         return (
