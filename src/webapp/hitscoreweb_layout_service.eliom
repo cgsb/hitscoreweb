@@ -12,17 +12,17 @@ module Template = Hitscoreweb_template
 
 module LDSL = Hitscoregen_layout_dsl
 
-let read_file file =
-  let io f = Lwt_io.(with_file ~mode:input f read) in
-  wrap_io io file
-    
 let node_name = 
   let open LDSL in
+  let open Html5 in
+  let s color text =
+    span ~a:[ ksprintf a_style "color: %s; font-weight: bold" color ]
+      [pcdata text] in
   function
-  | Enumeration (name, values) ->  "enumeration_" ^ name
-  | Record (name, typed_values) -> "record_" ^ name
-  | Function (name, args, res)  -> "function_" ^ name
-  | Volume (name, toplevel) ->     "volume_" ^ name
+  | Enumeration (name, values) ->  (s "black" "Enumeration", name)
+  | Record (name, typed_values) -> (s "red" "Record", name)
+  | Function (name, args, res)  -> (s "blue" "Function", name)
+  | Volume (name, toplevel) ->     (s "green" "Volume", name)
 
 let self_link = function
   | `default ->
@@ -37,20 +37,20 @@ let self_link = function
     fun html -> Template.a_link Services.layout [html] ("edit", ([t], [n])) 
 
 let node_link n = 
-  let name = node_name n in
-  self_link (`view_one_type name) Html5.(codef "%s" name)
+  let open Html5 in
+  let styled_type, name = node_name n in
+  span [pcdata "["; styled_type; pcdata " ";
+        self_link (`view_one_type name) Html5.(codef "%s" name);
+        pcdata "]"]
 
 let find_node dsl nodename =
   let open LDSL in
-  match String.lsplit2 nodename ~on:'_' with
-  | None -> None
-  | Some (prefix, suffix) ->
-    List.find dsl.nodes (function
-    | Enumeration (name,_) -> prefix = "enumeration" && name = suffix
-    | Record (name, typed_values) -> prefix = "record"   && suffix = name
-    | Function (name, args, res)  -> prefix = "function" && suffix = name
-    | Volume (name, toplevel) ->     prefix = "volume"   && suffix = name
-    )
+  List.find dsl.nodes (function
+  | Enumeration (name,_) -> name = nodename
+  | Record (name, typed_values) -> nodename = name
+  | Function (name, args, res)  -> nodename = name
+  | Volume (name, toplevel) -> nodename = name
+  )
 
 let find_enumeration_values name =
   let open LDSL in
@@ -67,81 +67,161 @@ let typed_values_in_table l =
       b [codef "%s" n]; codef ": "; br ();
       i [codef "%s" (LDSL.string_of_dsl_type t)]]) 
 
-let get_all_generic ?(only=[]) ?(more_where=[]) dbh name =
-  return []
-    (*
-  let module PG = Layout.PGOCaml in
-  let sanitize_name name =
-    String.map name (function
-    | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '_' as c -> c
-    | _ -> '_') in
-  let sanitize_string s = String.map s (function ''' -> '_' | c -> c) in
-  let query =
-    let where = 
-      match only, more_where with
-      | [], [] -> ""
-      | lo, lw ->
-        sprintf " where (%s%s%s)"
-          (List.map lo (sprintf "g_id = %d") |! String.concat ~sep:" or ")
-          (if lw <> [] && lo <> [] then ") and (" else "")
-          (List.map lw (fun (k, v) -> 
-            sprintf "%s = '%s'" (sanitize_name k) (sanitize_string v))
-            |! String.concat ~sep:" or ") 
-    in
-    sprintf  "select * from %s%s" (sanitize_name name) where in
-  pg_raw_query ?with_log:None ~dbh ~query *)
+let get_all_values ?(only=[])  dbh record_name =
+  begin match only with
+  | [] -> 
+    let query = Sql_query.get_all_values_sexp ~record_name in
+    Backend.query ~dbh query
+    >>= fun results ->
+    of_list_sequential results ~f:(fun row ->
+      of_result (Sql_query.parse_value row))
+  | a_bunch ->
+    of_list_sequential a_bunch (fun id ->
+      let query = Sql_query.get_value_sexp ~record_name id in
+      Backend.query ~dbh query
+      >>= fun r -> of_result (Sql_query.should_be_single r)
+      >>= fun r -> of_result (Sql_query.parse_value r))
+  end
+let get_all_evaluations ?(only=[])  dbh function_name =
+  begin match only with
+  | [] -> 
+    let query = Sql_query.get_all_evaluations_sexp ~function_name in
+    Backend.query ~dbh query
+    >>= fun results ->
+    of_list_sequential results ~f:(fun row ->
+      of_result (Sql_query.parse_evaluation row))
+  | a_bunch ->
+    of_list_sequential a_bunch (fun id ->
+      let query = Sql_query.get_evaluation_sexp ~function_name id in
+      Backend.query ~dbh query
+      >>= fun r -> of_result (Sql_query.should_be_single r)
+      >>= fun r -> of_result (Sql_query.parse_evaluation r))
+  end
+let get_all_volumes ?(only=[])  dbh volume_kind =
+  begin match only with
+  | [] -> 
+    let query = Sql_query.get_all_volumes_sexp () in
+    Backend.query ~dbh query
+    >>= fun results ->
+    of_list_sequential results ~f:(fun row ->
+      of_result (Sql_query.parse_volume row)
+      >>= fun v ->
+      if v.Sql_query.v_kind = volume_kind then return (Some v) else return None)
+    >>| List.filter_opt
+  | a_bunch ->
+    of_list_sequential a_bunch (fun id ->
+      let query = Sql_query.get_volume_sexp id in
+      Backend.query ~dbh query
+      >>= fun r -> of_result (Sql_query.should_be_single r)
+      >>= fun r -> of_result (Sql_query.parse_volume r))
+  end
+ 
 
 let generic_to_table type_info current_name r = []
-  (*
+
+let sortable_timestamp t =
   let open Html5 in
-  let rec display_typed s  =
-    let open LDSL in
-    let text s = `sortable (s, [pcdataf "%s" s]) in
-    let link s t =
-      `sortable (s, [self_link (`view_one_value (t, Int.of_string s)) (pcdataf "%s" s)]) in
-    function
-    | Bool 
-    | Int
-    | Real
-    | String -> text s
-    | Timestamp -> 
-      `sortable (s,
+  let s = Timestamp.to_string t in
+  `sortable (s,
              [ span ~a:[a_title s]
                  [pcdata 
-                     (Time.(of_string s |! to_local_date) |! Date.to_string)]])
-    | Option o -> display_typed s o
-    | Array (Record_name r) ->
-      let ids = Array.to_list (Layout.PGOCaml.int32_array_of_string s)
-                |! List.map ~f:Int32.to_int_exn in
-      `sortable (List.map ids (sprintf "%d") |! String.concat ~sep:",",
-        List.map ids (fun i -> 
-          self_link (`view_one_value (sprintf "record_%s" r, i)) (pcdataf "%d" i))
-          |! interleave_list ~sep:(pcdata ", "))
-    | Array a -> text s
-    | Record_name r -> link s (sprintf "record_%s" r)
-    | Enumeration_name e -> text s
-    | Function_name f -> link s (sprintf "function_%s" f)
-    | Volume_name v -> link s (sprintf "volume_%s" v)
-    | Identifier -> link s current_name
-  in
-  try
-    List.map r ~f:(fun row ->
-      List.map2_exn row type_info
-        ~f:(fun sopt (n, t) ->
-          Option.value_map sopt
-            ~default:(`sortable ("",[codef "—"]))
-            ~f:(fun s -> display_typed s t)))
-  with
-    e -> []
-  *)
-  
-let volume_to_table name toplevel rows =
+                     (Time.(t |! to_local_date) |! Date.to_string)]])
+    
+let sortable_text s =
   let open Html5 in
-  List.map rows
-    ~f:(List.map
-          ~f:(Option.value_map
-                ~default:(`sortable ("", [codef "—"]))
-                ~f:(fun s -> `sortable (s, [pre [pcdataf "%s" s]]))))
+  `sortable (s, [pcdataf "%s" s])
+let sortable_link s t =
+  let open Html5 in
+  `sortable (s, [self_link (`view_one_value (t, Int.of_string s))
+                    (pcdataf "%s" s)])
+
+let find_in_sexp s field =
+  let open Sexp in
+  match s with
+  | List l ->
+    List.find_map l (function
+    | List [Atom a; v] when a = field -> Some v
+    | _ -> None)
+  | _ -> None
+    
+let rec display_typed_value =
+  let open Html5 in
+  let open LDSL in
+  let open Sexp in
+  function
+  | Bool, Atom s 
+  | Int, Atom s
+  | Real, Atom s
+  | Enumeration_name _, Atom s
+  | String, Atom s
+    -> sortable_text s
+  | Option t, List [] -> sortable_text ""
+  | Option t, List [v] -> display_typed_value (t,v)
+  | Array t, List l ->
+    `sortable (l |! List.length |! Int.to_string,
+               List.map l (fun v ->
+                 match display_typed_value (t,v) with
+                 | `sortable (_, p) -> p
+                 | _ -> [])
+               |! List.concat
+               |! interleave_list ~sep:(pcdata ", "))
+
+  | Record_name   name, List [List [Atom "id"; Atom s]]
+  | Volume_name   name, List [List [Atom "id"; Atom s]]
+  | Function_name name, List [List [Atom "id"; Atom s]]
+    -> sortable_link s name
+    
+  | Timestamp,  l ->
+    sortable_timestamp Timestamp.(t_of_sexp l)
+  | _ -> sortable_text "«ERROR»"
+  
+    
+let values_to_table type_info r =
+  try
+    List.map r ~f:(fun value ->
+      let open Sql_query in
+      (* eprintf "record %d\n%!" value.r_id; *)
+      sortable_text (string_of_int value.r_id)
+      (* :: sortable_text value.r_type *)
+      :: sortable_timestamp  value.r_created
+      :: sortable_timestamp  value.r_last_modified
+      :: sortable_text (Sexp.to_string_hum value.r_sexp)
+      :: (List.map type_info (fun (field, field_type) ->
+        Option.value_map
+          ~default:(`sortable ("",[Html5.codef "—"]))
+          ~f:(fun v -> display_typed_value (field_type, v))
+          (find_in_sexp value.r_sexp field))))
+  with e -> [[ `head [Html5.pcdataf "ERROR: %S" (Exn.to_string e)]]]
+let evaluations_to_table type_info result_type r =
+  try
+    List.map r ~f:(fun eval ->
+      let open Sql_query in
+      let default = (`sortable ("",[Html5.codef "—"])) in
+      sortable_text (string_of_int eval.f_id)
+      :: Option.value_map eval.f_result ~default
+        ~f:(fun i -> sortable_link (string_of_int i) result_type)
+      :: sortable_text (Bool.to_string eval.f_recomputable)  (*  bool *)
+      :: sortable_text (Float.to_string eval.f_recompute_penalty)  (*  float *)
+      :: sortable_timestamp eval.f_inserted  (*  Timestamp.t *)
+      :: Option.value_map ~f:sortable_timestamp eval.f_started ~default
+      :: Option.value_map ~f:sortable_timestamp eval.f_completed ~default
+      :: sortable_text (status_to_string eval.f_status)  (*  status *)
+      :: sortable_text (Sexp.to_string_hum eval.f_sexp)  (*  Sexp.t *)
+      :: (List.map type_info (fun (field, field_type) ->
+        Option.value_map
+          ~default
+          ~f:(fun v -> display_typed_value (field_type, v))
+          (find_in_sexp eval.f_sexp field))))
+  with e -> [[ `head [Html5.pcdataf "ERROR: %S" (Exn.to_string e)]]]
+  
+let volumes_to_table name toplevel r = 
+  try
+    List.map r ~f:(fun vol ->
+      let open Sql_query in
+      sortable_text (string_of_int vol.v_id)
+      :: sortable_text (Sexp.to_string_hum vol.v_sexp)
+      :: [])
+  with e -> [[ `head [Html5.pcdataf "ERROR: %S" (Exn.to_string e)]]]
 
 
 let view_layout ~configuration ~main_title ~types ~values =
@@ -150,8 +230,9 @@ let view_layout ~configuration ~main_title ~types ~values =
 
     let layout = Meta.layout () in
     let nodes =
-      Html5.(span (List.map layout.LDSL.nodes node_link
-                   |! interleave_list ~sep:(pcdata ", "))) 
+      Html5.(div ~a:[ a_style "max-width: 55em" ]
+               (List.map layout.LDSL.nodes node_link
+                |! interleave_list ~sep:(pcdata ", "))) 
     in 
     let open Template in
     let open Html5 in
@@ -195,26 +276,29 @@ let view_layout ~configuration ~main_title ~types ~values =
             (content_paragraph 
                (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
           |! return
+
         | Record (name, typed_values) ->
-          let all_typed =  (record_standard_fields @ typed_values) in
-          get_all_generic ~only:values dbh name 
-          >>| generic_to_table all_typed (sprintf "record_%s" name)
+          get_all_values ~only:values dbh name 
+          >>| values_to_table typed_values
           >>= fun table ->
-          table_section "record" name (typed_values_in_table all_typed :: table)
+          table_section "record" name
+            (typed_values_in_table (record_standard_fields @ ["S-Exp", String]
+                                    @ typed_values) :: table)
+
         | Function (name, args, res)  ->
-          let all_typed = function_standard_fields res @ args in
-          get_all_generic ~only:values dbh name
-          >>| generic_to_table all_typed (sprintf "function_%s" name)
+          get_all_evaluations ~only:values dbh name
+          >>| evaluations_to_table args res
           >>= fun table ->
+          let all_typed =
+            function_standard_fields res @ ["S-Exp", String] @ args in
           table_section "function" name (typed_values_in_table all_typed :: table)
         | Volume (name, toplevel) ->
-          get_all_generic
-            ~only:values ~more_where:["g_kind", name] dbh "g_volume"
-          >>| volume_to_table name toplevel
+          get_all_volumes ~only:values dbh name
+          >>| volumes_to_table name toplevel
           >>= fun table ->
           let head s = List.map s (fun s -> `head [pcdataf "%s" s]) in
           table_section "volume" name
-            (head ["Id"; "Kind"; "Human-readable S-Exp …"] :: table)
+            (head ["Id"; "S-Exp"] :: table)
         end
       | None -> 
         return (
@@ -503,13 +587,15 @@ let make ~configuration =
     let main_title = "The Layout Navigaditor" in
     match action with
     | "view" ->
+      let m =
+        Authentication.authorizes (`view `layout)
+        >>= function
+        | true -> view_layout ~configuration ~main_title ~types ~values
+        | false ->
+          Template.make_authentication_error ~configuration ~main_title
+            (return [Html5.pcdataf "You may not view the whole Layout."]) in
       Template.default ~title:main_title
-        (Authentication.authorizes (`view `layout)
-         >>= function
-         | true -> view_layout ~configuration ~main_title ~types ~values
-         | false ->
-           Template.make_authentication_error ~configuration ~main_title
-             (return [Html5.pcdataf "You may not view the whole Layout."]))
+        (bind_on_error m (fun e -> error (`Layout_service e)))
     | "edit" ->
       Template.default ~title:main_title (error (`not_implemented "reedit layout"))
         (*

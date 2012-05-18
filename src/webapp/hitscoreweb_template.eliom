@@ -146,6 +146,31 @@ let string_of_backend_error e =
     sprintf "DB BACKEND ERROR: %s" (Exn.to_string e)
   end
     
+let string_of_layout_error = function
+  | `db_backend_error (`query (q, e)) ->
+    sprintf "Query %S failed: %s" q (Exn.to_string e)
+  | `db_backend_error e ->
+    string_of_backend_error e
+  | `parse_evaluation_error (sol, e)
+  | `parse_value_error (sol, e)
+  | `parse_volume_error (sol, e) ->
+    sprintf "error while parsing result [%s]: %s"
+      (String.concat ~sep:", "
+         (List.map sol (Option.value ~default:"NONE"))) (Exn.to_string e)
+  | `parse_sexp_error (sexp, e) ->
+    sprintf "S-Exp parsing error: %S: %s"
+      (Sexp.to_string_hum sexp) (Exn.to_string e)
+  | `result_not_unique soll ->
+    sprintf "result_not_unique: [%s]"
+      (String.concat ~sep:", "
+         (List.map soll (fun sol ->
+           String.concat ~sep:", "
+             (List.map sol (Option.value ~default:"NONE")))))
+  | `wrong_add_value ->
+    sprintf "WRONG-ADD-VALUE"
+  | `wrong_version (v1, v2) ->
+    sprintf "Wrong version: %s Vs %s" v1 v2
+
 let html_of_layout_error (where, what) =
   let open Html5 in
   [pcdataf "LAYOUT-ERROR (%s): %s"
@@ -154,30 +179,7 @@ let html_of_layout_error (where, what) =
       | `File_system -> "File-system"
       | `Function f -> sprintf  "function %S" f
       | `Record r -> sprintf "record %S" r) 
-      (match what with
-      | `db_backend_error (`query (q, e)) ->
-        sprintf "Query %S failed: %s" q (Exn.to_string e)
-      | `db_backend_error e ->
-        string_of_backend_error e
-      | `parse_evaluation_error (sol, e)
-      | `parse_value_error (sol, e)
-      | `parse_volume_error (sol, e) ->
-        sprintf "error while parsing result [%s]: %s"
-          (String.concat ~sep:", "
-             (List.map sol (Option.value ~default:"NONE"))) (Exn.to_string e)
-      | `parse_sexp_error (sexp, e) ->
-        sprintf "S-Exp parsing error: %S: %s"
-          (Sexp.to_string_hum sexp) (Exn.to_string e)
-      | `result_not_unique soll ->
-        sprintf "result_not_unique: [%s]"
-          (String.concat ~sep:", "
-             (List.map soll (fun sol ->
-               String.concat ~sep:", "
-                 (List.map sol (Option.value ~default:"NONE")))))
-      | `wrong_add_value ->
-        sprintf "WRONG-ADD-VALUE"
-      | `wrong_version (v1, v2) ->
-        sprintf "Wrong version: %s Vs %s" v1 v2)
+      (string_of_layout_error what)
   ]
     
     
@@ -297,16 +299,21 @@ let html_of_error_sublevel poly_error =
      @ error_message)
 *)
   | `Layout l -> html_of_layout_error l
-  | `db_backend_error e ->
-    [pcdataf "DB-Backend-Error: %s" (string_of_backend_error e)]
+  | `db_backend_error _
+  | `result_not_unique _ 
+  | `parse_evaluation_error _
+  | `parse_volume_error _
+  | `parse_value_error _ as e->
+    [pcdata (string_of_layout_error e)]
   | `broker_error _ -> []
-  | `layout_edit_coservice_error _ -> []
+  | `Layout_service _ -> []
 
 
 let html_of_error  poly_error = 
   let open Html5 in
   match poly_error with
   | `broker_error e -> html_of_error_sublevel e
+  | `Layout_service e -> html_of_error_sublevel e
     (*
   | `layout_edit_coservice_error e ->
     pcdata "Error while editing: "
