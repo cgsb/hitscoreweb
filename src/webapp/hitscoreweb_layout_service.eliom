@@ -181,7 +181,7 @@ let values_to_table type_info r =
     List.map r ~f:(fun value ->
       let open Sql_query in
       (* eprintf "record %d\n%!" value.r_id; *)
-      sortable_text (string_of_int value.r_id)
+      sortable_link (string_of_int value.r_id) value.r_type
       (* :: sortable_text value.r_type *)
       :: sortable_timestamp  value.r_created
       :: sortable_timestamp  value.r_last_modified
@@ -197,7 +197,7 @@ let evaluations_to_table type_info result_type r =
     List.map r ~f:(fun eval ->
       let open Sql_query in
       let default = (`sortable ("",[Html5.codef "—"])) in
-      sortable_text (string_of_int eval.f_id)
+      sortable_link (string_of_int eval.f_id) eval.f_type
       :: Option.value_map eval.f_result ~default
         ~f:(fun i -> sortable_link (string_of_int i) result_type)
       :: sortable_text (Bool.to_string eval.f_recomputable)  (*  bool *)
@@ -218,7 +218,7 @@ let volumes_to_table name toplevel r =
   try
     List.map r ~f:(fun vol ->
       let open Sql_query in
-      sortable_text (string_of_int vol.v_id)
+      sortable_link (string_of_int vol.v_id) vol.v_kind
       :: sortable_text (Sexp.to_string_hum vol.v_sexp)
       :: [])
   with e -> [[ `head [Html5.pcdataf "ERROR: %S" (Exn.to_string e)]]]
