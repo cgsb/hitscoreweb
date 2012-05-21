@@ -19,6 +19,7 @@ type up_message =
 | Add_function of string * string 
 | Add_volume of string * string
 | Modify_value of int * string * string
+| Modify_volume of int * string * string
 deriving (Json)
 
 type down_message =
@@ -66,6 +67,10 @@ let reply ~configuration =
   | Modify_value (id, t, content) ->
     check_access_type_and_sexp t content >>= fun sexp ->
     let query = Sql_query.update_value_sexp ~record_name:t id sexp in
+    execute_query_and_succeed ~configuration query
+  | Modify_volume (id, t, content) ->
+    check_access_type_and_sexp t content >>= fun sexp ->
+    let query = Sql_query.update_volume_sexp ~kind:t id sexp in
     execute_query_and_succeed ~configuration query
 
 let init_caml_service ~configuration =
@@ -151,6 +156,8 @@ let add_or_modify_sexp_interface
               | `Volume, None -> call_caml (Add_volume ( %type_name, sexp_str))
               | `Record, Some (id, _) ->
                 call_caml (Modify_value (id, %type_name, sexp_str)) 
+              | `Volume, Some (id, _) ->
+                call_caml (Modify_volume (id, %type_name, sexp_str)) 
               | _ -> fail (Failure "Not implemented …")
               end
               >>= fun msg ->
@@ -431,7 +438,7 @@ let view_layout ~configuration ~main_title ~types ~values =
         match meta_values with
         | `Record _ -> `Record
         | `Function -> `Function
-        | `Volume -> `Volume in
+        | `Volume _ -> `Volume in
       Authentication.authorizes (`edit `layout)
       >>= fun can_edit ->
       let editors_paragraph =
@@ -445,6 +452,9 @@ let view_layout ~configuration ~main_title ~types ~values =
                 match meta_values with
                 | `Record [one] ->
                   let modify = Sql_query.(one.r_id, one.r_sexp |! Sexp.to_string) in
+                  span (add_or_modify_sexp_interface ~modify kind name)
+                | `Volume [one, _] ->
+                  let modify = Sql_query.(one.v_id, one.v_sexp |! Sexp.to_string) in
                   span (add_or_modify_sexp_interface ~modify kind name)
                 | _ ->
                   span [pcdata "TODO"]);
@@ -494,10 +504,11 @@ let view_layout ~configuration ~main_title ~types ~values =
           table_section `Function name (typed_values_in_table all_typed :: table)
         | Volume (name, toplevel) ->
           get_all_volumes ~configuration ~only:values dbh name
-          >>| volumes_to_table name toplevel
+          >>= fun actual_volumes ->
+          return (volumes_to_table name toplevel actual_volumes)
           >>= fun table ->
           let head s = List.map s (fun s -> `head [pcdataf "%s" s]) in
-          table_section `Volume name
+          table_section (`Volume actual_volumes) name
             (head ["Id"; "S-Exp"; "Path"] :: table)
         end
       | None -> 
