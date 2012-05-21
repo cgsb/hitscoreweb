@@ -1430,6 +1430,8 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register evaluations) 
         Evaluations_service.(make ~configuration:hitscore_configuration);
 
+      Layout_service.init_caml_service
+        ~configuration:hitscore_configuration ();
       Services.(register layout) 
         Layout_service.(make ~configuration:hitscore_configuration);
 

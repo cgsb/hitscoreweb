@@ -12,6 +12,174 @@ module Template = Hitscoreweb_template
 
 module LDSL = Hitscoregen_layout_dsl
 
+
+{shared{
+type up_message =
+| Add_record of string * string
+| Add_function of string * string 
+| Add_volume of string * string
+| Modify_sexp of int * string * string
+deriving (Json)
+
+type down_message =
+| Success
+| Error_string of string
+
+}}
+
+
+let caml_service =
+  make_delayed (Eliom_services.service 
+          ~path:["layout_caml_service"]
+          ~get_params:Eliom_parameters.(caml "param" Json.t<up_message>))
+
+
+let reply ~configuration =
+  function
+  | Add_record (t, content) ->
+    Authentication.restrict_access (`edit `layout) >>= fun () ->
+    (try return (Sexp.of_string content) with e -> error (`sexp_syntax e))
+    >>= fun sexp ->
+    of_result (Verify_layout.check_sexp t sexp) >>= fun () ->
+    let query = Sql_query.add_value_sexp ~record_name:t sexp in
+    with_database ~configuration (Backend.query query)
+    >>= fun _ ->
+    return Success
+  | Add_function (t, content) ->
+    Authentication.restrict_access (`edit `layout) >>= fun () ->
+    (try return (Sexp.of_string content) with e -> error (`sexp_syntax e))
+    >>= fun sexp ->
+    of_result (Verify_layout.check_sexp t sexp) >>= fun () ->
+    let query =
+      Sql_query.add_evaluation_sexp
+        ~recomputable:false ~recompute_penalty:0. ~status:"Inserted"
+        ~function_name:t sexp in
+    with_database ~configuration (Backend.query query)
+    >>= fun _ ->
+    return Success
+  | Add_volume (kind, content) ->
+    Authentication.restrict_access (`edit `layout) >>= fun () ->
+    (try return (Sexp.of_string content) with e -> error (`sexp_syntax e))
+    >>= fun sexp ->
+    (try let _ = Layout.File_system.content_of_sexp sexp in return ()
+     with e -> error (`parse_sexp_error (sexp, e)))
+    >>= fun () ->
+    let query =
+      Sql_query.add_volume_sexp ~kind sexp in
+    with_database ~configuration (Backend.query query)
+    >>= fun _ ->
+    return Success
+  | _ ->
+    error (`not_implemented)
+
+let init_caml_service ~configuration =
+  let already = ref false in
+  fun () ->
+    if !already then () else (
+      already := true;
+      let fail fmt =
+        ksprintf
+          (fun s -> Lwt.return (Error_string ("Error: " ^ s)))
+          fmt
+      in
+      Eliom_output.Caml.register ~service:(caml_service ())
+        (fun param () ->
+          Lwt.bind (reply ~configuration param) (function
+          | Ok o -> Lwt.return (o : down_message)
+          | Error `not_implemented -> Lwt.return (Error_string "Not implemented")
+          | Error (`sexp_syntax e) -> fail "S-Expr syntax: %s" (Exn.to_string e)
+          | Error (`wrong_rights) ->
+            fail "Wrong access rights! What the F#!$ are you trying to do?"
+          | Error (`parse_sexp_error (_, e)) ->
+            fail "S-Expr does not fit the type: %s" (Exn.to_string e)
+          | Error e -> fail "unknown error")))
+
+
+{client{
+
+let sexp_area ?value () =
+  Eliom_client.Html5.of_textarea
+    (Eliom_output.Html5.raw_textarea
+       ~cols:50 ~rows:20 ?value ~name:"sexpinput" ()) 
+
+let submit_button ?(visible=true) f =
+  let open Html5 in
+  let submit =
+    Eliom_output.Html5.button
+      ~a:(if visible then [] else [a_style "visibility:hidden"])
+      ~button_type:`Button [pcdata "submit"] in
+  let btn_elt = Eliom_client.Html5.of_button submit in
+  btn_elt##onclick <- Dom_html.handler (fun ev ->
+    Lwt.ignore_result (f ev btn_elt); Js._true);
+  btn_elt
+
+}}
+
+let add_sexp_interface (kind: [`Function| `Record| `Volume]) (type_name: string) =
+  let (link_like_id: string) = unique_id "add_sexp" in
+  let the_link_like =
+    let open Html5 in
+    [span ~a:[a_id link_like_id; a_class ["like_link"]]
+        [pcdataf "You may add a new %s" type_name]] in
+  let caml = caml_service () in
+  let (type_name: string) = "" ^ type_name in
+  (* the "" ^ _ is to please js_of_eliom's typing issues *)
+  Eliom_services.onload {{
+    let open Html5 in
+    let open Lwt in
+    let open Printf in
+    try
+      begin
+        let call_caml msg =
+          Eliom_client.call_caml_service ~service: %caml msg () in
+        
+        let the_span = get_element_exn %link_like_id in
+        the_span##onclick <-
+          Dom_html.(handler (fun ev ->
+            the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            the_span##innerHTML <-
+              Js.string "Please, enter the S-Expression:<br/>";
+            the_span##classList##remove(Js.string "like_link"); 
+
+            let rec on_submit_sexp txt_elt ev btn_elt =
+              the_span##innerHTML <- Js.string "<b>Processing …</b>";
+              let sexp_str = Js.to_string txt_elt##value in
+              begin match %kind with
+              | `Record -> call_caml (Add_record ( %type_name, sexp_str))
+              | `Function -> call_caml (Add_function ( %type_name, sexp_str)) 
+              | `Volume -> call_caml (Add_volume ( %type_name, sexp_str))
+              end
+              >>= fun msg ->
+              begin match msg with
+              | Success ->
+                the_span##innerHTML <- Js.string "<b>Done.</b>";
+                return ()
+              | Error_string s ->
+                dbg "Got Error: %S" s;
+                the_span##innerHTML <-
+                  ksprintf Js.string "<b>Error: %s</b><br/>For %S<br/>" s sexp_str;
+                make_interface ~value:sexp_str ();
+                return ()
+              end
+            and make_interface ?value () =
+              let txt_elt = sexp_area ?value () in
+              let btn_elt = submit_button (on_submit_sexp txt_elt) in
+              Dom.appendChild the_span txt_elt;
+              Dom.appendChild the_span btn_elt;
+            in
+            make_interface ();
+            Js._true
+          ));
+        
+      end
+    with e -> 
+      dbg "Exception in onload for %S: %s" %link_like_id (Printexc.to_string e);
+      ()
+  }};
+  the_link_like
+
+
+  
 let node_name = 
   let open LDSL in
   let open Html5 in
@@ -250,8 +418,8 @@ let view_layout ~configuration ~main_title ~types ~values =
     let ul_opt l = 
       ul (List.map (List.filter l ~f:(fun (g, f) -> g))
             ~f:(fun x -> li [snd x ()])) in
-    let table_section prefix name table =
-      let type_name = sprintf "%s_%s" prefix name in
+    let table_section kind name table =
+      let type_name = sprintf "%s" name in
       let is_only_one = List.length values = 1 in
       Authentication.authorizes (`edit `layout)
       >>= fun can_edit ->
@@ -260,8 +428,8 @@ let view_layout ~configuration ~main_title ~types ~values =
           content_paragraph [
             pcdataf "Actions: ";
             ul_opt [
-              (can_edit, fun () ->
-                self_link (`add_one_value type_name) (pcdataf "Add a %s" name));
+              (can_edit, fun () -> span (add_sexp_interface kind name));
+                (* self_link (`add_one_value type_name) (pcdataf "Add a %s" name)); *)
               (can_edit && is_only_one, fun () -> 
                 self_link (`edit_one_value (type_name, List.hd_exn values))
                   (pcdataf "Edit this %s" name));
@@ -270,8 +438,13 @@ let view_layout ~configuration ~main_title ~types ~values =
         else
           content_list []
       in
+      let kindstr =
+        match kind with
+        | `Record -> "Record"
+        | `Function -> "Function"
+        | `Volume -> "Volume" in
       return (
-        content_section (span [pcdataf "The %s " prefix; codef "%s" name])
+        content_section (span [pcdata kindstr; codef " %s" name])
           (content_list [
             editors_paragraph;
             content_table ~transpose:is_only_one table;
@@ -291,7 +464,7 @@ let view_layout ~configuration ~main_title ~types ~values =
           get_all_values ~only:values dbh name 
           >>| values_to_table typed_values
           >>= fun table ->
-          table_section "record" name
+          table_section `Record name
             (typed_values_in_table (record_standard_fields @ ["S-Exp", String]
                                     @ typed_values) :: table)
 
@@ -301,13 +474,13 @@ let view_layout ~configuration ~main_title ~types ~values =
           >>= fun table ->
           let all_typed =
             function_standard_fields res @ ["S-Exp", String] @ args in
-          table_section "function" name (typed_values_in_table all_typed :: table)
+          table_section `Function name (typed_values_in_table all_typed :: table)
         | Volume (name, toplevel) ->
           get_all_volumes ~configuration ~only:values dbh name
           >>| volumes_to_table name toplevel
           >>= fun table ->
           let head s = List.map s (fun s -> `head [pcdataf "%s" s]) in
-          table_section "volume" name
+          table_section `Volume name
             (head ["Id"; "S-Exp"; "Path"] :: table)
         end
       | None -> 
