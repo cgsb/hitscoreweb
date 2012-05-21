@@ -217,6 +217,10 @@ let authorizes (cap:capability) =
   | _ -> return !global_authentication_disabled
   end
 
+let restrict_access cap =
+  authorizes cap
+  >>= fun auth ->
+  if auth then return () else error `wrong_rights
 
 let login_coservice = 
   let coserv = ref None in
