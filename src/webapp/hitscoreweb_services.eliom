@@ -54,8 +54,7 @@ let evaluations =
           
 let layout =
   make (Eliom_services.service ~path:["layout"]
-          ~get_params:Eliom_parameters.(string "action" 
-                                        ** set string "type" ** set int "value"))
+          ~get_params:Eliom_parameters.(set string "type" ** set int "value"))
 
 let stylesheet =
   make (Eliom_services.service

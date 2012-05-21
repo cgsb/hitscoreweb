@@ -362,7 +362,7 @@ let menu_ul () =
     potential_li (`view `all_evaluations)
       [a_link Services.evaluations [pcdata "Function evaluations"] ()];
     potential_li (`view `layout)
-      [a_link Services.layout [ pcdata "Layout Navigaditor" ] ("view", ([], []))]
+      [a_link Services.layout [ pcdata "Layout Navigaditor" ] ([], [])]
   ]
   >>= fun ul_opt ->
   match List.filter_opt ul_opt with

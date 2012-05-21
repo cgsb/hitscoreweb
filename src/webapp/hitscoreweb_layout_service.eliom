@@ -208,15 +208,11 @@ let node_name =
 
 let self_link = function
   | `default ->
-    fun html -> Template.a_link Services.layout [html] ("view", ([], [])) 
+    fun html -> Template.a_link Services.layout [html]  ([], []) 
   | `view_one_type t ->
-    fun html -> Template.a_link Services.layout [html] ("view", ([t], [])) 
+    fun html -> Template.a_link Services.layout [html]  ([t], []) 
   | `view_one_value (t, n) ->
-    fun html -> Template.a_link Services.layout [html] ("view", ([t], [n])) 
-  | `add_one_value t ->
-    fun html -> Template.a_link Services.layout [html] ("edit", ([t], [])) 
-  | `edit_one_value (t, n) ->
-    fun html -> Template.a_link Services.layout [html] ("edit", ([t], [n])) 
+    fun html -> Template.a_link Services.layout [html]  ([t], [n]) 
 
 let node_link n = 
   let open Html5 in
@@ -429,11 +425,7 @@ let view_layout ~configuration ~main_title ~types ~values =
     let open Template in
     let open Html5 in
     let open LDSL in
-    let ul_opt l = 
-      ul (List.map (List.filter l ~f:(fun (g, f) -> g))
-            ~f:(fun x -> li [snd x ()])) in
     let table_section meta_values name table =
-      let is_only_one = List.length values = 1 in
       let kind =
         match meta_values with
         | `Record _ -> `Record
@@ -445,22 +437,18 @@ let view_layout ~configuration ~main_title ~types ~values =
         if can_edit then
           content_paragraph [
             pcdataf "Actions: ";
-            ul_opt [
-              (can_edit, fun () -> span (add_or_modify_sexp_interface kind name));
-                (* self_link (`add_one_value type_name) (pcdataf "Add a %s" name)); *)
-              (can_edit && is_only_one, fun () -> 
-                match meta_values with
-                | `Record [one] ->
-                  let modify = Sql_query.(one.r_id, one.r_sexp |! Sexp.to_string) in
-                  span (add_or_modify_sexp_interface ~modify kind name)
-                | `Volume [one, _] ->
-                  let modify = Sql_query.(one.v_id, one.v_sexp |! Sexp.to_string) in
-                  span (add_or_modify_sexp_interface ~modify kind name)
-                | _ ->
-                  span [pcdata "TODO"]);
-            (* self_link (`edit_one_value (type_name, List.hd_exn values)) *)
-            (* (pcdataf "Edit this %s" name)); *)
-            ]
+            ul (List.concat [
+              add_or_modify_sexp_interface kind name;
+              begin match meta_values with
+              | `Record [one] ->
+                let modify = Sql_query.(one.r_id, one.r_sexp |! Sexp.to_string) in
+                add_or_modify_sexp_interface ~modify kind name
+              | `Volume [one, _] ->
+                let modify = Sql_query.(one.v_id, one.v_sexp |! Sexp.to_string) in
+                add_or_modify_sexp_interface ~modify kind name
+              | _ -> []
+              end;
+            ] |! List.map ~f:(fun l -> li [l]));
           ]
         else
           content_list []
@@ -474,7 +462,7 @@ let view_layout ~configuration ~main_title ~types ~values =
         content_section (span [pcdata kindstr; codef " %s" name])
           (content_list [
             editors_paragraph;
-            content_table ~transpose:is_only_one table;
+            content_table ~transpose:(List.length values = 1) table;
           ]))
     in
     of_list_sequential types ~f:(fun elt ->
@@ -526,296 +514,16 @@ let view_layout ~configuration ~main_title ~types ~values =
   in
   Template.make_content ~configuration ~main_title content 
 
-let raw_update ~configuration ~table ~g_id ~fields = return ()
-  (*
-  let query =
-    sprintf "UPDATE %s SET %s WHERE g_id = %d" table
-      (List.map fields (fun (n,_,v) -> 
-        sprintf "%s = %s" n 
-          (Option.value_map ~default:"NULL" ~f:(sprintf "'%s'") v))
-        |! String.concat ~sep:", ")
-      g_id
-  in
-  eprintf "QUERY: %s\n" query;
-  with_database ~configuration 
-    ~f:(pg_raw_query ~with_log:"web_raw_update" ~query)
-  >>= fun _ -> return ()
-  *)
-  
-let raw_insert  ~configuration ~table ~fields = return ()
-  (*
-  let query =
-    sprintf "INSERT INTO %s (%s) VALUES (%s)" table
-      (List.map fields (fun (n,_,_) -> n) |! String.concat ~sep:", ")
-      (List.map fields (function
-      | (_,_, None) -> "NULL"
-      | (_,_, Some s) -> sprintf "'%s'" s) |! String.concat ~sep:", ")
-  in
-  eprintf "QUERY: %s\n" query;
-  Hitscore_lwt.with_database ~configuration 
-    ~f:(pg_raw_query ~with_log:"web_raw_insert" ~query)
-  >>= fun _ -> return () *)
-
-exception Edition_error of [ 
-  `layout_edit_coservice_error of [
-(*  | `fields_wrong_typing
-  | `wrong_id
-   | `wrong_rights *)
-  | `io_exn of exn
-  (*| `layout_inconsistency of [ `Record of string] *
-      [ `insert_did_not_return_one_id of string * int32 list ]
-  | `pg_exn of exn *)
-  ]
-]
-    (*
-let coservice_error e =
-  Lwt.fail (Edition_error (`layout_edit_coservice_error e))
-
-let one_time_post_coservice () =
-  Eliom_output.Redirection.register_post_coservice
-    ~scope:Eliom_common.session
-    ~max_use:1
-    ~fallback:Services.(home ())
-    ~post_params:Eliom_parameters.(list "field" (string "str"))
-    
-let check_and_transform_input_value v t =
-  (* WORK-IN-PROGRESS *)
-  match v with
-  | "" -> None
-  | s ->
-    begin match t with
-    | LDSL.Array (LDSL.Enumeration_name enum) ->
-      eprintf "it is an array: %s\n%!" s;
-      Some ("("
-            ^ String.concat ~sep:" " (String.split ~on:',' s)
-            ^ ")")
-    | _ -> Some s
-    end
-      
-let editing_post_coservice ~configuration ~name ~value current_typed_values =
-  (fun () fields ->
-    let can_edit_m = Authentication.authorizes (`edit `layout) in
-    Lwt.bind can_edit_m (fun can_edit ->
-      match can_edit with
-      | Ok true ->
-        let m =
-          let g_id = ref "" in
-          try
-            let n =
-              List.map2_exn current_typed_values fields (fun (n,t,v1) v2 ->
-                eprintf "replacing with value: %S\n%!" v2;
-                let v = check_and_transform_input_value v2 t in
-                if n = "g_id" then (
-                  g_id := Option.value_exn v1; None
-                ) else 
-                  Some (n,t,v))
-              |! List.filter_opt in
-            Lwt.return (n, Int.of_string !g_id)
-          with 
-          | Invalid_argument s -> 
-            coservice_error `fields_wrong_typing
-          | Failure "Option.value_exn None" ->
-            coservice_error `wrong_id
-          | Failure s -> coservice_error `wrong_id
-        in
-        Lwt.bind m (fun (fields, g_id) ->
-          Lwt.bind (raw_update ~configuration ~table:name ~fields ~g_id)
-            (function
-            | Ok () ->
-              Lwt.return (Eliom_services.preapply  
-                            Services.(layout ()) 
-                            ("view", (["record_" ^ name], [value])))
-            | Error e -> 
-              coservice_error e))
-      | _ ->
-        coservice_error `wrong_rights))
-
-let adding_post_coservice ~configuration ~name all_typed =
-  (fun () fields ->
-    let can_edit_m = Authentication.authorizes (`edit `layout) in
-    Lwt.bind can_edit_m (fun can_edit ->
-      match can_edit with
-      | Ok true ->
-        let m =
-          try
-            let n =
-              List.map2_exn all_typed fields (fun (n,t) v2 ->
-                eprintf "writing value: %S\n%!" v2;
-                let v_transformed_back = check_and_transform_input_value v2 t in
-                if n = "g_id" then None else Some (n,t,v_transformed_back))
-              |! List.filter_opt in
-            Lwt.return n
-          with 
-          | Invalid_argument s -> 
-            coservice_error `fields_wrong_typing
-        in
-        Lwt.bind m (fun fields ->
-          Lwt.bind (raw_insert ~configuration ~table:name ~fields)
-            (function
-            | Ok () ->
-              Lwt.return (Eliom_services.preapply  
-                            Services.(layout ())
-                            ("view", (["record_" ^ name], [])))
-            | Error e -> 
-              coservice_error e))
-      | _ ->
-        coservice_error `wrong_rights))
-
-let add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit =
-  let all_typed =  (LDSL.record_standard_fields @ typed_values) in
-  Hitscore_lwt.with_database ~configuration ~f:(fun ~dbh ->
-    of_option value_to_edit (fun one_value ->
-      get_all_generic ~only:[one_value] dbh name
-      >>= (function
-      | [one_row] -> 
-        begin 
-          try
-            return (one_value,
-                    List.map2_exn one_row all_typed (fun v (n,t) -> (n,t,v)))
-          with
-            e -> error (`wrong_layout_typing name)
-        end
-      | not_one_row -> error (`did_not_get_one_row (name, not_one_row))))
-    >>= fun currrent_typed_values ->
-    let post_coservice =
-      match currrent_typed_values with
-      | Some (value, ctv) ->
-        (one_time_post_coservice ()) 
-          (editing_post_coservice ~configuration ~name ~value ctv)
-      | None ->
-        (one_time_post_coservice ())
-          (adding_post_coservice ~configuration ~name all_typed)
-    in
-    let form =
-      let form_title, typed_values =
-        match currrent_typed_values with
-        | Some (one_value, one) -> 
-          (sprintf "Edit %s #%d" name one_value, one)
-        | None ->
-          (sprintf "Add a new %s" name,
-           List.map all_typed (function
-           | (n, LDSL.Option LDSL.Timestamp) -> 
-             (n, LDSL.Option LDSL.Timestamp, Some Time.(now () |! to_string))
-           | (n,t) -> (n,t, None))) in
-      Eliom_output.Html5.(
-        post_form ~service:post_coservice
-          Html5.(fun values ->
-            let f name (n, t, value) next =
-              let msg = 
-                sprintf "%s (%s)" n (LDSL.string_of_dsl_type t) in
-              let styled_input = string_input ~a:[ a_style "min-width: 40em;"] in
-              let selectable ?display n = 
-                (Option ([], n, display, Some n = value)) in
-              begin match t with
-              | LDSL.Identifier ->
-                [[ `head [pcdataf "Don't mess up with identifiers\n"];
-                   `text [styled_input ~input_type:`Hidden ?value ~name ()];
-                ]]
-              | LDSL.Bool ->
-                [[ `head [pcdata msg];
-                   `text [string_select ~name
-                             (selectable ~display:(pcdataf "False") "f") 
-                             [selectable ~display:(pcdataf "True") "t"]]]]
-              | LDSL.Enumeration_name enum ->
-                begin match find_enumeration_values enum with
-                | Some (h :: t) ->
-                  [[ `head [pcdata msg];
-                     `text [string_select ~name
-                               (selectable h) (List.map t selectable)];]]
-                | _ -> 
-                  [[ `head [pcdata msg];
-                     `text [styled_input ~input_type:`Text ~name ?value ()];]]
-                end
-              | LDSL.Array (LDSL.Enumeration_name enum) ->
-                begin match find_enumeration_values enum with
-                | Some values ->
-                  let id = unique_id "input" in
-                  Eliom_services.onload {{
-                    Js.Opt.iter (Dom_html.document##getElementById (Js.string %id))
-                    (fun input ->
-                      let values_array = Array.of_list %values in
-                      let basic_autocomplete =
-                        jsnew Goog.Ui.AutoComplete.basic(
-                          Js.array values_array,
-                          input,
-                          Js.some Js._true,
-                          Js.some Js._true) in
-                      ignore basic_autocomplete
-                    )
-                  }};
-                  let value =
-                    Option.map value ~f:(fun s ->
-                      let a =
-                        List.t_of_sexp String.t_of_sexp (Sexp.of_string s) in
-                      String.concat ~sep:", " a) in
-                  [[ `head [pcdata msg];
-                     `text [string_input ~a:[ a_id id]
-                               ~input_type:`Text ~name ?value ()];]]
-                | _ -> 
-                  [[ `head [pcdata msg];
-                     `text [styled_input ~input_type:`Text ~name ?value ()];]]
-                end
-              | _ ->
-                [[ `head [pcdata msg];
-                   `text [styled_input ~input_type:`Text ~name ?value ()];]]
-              end @ next
-            in
-            let submit =
-              Eliom_output.Html5.string_input ~input_type:`Submit
-                ~value:"Go" () in
-            [
-              h1 [pcdataf "%s" form_title];
-              Template.(
-                html_of_content
-                  (content_table (values.Eliom_parameters.it f typed_values [])));
-              div [submit]
-            ])
-          ())
-    in
-    return [form])
-
-let edit_layout ~configuration ~main_title ~types ~values =
-  match types, values with
-  | [], _ ->
-    error (`nothing_to_edit (types, values))
-  | [one_type], values ->
-    begin match values with
-    | [] -> return None
-    | [one] -> return (Some one)
-    | _ -> error (`not_implemented "editing more than one value")
-    end
-    >>= fun  value_to_edit ->
-    begin match find_node (Layout.Meta.layout ()) one_type with
-    | Some (LDSL.Record (name, typed_values)) ->
-      add_or_edit_one_record ~configuration ~name ~typed_values value_to_edit
-    | _ -> error (`not_implemented "editing anything else than records")
-    end
-  | _, _ -> error (`not_implemented "editing more than one 'thing'")
-    *)
     
 let make ~configuration =
-  (fun (action, (types, values)) () ->
+  (fun (types, values) () ->
     let main_title = "The Layout Navigaditor" in
-    match action with
-    | "view" ->
-      let m =
-        Authentication.authorizes (`view `layout)
-        >>= function
-        | true -> view_layout ~configuration ~main_title ~types ~values
-        | false ->
-          Template.make_authentication_error ~configuration ~main_title
-            (return [Html5.pcdataf "You may not view the whole Layout."]) in
-      Template.default ~title:main_title
-        (bind_on_error m (fun e -> error (`Layout_service e)))
-    | "edit" ->
-      Template.default ~title:main_title (error (`not_implemented "reedit layout"))
-        (*
-      Template.default ~title:main_title
-        (Authentication.authorizes (`edit `layout)
-         >>= function
-         | true -> edit_layout ~configuration ~main_title ~types ~values
-         | false ->
-           Template.make_authentication_error ~configuration ~main_title
-             (return [Html5.pcdataf "You may not edit the Layout."])) *)
-    | s ->
-      Template.default ~title:main_title (error (`unknown_layout_action s)))
+    let m =
+      Authentication.authorizes (`view `layout)
+      >>= function
+      | true -> view_layout ~configuration ~main_title ~types ~values
+      | false ->
+        Template.make_authentication_error ~configuration ~main_title
+          (return [Html5.pcdataf "You may not view the whole Layout."]) in
+    Template.default ~title:main_title
+      (bind_on_error m (fun e -> error (`Layout_service e))))
