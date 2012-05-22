@@ -306,17 +306,8 @@ let get_all_volumes ~configuration ?(only=[]) dbh volume_kind =
 
 let generic_to_table type_info current_name r = []
 
-let sortable_timestamp t =
-  let open Html5 in
-  let s = Timestamp.to_string t in
-  `sortable (s,
-             [ span ~a:[a_title s]
-                 [pcdata 
-                     (Time.(t |! to_local_date) |! Date.to_string)]])
-    
-let sortable_text s =
-  let open Html5 in
-  `sortable (s, [pcdataf "%s" s])
+let sortable_timestamp t = Template.cell_timestamp t
+let sortable_text s =  Template.cell_text s
 let sortable_link s t =
   let open Html5 in
   `sortable (s, [self_link (`view_one_value (t, Int.of_string s))

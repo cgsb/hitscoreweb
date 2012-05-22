@@ -454,6 +454,26 @@ let content_table ?(transpose=false) l =
   in
   Table (if transpose then t l else l)
     
+let cell_text s =
+  let open Html5 in
+  `sortable (s, [pcdataf "%s" s])
+let cell_option o =
+  cell_text (Option.value ~default:"—" o)
+
+let cell_timestamp t =
+  let open Html5 in
+  let s = Timestamp.to_string t in
+  `sortable (s,
+             [ span ~a:[a_title s]
+                 [pcdata 
+                     (Time.(t |! to_local_date) |! Date.to_string)]])
+let cell_timestamp_option = function
+  | None -> cell_text "—"
+  | Some t -> cell_timestamp t
+  
+let cell_int i =
+  `sortable (sprintf "%d" i, [Html5.codef "%d" i])
+    
 let content_paragraph l = Paragraph l
 
 let _global_table_ids = ref 0
