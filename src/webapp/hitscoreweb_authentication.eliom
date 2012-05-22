@@ -24,6 +24,7 @@ type capability = [
            | `full_persons
            | `hiseq_raw_info
            | `demux_info
+           | `benchmarks
            | `flowcell]
 | `edit of [
   | `password_of_person of Layout.Record_person.t
@@ -55,11 +56,8 @@ let roles_allow ?(impersonation=false) ?person roles (cap:capability) =
   | `view (`person p) when id_opt = Some p.P.g_id -> true
   | `edit (`password_of_person p) when id_opt = Some p.P.g_id ->
     p.P.g_value.P.password_hash <> None
-  | `edit something ->
-    if List.exists roles (fun c -> c = `administrator) then
-      true
-    else
-      false
+  | `edit _ | `view `benchmarks ->
+    if List.exists roles (fun c -> c = `administrator) then true else false
   | `view something ->
     if List.exists roles (fun c -> c = `auditor || c = `administrator) then
       true

@@ -36,3 +36,24 @@ let contacts_of_lane =
   head_text "Contacts" "Users associated with the lane" 
 let libraries_of_lane =
   head_text "Libraries" "Libraries of the lane"
+
+let sample_name =
+  head_text "Sample" "Sample name"
+let organism_name =
+  head_text "Organism/Source" "Name of the source/species of the sample"
+
+let library_submissions =
+  head_text "Submission(s)" "Flowcells/lanes in which the library has been submitted"
+
+let library_application =
+  head_text "Application" "Application (RNA-seq, DNA-seq, Chip-seq, …)"
+let library_barcode = head_text "Barcode(s)" "Barcoding of the library"
+let library_p5 = head_text "P5 Lgth" "P5 Adapter Length"
+let library_p7 = head_text "P7 Lgth" "P7 Adapter Length"
+
+let library_stranded = head_text "Stranded" "Stranded"
+let library_truseq_control = head_text "TruSeq Ctrl" "TruSeq Control"
+let library_rnaseq_control = head_text "RNASeq Ctrl" "RNA-Seq Control"
+let library_preparator = head_text "Preparator" "Email of the library preparator"
+let library_note = head_text "Note" "Note(s) about the library"
+  

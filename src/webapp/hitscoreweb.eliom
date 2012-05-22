@@ -400,6 +400,7 @@ module Flowcell_service = struct
 end
 
   
+  (*
 module Libraries_service = struct
 
   (* Helper functions for type Services.libraries_show *)
@@ -975,7 +976,7 @@ module Libraries_service = struct
         (content_paragraph [ul (List.concat fastq_paths)])
     ]
       
-  let libraries ~showing ?(qualified_names=[]) ~configuration  =
+  let _libraries ~showing ?(qualified_names=[]) ~configuration  =
     let open Html5 in
     with_database configuration (fun ~dbh ->
       fetch_and_filter_libs ~dbh qualified_names >>= fun libs_filtered ->
@@ -998,6 +999,48 @@ module Libraries_service = struct
             content_list details;
           ])))
 
+
+  let qualified_name po n =
+    sprintf "%s%s" Option.(value_map ~default:"" ~f:(sprintf "%s.") po) n
+
+  let classy_information ~qualified_names ~confinguration ~dbh ~showing =
+    let layout = Classy.make dbh in
+    layout#stock_library#all >>= fun stock_libraries ->
+    layout#input_library#all >>= fun input_libraries ->
+    layout#lane#all >>= fun lanes ->
+    layout#flowcell#all >>= fun flowcells ->
+    layout#sample#all >>= fun samples ->
+    layout#organism#all >>= fun organisms ->
+    return (object (self)
+      method configuration = configuration
+      method showing = showing
+      method qualified_names = qualified_names
+      method stock_libraries = stock_libraries
+      method stock_libraries_qualified =
+        List.filter stock_libraries ~f:(fun sl ->
+          List.exists qualified_names ~f:((=) qualified_name sl#project sl#name))
+      method input_libraries = input_libraries
+      method lanes = lanes
+      method flowcells = flowcells
+      method samples = samples
+      method organisms = organisms
+    end)
+    
+  let libraries_table info =
+      
+  let libraries ~showing ?(qualified_names=[]) ~configuration  =
+    let open Html5 in
+    with_database configuration (fun ~dbh ->
+      let info =
+        classy_information ~qualified_names ~confinguration ~dbh ~showing in
+
+      return Template.(
+        content_section (pcdataf "TODO")
+          (content_list [
+            content_paragraph (intro_paragraph ~showing ~qualified_names);
+          ]))
+    )
+
   let make configuration =
     (fun (showing, qualified_names) () ->
       let main_title = "Libraries" in
@@ -1013,7 +1056,7 @@ module Libraries_service = struct
 
     
 end
-
+  *)
 module Evaluations_service = struct
 
   let b2f_section dbh layout =
@@ -1422,7 +1465,7 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register persons) Persons_service.(make hitscore_configuration);
       
       Services.(register libraries) 
-        Libraries_service.(make hitscore_configuration);
+        Hitscoreweb_libraries.(make hitscore_configuration);
 
       Services.(register flowcell)
         Flowcell_service.(make hitscore_configuration);

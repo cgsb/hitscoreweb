@@ -23,6 +23,7 @@ COMMON_FILES := \
   hitscoreweb_hiseq_runs.eliom	   \
   hitscoreweb_layout_service.eliom \
   hitscoreweb_one_person_service.eliom \
+  hitscoreweb_libraries.eliom \
   hitscoreweb.eliom
 SERVER_FILES := $(COMMON_FILES)
 CLIENT_FILES := $(COMMON_FILES)

@@ -460,6 +460,8 @@ let cell_text s =
 let cell_option o =
   cell_text (Option.value ~default:"—" o)
 
+let cell_fmt fmt = ksprintf cell_text fmt
+
 let cell_timestamp t =
   let open Html5 in
   let s = Timestamp.to_string t in
@@ -473,6 +475,9 @@ let cell_timestamp_option = function
   
 let cell_int i =
   `sortable (sprintf "%d" i, [Html5.codef "%d" i])
+let cell_int_option = function
+  | None -> cell_text "—"
+  | Some i -> `sortable (sprintf "%d" i, [Html5.codef "%d" i])
     
 let content_paragraph l = Paragraph l
 
