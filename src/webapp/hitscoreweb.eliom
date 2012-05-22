@@ -1065,10 +1065,52 @@ module Evaluations_service = struct
         content_section (Html5.pcdataf "Bcl_to_fastq evaluations: %d"
                            (List.length b2fs)) tab)
 
+  let fxqs_section dbh layout =
+    layout#fastx_quality_stats#all
+    >>| List.stable_sort ~cmp:(fun a b -> compare b#g_inserted a#g_inserted)
+    >>= fun fxqss ->
+    of_list_sequential fxqss ~f:(fun fxqs ->
+      fxqs#input_dir#get >>= fun gf ->
+      let configuration = Configuration.configure ~root_path:"root:/" () in
+      Common.path_of_volume ~configuration ~dbh gf#directory#pointer
+      >>= fun path ->
+      return (path, fxqs))
+    >>= of_list_sequential ~f:(fun (path, fxqs) ->
+      let open Template in
+      return [
+        cell_int fxqs#g_id;
+        cell_text (Sql_query.status_to_string fxqs#g_status);
+        cell_timestamp fxqs#g_inserted;
+        cell_timestamp_option fxqs#g_started;
+        cell_timestamp_option fxqs#g_completed;
+        cell_text path;
+        cell_int fxqs#option_Q;
+        cell_option fxqs#filter_names;
+      ])
+    >>= fun rows ->
+    return Template.(
+      let tab = 
+        content_table (
+          [`head [Html5.pcdata "Id"];
+           `head [Html5.pcdata "Status"]; 
+           `head [Html5.pcdata "Inserted"]; 
+           `head [Html5.pcdata "Started"]; 
+           `head [Html5.pcdata "Completed"]; 
+           `head [Html5.pcdata "Input path"]; 
+           `head [Html5.pcdata "Option Q"];
+           `head [Html5.pcdata "Filter Names"];
+          ] :: rows)
+        in
+        content_section (Html5.pcdataf
+                           "Fastx_quality_stats evaluations: %d"
+                           (List.length fxqss)) tab)
+
   let evaluations configuration =
     with_database ~configuration (fun ~dbh ->
       let layout = Classy.make dbh in
-      b2f_section dbh layout
+      b2f_section dbh layout >>= fun b2f ->
+      fxqs_section dbh layout >>= fun fxqs ->
+      return Template.(content_list [b2f; fxqs])
     )
 
   let make ~configuration =
