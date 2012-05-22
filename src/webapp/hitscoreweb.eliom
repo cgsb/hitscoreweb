@@ -1016,102 +1016,60 @@ end
 
 module Evaluations_service = struct
 
-
-  let bcl_to_fastq_section ~dbh ~configuration name b2fs = 
-    let open Html5 in
-    let module B2F = Layout.Function_bcl_to_fastq in
-    let module HSR = Layout.Record_hiseq_raw in
-    let module FS = Layout.File_system in
-    (*
-    if List.length b2fs > 0 then (
-      of_list_sequential b2fs ~f:(fun b2f ->
-        B2F.get ~dbh b2f
-        >>= fun {B2F.g_id; raw_data; availability; mismatch; version;
-  	         tiles; bases_mask; sample_sheet; } ->
-        HSR.get ~dbh raw_data
-        >>= fun { HSR.flowcell_name; _ } ->
-        Queries.sample_sheet_kind ~dbh sample_sheet
-        >>= fun kind ->
-        Layout.Record_sample_sheet.(
-          get ~dbh sample_sheet >>= fun {file; _} ->
-          Hitscore_lwt.Common.all_paths_of_volume ~dbh ~configuration file
-          >>= function
-          | [ csv ] -> return csv
-          | _ -> error (`sample_sheet_should_a_lonely_file sample_sheet))
-        >>= fun csv_path -> 
-        let fc_link = 
-          Template.a_link Services.flowcell [pcdata flowcell_name] (flowcell_name) in
-        return [
-          `sortable (sprintf "%d" g_id, [codef "%d" g_id]);
-          `sortable (flowcell_name, [fc_link]);
-          `sortable (Int32.to_string mismatch, [pcdataf "%d" mismatch]);
-          `sortable (version, [pcdataf "%s" version]);
-          (let tiles = (Option.value ~default:"" tiles) in
-          `sortable (tiles, [codef "%s" tiles]));
-          (let bmsk = (Option.value ~default:"" bases_mask) in
-          `sortable (bmsk, [codef "%s" bmsk]));
-          (let kind = (match kind with
-            | `no_demultiplexing -> "No Demultiplexing"
-            | `all_barcodes -> "All barcodes"
-            | `specific_barcodes -> "Specific barcodes") in
-          `sortable (kind,
-                     [pcdata kind;
-                      small [
-                        pcdata " (";
-                        a ~a:[a_hreff "file://%s" csv_path] [pcdata "file"];
-                        pcdata ")"
-                      ];
-                     ]));
-          ])
-      >>= fun rows ->
-      return Template.(
-        let tab = 
-          content_table (
-            [`head [pcdata "Id"];
-             `head [pcdata "Flowcell"]; 
-             `head [pcdata "Mismatch"];
-             `head [pcdata "Version"];
-             `head [pcdata "Tiles Option"];
-             `head [pcdata "Bases-Mask Option"];
-             `head [pcdata "Kind of sample-sheet"];
+  let b2f_section dbh layout =
+    layout#assemble_sample_sheet#all >>= fun all_assemblies ->
+    layout#bcl_to_fastq#all
+    >>| List.stable_sort ~cmp:(fun a b -> compare b#g_inserted a#g_inserted)
+    >>= fun b2fs ->
+    of_list_sequential b2fs ~f:(fun b2f ->
+      b2f#raw_data#get >>= fun hiseq_raw ->
+      let assembly =
+        List.find all_assemblies ~f:(fun g -> g#g_id = b2f#sample_sheet#id) in
+      return (b2f, hiseq_raw, assembly))
+    >>= fun b2fs ->
+    of_list_sequential b2fs (fun (b2f, hiseq_raw, assembly) ->
+      let open Template in
+      return [
+        cell_int b2f#g_id;
+        cell_text (Sql_query.status_to_string b2f#g_status);
+        cell_timestamp b2f#g_inserted;
+        cell_timestamp_option b2f#g_started;
+        cell_timestamp_option b2f#g_completed;
+        cell_text hiseq_raw#flowcell_name;
+        cell_int b2f#mismatch;
+        cell_text b2f#version;
+        cell_option b2f#tiles;
+        cell_option b2f#bases_mask;
+        cell_option
+          Option.(map assembly
+                    ~f:(fun a ->
+                      Layout.Enumeration_sample_sheet_kind.to_string a#kind));
+      ])
+    >>= fun rows ->
+    return Template.(
+      let tab = 
+        content_table (
+          [`head [Html5.pcdata "Id"];
+           `head [Html5.pcdata "Status"]; 
+           `head [Html5.pcdata "Inserted"]; 
+           `head [Html5.pcdata "Started"]; 
+           `head [Html5.pcdata "Completed"]; 
+           `head [Html5.pcdata "Flowcell"]; 
+           `head [Html5.pcdata "Mismatch"];
+           `head [Html5.pcdata "Version"];
+           `head [Html5.pcdata "Tiles Option"];
+             `head [Html5.pcdata "Bases-Mask Option"];
+             `head [Html5.pcdata "Kind of sample-sheet"];
             ] :: rows)
         in
-        content_section (pcdataf "%s: %d" name (List.length b2fs)) tab))
-    else
-    *)
-      return (Template.content_paragraph [])
+        content_section (Html5.pcdataf "Bcl_to_fastq evaluations: %d"
+                           (List.length b2fs)) tab)
 
   let evaluations configuration =
-    return (Template.content_paragraph [])
-      (*
-    let open Html5 in
-    db_connect configuration
-    >>= fun dbh ->
-    (* Bcl_to_fastqs *)
-    Layout.Function_bcl_to_fastq.get_all_inserted ~dbh
-    >>= bcl_to_fastq_section ~dbh ~configuration "Inserted"
-    >>= fun inserted_b2fs ->
-    Layout.Function_bcl_to_fastq.get_all_started ~dbh
-    >>= bcl_to_fastq_section ~dbh ~configuration "Started"
-    >>= fun started_b2fs ->
-    Layout.Function_bcl_to_fastq.get_all_failed ~dbh
-    >>= bcl_to_fastq_section ~dbh ~configuration "Failed"
-    >>= fun failed_b2fs ->
-    Layout.Function_bcl_to_fastq.get_all_succeeded ~dbh
-    >>= bcl_to_fastq_section ~dbh ~configuration "Succeeded"
-    >>= fun succeeded_b2fs ->
-
-    return Template.(
-      content_list [
-        inserted_b2fs; started_b2fs; failed_b2fs; succeeded_b2fs;
-      ])
-    >>= fun b2f_content ->
-    Hitscore_lwt.db_disconnect configuration dbh
-    >>= fun _ ->
-    return Template.(
-      content_list [
-        content_section (pcdataf "Bcl_to_fastq") b2f_content;
-      ]) *)
+    with_database ~configuration (fun ~dbh ->
+      let layout = Classy.make dbh in
+      b2f_section dbh layout
+    )
 
   let make ~configuration =
     (fun () () ->
