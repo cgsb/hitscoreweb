@@ -1401,7 +1401,7 @@ TODO: All exceptions in coservices should be handled in some other way
           | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
       in
 
-      let hitscore_configuration =
+      let hitscore_configuration, debug_mode =
 
         let pghost = ref None in
         let pgport = ref None in
@@ -1452,7 +1452,7 @@ TODO: All exceptions in coservices should be handled in some other way
           ~loop_time:(if !debug_mode then 90. else 600.)
           ~configuration:config ()
         |! Lwt.ignore_result;
-        config
+        (config, debug_mode)
       in
 
       Services.(register default) (Default_service.make hitscore_configuration);
@@ -1465,7 +1465,9 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register persons) Persons_service.(make hitscore_configuration);
       
       Services.(register libraries) 
-        Hitscoreweb_libraries.(make hitscore_configuration);
+        Hitscoreweb_libraries.(make
+                                 ~timeout:(if !debug_mode then 60. else 610.)
+                                 ~configuration:hitscore_configuration);
 
       Services.(register flowcell)
         Flowcell_service.(make hitscore_configuration);

@@ -84,7 +84,7 @@ let make_classy_information ~configuration ~dbh =
   end)
 
 let filter_classy_information  
-    ~qualified_names ~configuration ~dbh ~showing info =
+    ~qualified_names ~configuration ~showing info =
   of_list_sequential info#libraries ~f:(fun l ->
     if qualified_names = []
     || List.exists qualified_names
@@ -110,25 +110,31 @@ let filter_classy_information
     method libraries = List.filter_opt filtered
   end)
     
-let classy_information () =
+let init_classy_information ~timeout ~configuration =
   let info_mem = ref None in
-  fun ~qualified_names ~configuration ~dbh ~showing ->
+  let condition = Lwt_condition.create () in
+  let rec update ~configuration =
+    with_database ~configuration (make_classy_information ~configuration)
+    >>= fun info ->
+    info_mem := Some info;
+    Lwt_condition.broadcast condition info;
+    wrap_io Lwt_unix.sleep timeout
+    >>= fun () ->
+    update ~configuration in
+  Lwt.ignore_result (update ~configuration);
+  fun ~qualified_names ~showing ->
     begin
       begin match !info_mem with
       | None ->
-        make_classy_information ~configuration ~dbh >>= fun info ->
-        info_mem := Some info;
-        return info
-      | Some info when Time.(to_float (now ()) -. to_float info#created_on) > 300. ->
-        make_classy_information ~configuration ~dbh >>= fun info ->
-        info_mem := Some info;
+        wrap_io Lwt_condition.wait condition
+        >>= fun info ->
         return info
       | Some info ->
         return info
       end
       >>= fun info ->
       filter_classy_information
-        ~qualified_names ~configuration ~dbh ~showing info
+        ~qualified_names ~configuration ~showing info
     end
 
       
@@ -260,8 +266,8 @@ let libraries work_started info_got info =
       ]))
   
 
-let make configuration =
-  let classy_info = classy_information () in
+let make ~timeout ~configuration =
+  let classy_info = init_classy_information ~timeout ~configuration in
   (fun (showing, qualified_names) () ->
     let work_started = Time.now () in
     let main_title = "Libraries" in
@@ -271,7 +277,7 @@ let make configuration =
        | true ->
          Template.make_content ~configuration ~main_title (
            with_database ~configuration (fun ~dbh ->
-             classy_info ~qualified_names ~configuration ~dbh ~showing
+             classy_info ~qualified_names ~showing
              >>= fun info ->
              let info_got = Time.now () in
              libraries work_started info_got info))
