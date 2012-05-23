@@ -316,7 +316,7 @@ let change_password_interface person_email =
                   begin match msg with
                   | Success ->
                     the_span##innerHTML <- Js.string "<b>Done.</b>";
-                    return ()
+                    reload ()
                   | Error_string s ->
                     dbg "Got Error: %S" s;
                     the_span##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
@@ -480,7 +480,7 @@ let change_emails_interface person_email secondary_emails =
                 | Success ->
                   elt##innerHTML <-
                     ksprintf Js.string "<b>Done.</b>";
-                  return ()
+                  reload ()
                 | Error_string s ->
                   dbg "Got Error: %S" s;
                   elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
@@ -514,7 +514,7 @@ let change_emails_interface person_email secondary_emails =
                 | Success ->
                   elt##innerHTML <-
                     ksprintf Js.string "<b>Done.</b>";
-                  return ()
+                  reload ()
                 | Error_string s ->
                   dbg "Got Error: %S" s;
                   elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;

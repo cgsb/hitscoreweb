@@ -156,8 +156,7 @@ let unique_id: string -> string =
 
 (* This is still not perfect as it goes to the top of the page *)
 let reload () =
-  lwtunit $ Eliom_client.change_page
-    ~service: Eliom_services.void_coservice' () ()
+  Eliom_client.change_page ~service: Eliom_services.void_coservice' () ()
 
 }}
 

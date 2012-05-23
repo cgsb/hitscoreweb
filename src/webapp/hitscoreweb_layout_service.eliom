@@ -164,7 +164,7 @@ let add_or_modify_sexp_interface
               begin match msg with
               | Success ->
                 the_span##innerHTML <- Js.string "<b>Done.</b>";
-                return ()
+                reload ()
               | Error_string s ->
                 dbg "Got Error: %S" s;
                 the_span##innerHTML <-
