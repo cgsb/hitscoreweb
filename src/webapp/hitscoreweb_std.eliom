@@ -57,6 +57,10 @@ let rec interleave_list ~sep = function
 let array_to_list_intermap ~sep ~f a =
   interleave_list ~sep (List.map (Array.to_list a) ~f)
 
+let rec interleave_map ~sep ~f = function
+  | [] -> []
+  | [one] -> [f one]
+  | h :: t -> (f h) :: sep :: (interleave_map ~sep ~f t)
 
 let layout_log ~dbh fmt =
   ksprintf (Common.add_log ~dbh) fmt
