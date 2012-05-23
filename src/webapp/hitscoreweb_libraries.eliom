@@ -21,6 +21,7 @@ let qualified_link ~showing po n =
   [Template.a_link Services.libraries [Html5.pcdata qn] (showing, [qn])]
 
 let make_classy_information ~configuration ~dbh =
+  let creation_started_on = Time.now () in
   let layout = Classy.make dbh in
   layout#person#all >>= fun persons ->
   layout#flowcell#all >>= of_list_sequential ~f:(fun fc ->
@@ -78,6 +79,7 @@ let make_classy_information ~configuration ~dbh =
   >>= fun libraries ->
   let created = Time.now () in
   return (object (self)
+    method creation_started_on = creation_started_on
     method created_on = created 
     method configuration = configuration
     method libraries = libraries
@@ -243,7 +245,9 @@ let benchmarks work_started info_got table_generated info =
     return Template.(content_section (pcdata "Benchmarks")
                        (content_table [
                          row "work_started" work_started;
-                         row "static info age" info#static_info#created_on;
+                         row "static info started"
+                           info#static_info#creation_started_on;
+                         row "static info created" info#static_info#created_on;
                          row "info filtered" info#filtered_on;
                          row "info_got" info_got;
                          row "table_generated" table_generated;
