@@ -25,6 +25,7 @@ type capability = [
            | `hiseq_raw_info
            | `demux_info
            | `benchmarks
+           | `libraries_detailed_fastq_information
            | `flowcell]
 | `edit of [
   | `password_of_person of Layout.Record_person.t
