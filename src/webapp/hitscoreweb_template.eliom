@@ -111,6 +111,9 @@ let css_service_handler ~configuration () () =
     color_theme#title_violet;
   out ".main_page h2 {font-weight: 900; color : %s;
                       font-size: 150%% }\n" color_theme#title_violet;
+  List.iter [1, 230; 2, 210; 3, 190; 4, 170; 5, 150; 6, 130] (fun (h, s) ->
+    out ".main_page h%d {font-size: %d%%}\n" h s
+  );
   out ".content_table_head { color: #960F00; font-size: 110%%;
           background-color: %s; }\n" light_grey;
   out ".content_table_head,.content_table_text,.content_table_number {
