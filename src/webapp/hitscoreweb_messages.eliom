@@ -57,3 +57,5 @@ let library_rnaseq_control = head_text "RNASeq Ctrl" "RNA-Seq Control"
 let library_preparator = head_text "Preparator" "Email of the library preparator"
 let library_note = head_text "Note" "Note(s) about the library"
   
+let demux_options =
+  head_text "Demultiplexing Options" "Options used whie demultiplexing"
