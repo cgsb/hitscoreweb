@@ -392,6 +392,20 @@ let detailed_fastq_subtable lib =
           
         ])) |! List.concat) |! List.concat)
 
+let choose_delivery_for_user dmux sub =
+  let open Option in
+  List.filter_map dmux#deliveries (fun del ->
+    if del#oo#g_status <> `Succeeded
+    then None
+    else (
+      List.find sub#invoices (fun i -> i#g_id = del#oo#invoice#id)
+                                       >>= fun inv ->
+      Some (del, inv)))
+  |! List.reduce ~f:(fun (d1, i1) (d2, i2) ->
+    if d1#oo#g_completed < d2#oo#g_completed
+    then (d2, i2)
+    else (d1, i1))
+      
 let simple_fastq_subtable lib =
   let open Template in
   let open Html5 in
@@ -402,20 +416,7 @@ let simple_fastq_subtable lib =
         let open Option in
         let fastq_stats = get_fastq_stats lib sub dmux in
         let fcid = sub#flowcell#oo#serial_name in
-        let delivery =
-          List.filter_map dmux#deliveries (fun del ->
-            if del#oo#g_status <> `Succeeded
-            then None
-            else (
-              List.find sub#invoices (fun i -> i#g_id = del#oo#invoice#id)
-              >>= fun inv ->
-              Some (del, inv)))
-          |! List.reduce ~f:(fun (d1, i1) (d2, i2) ->
-            if d1#oo#g_completed < d2#oo#g_completed
-            then (d2, i2)
-            else (d1, i1))
-        in
-        delivery
+        choose_delivery_for_user dmux sub
         >>= fun (del, inv) ->
         return [
           `sortable (sprintf "%s:%d" fcid sub#lane_index,
@@ -688,6 +689,16 @@ let fastx_quality_plots path =
       return chart)
     ~error:(fun _ -> return (errf "ERROR while getting the fastx plot"))
 
+let demuxable_barcode_sequences lib =
+  match lib#barcoding with
+  | `Illumina b ->
+    List.filter_map b (fun i ->
+      List.Assoc.find Assemble_sample_sheet.illumina_barcodes i)
+  | `Bioo b ->
+    List.filter_map b (fun i ->
+      List.Assoc.find Assemble_sample_sheet.bioo_barcodes i)
+  | _ -> []
+    
 let per_lirbary_details info =
   let open Html5 in
   let open Template in
@@ -709,15 +720,7 @@ let per_lirbary_details info =
             ];
           ] in
           of_option dmux#unaligned (fun un ->
-            let barcodes =
-              match lib#barcoding with
-              | `Illumina b ->
-                List.filter_map b (fun i ->
-                  List.Assoc.find Assemble_sample_sheet.illumina_barcodes i)
-              | `Bioo b ->
-                List.filter_map b (fun i ->
-                  List.Assoc.find Assemble_sample_sheet.bioo_barcodes i)
-              | _ -> [] in
+            let barcodes = demuxable_barcode_sequences lib in
             let fastq_r1s =
               List.map barcodes (fun seq ->
                 fastq_path un#path sub#lane_index lib#stock#name seq 1) in
@@ -804,14 +807,81 @@ let per_lirbary_details info =
   >>= fun details_sections ->
   return (content_list details_sections)
 
+let per_lirbary_simple_details info =
+  let open Html5 in
+  let open Template in
+  of_list_sequential info#libraries (fun lib ->
+    of_list_sequential lib#submissions (fun sub ->
+      of_list_sequential sub#flowcell#hiseq_raws (fun hr ->
+          let fcid = sub#flowcell#oo#serial_name in
+          let section_title = 
+            span [pcdata "Submission ";
+                  a_link Services.flowcell [pcdata fcid] fcid;
+                  pcdataf " (Lane %d)"  sub#lane_index;] in
+          of_list_sequential hr#demultiplexings (fun dmux ->
+            of_option (choose_delivery_for_user dmux sub) (fun (del, inv) ->
+              of_option dmux#unaligned (fun un ->
+                of_list_sequential un#fastx_paths (fun path ->
+                  let barcodes = demuxable_barcode_sequences lib in
+                  let fastxqs_r1s =
+                    List.map barcodes (fun seq ->
+                      ("Read 1",
+                       fastxqs_path path sub#lane_index lib#stock#name seq 1)) in
+                  let fastxqs_r2s =
+                    Option.value_map ~default:[]
+                      sub#lane#oo#requested_read_length_2 ~f:(fun _ ->
+                        List.map barcodes (fun seq ->
+                          ("Read 2",
+                           fastxqs_path path sub#lane_index lib#stock#name seq 2)))
+                  in
+                  of_list_sequential (fastxqs_r1s @ fastxqs_r2s) (fun (kind, path) ->
+                    rendered_fastx_table path >>= fun fastx_table ->
+                    fastx_quality_plots path >>= fun fastx_qplot ->
+                    return [
+                      strongf "%s: " kind;
+                      div fastx_table;
+                      div fastx_qplot;
+                    ]))
+                >>| List.concat
+                >>= fun fastx_items ->
+                let details =
+                  div [strongf "Fastx Quality Stats:";
+                       div [ul (List.map fastx_items li)];] in
+                return details)
+              >>= fun stats ->
+              let path = 
+                Option.(value_map ~default:"NO-DIR"
+                          ~f:(fun d-> d#directory) del#client_fastqs_dir) in
+              return (content_section (pcdata "Delivery")
+                        (content_paragraph [
+                          strongf "Delivered in ";
+                          codef "%s" path;
+                          div [Option.value ~default:(strongf "No stats available")
+                                 stats];
+                        ]))))
+          >>| List.filter_opt
+          >>= fun delivery_sections ->
+          return (content_section section_title (content_list delivery_sections))))
+    >>| List.concat
+    >>= fun submission_sections ->
+    return (content_section (pcdataf "Library %s" lib#stock#name)
+              (content_list submission_sections)))
+  >>= fun details_sections ->
+  return (content_list details_sections)
+
+  
+
+    
 let libraries work_started info_got info =
   let open Html5 in
 
   let libraries_table = libraries_table info in
   let table_generated = Time.now () in
   benchmarks work_started info_got table_generated info >>= fun benchmarks ->
-  (if List.length info#libraries = 1 &&  info#can_view_fastq_details
-   then per_lirbary_details info
+  (if List.length info#libraries = 1
+   then if info#can_view_fastq_details
+     then per_lirbary_details info
+     else per_lirbary_simple_details info
    else return (Template.content_list []))
   >>= fun details ->
   return Template.(
