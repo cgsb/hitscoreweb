@@ -52,6 +52,7 @@ let make_classy_information ~configuration ~dbh =
   layout#file_system#all >>= fun volumes ->
   layout#prepare_unaligned_delivery#all >>= fun udeliveries ->
   layout#client_fastqs_dir#all >>= fun client_dirs ->
+  layout#generic_fastqs#all >>= fun generic_fastqs ->
   layout#fastx_quality_stats#all >>= fun fxqss ->
   layout#fastx_quality_stats_result#all >>= fun fxqs_rs ->
   layout#person#all >>= fun persons ->
@@ -69,9 +70,9 @@ let make_classy_information ~configuration ~dbh =
               Some (vol , hiseq_raw, path, b2fu)) in
     of_option vol (fun (vol, hiseq_raw, path, b2fu) ->
       let basecall_stats_path =
-            Filename.concat path
-              (sprintf "Unaligned/Basecall_Stats_%s/%s"
-                 hiseq_raw#flowcell_name "Flowcell_demux_summary.xml") in
+        Filename.concat path
+          (sprintf "Unaligned/Basecall_Stats_%s/%s"
+             hiseq_raw#flowcell_name "Flowcell_demux_summary.xml") in
       let dmux_summary_m =
         Data_access.File_cache.get_demux_summary basecall_stats_path in
       double_bind dmux_summary_m
@@ -80,12 +81,37 @@ let make_classy_information ~configuration ~dbh =
           (* eprintf "Error getting: %s\n%!" basecall_stats_path; *)
           return None)
       >>= fun dmux_summary ->
+      let generic_vols =
+        List.filter volumes (fun v ->
+          v#g_content = Layout.File_system.Link vol#g_pointer)
+      in
+      let generics = 
+        List.map generic_vols (fun gv ->
+          List.filter generic_fastqs (fun gf ->
+            gf#directory#id = gv#g_id)) |! List.concat in
+      let fastx_qss =
+        List.map generics (fun g ->
+          List.filter fxqss (fun f -> f#input_dir#id = g#g_id)) |! List.concat in
+      let fastx_results =
+        List.filter_map fastx_qss (fun fxqs ->
+          getopt_by_id fxqs_rs fxqs#g_result) in
+      let fastx_paths =
+        List.filter_map fastx_results (fun fr ->
+          let open Option in
+          get_by_id volumes fr#directory#id
+          >>= volume_path ~configuration volumes) in
+          
       return (object
         method vol = vol
         method path = path
         method dmux_summary = dmux_summary
         method hiseq_raw = hiseq_raw
         method b2fu = b2fu
+        method generic_vols = generic_vols
+        method generics = generics
+        method fastx_qss = fastx_qss
+        method fastx_results = fastx_results
+        method fastx_paths = fastx_paths
       end)))
   >>| List.filter_opt
   >>= fun unaligned_volumes ->
@@ -126,7 +152,7 @@ let make_classy_information ~configuration ~dbh =
                       ~filter:(fun u -> u#unaligned#id = unalig#b2fu#g_id)
                       ~map:(fun u ->
                         let dir = getopt_by_id client_dirs u#g_result in
-                        (object method oo = u
+                        (object method oo = u (* delivery *)
                                 method client_fastqs_dir = dir end))) in
                 (object
                   method b2f = b2f (* demultiplexing *)
@@ -256,6 +282,9 @@ let init_classy_information ~timeout ~configuration =
     end
 
       
+let layout_id_link type_name id =
+  let open Html5 in
+  Template.a_link Services.layout [codef "%d" id] ([type_name], [id])
       
 let intro_paragraph info =
   let open Html5 in
@@ -277,7 +306,61 @@ let get_fastq_stats lib sub dmux =
   let module Bui = Hitscore_interfaces.B2F_unaligned_information in
   List.find ds.(sub#lane_index - 1) (fun x ->
     x.Bui.name = lib#stock#name)
-  
+
+let html_detailed_dmux dmux =
+  let open Template in
+  let open Html5 in [
+    span ~a:[
+      ksprintf a_style "font-weight: bold; color: %s"
+        (match dmux#b2f#g_status with
+        | `Started | `Inserted -> "blue"
+        | `Succeeded -> "green" | `Failed -> "red")]
+      [pcdata "B2F "];
+    layout_id_link "bcl_to_fastq" dmux#b2f#g_id;
+    Option.(
+      let default = "" in
+      pcdataf " %s (mismatch: %d) %s (%s)"
+        (value_map dmux#b2f#tiles ~default ~f:(sprintf "(tiles:%s)"))
+        dmux#b2f#mismatch
+        (value_map dmux#b2f#bases_mask
+           ~default ~f:(sprintf "(bmask:%s)"))
+        (value ~default:"unknown-sample-sheet-kind"
+           (dmux#assembly >>= fun a ->
+            return a#kind
+            >>| Layout.Enumeration_sample_sheet_kind.to_string)))
+  ]
+                 
+let html_detailed_deliveries ?(append_path=false) subm dmux =
+  let open Template in
+  let open Html5 in
+  let actual_deliveries =
+    List.filter_map dmux#deliveries (fun del ->
+      let open Option in
+      List.find subm#invoices (fun i -> i#g_id = del#oo#invoice#id)
+      >>= fun inv ->
+      Some (del, inv)) in
+  begin match actual_deliveries with
+  | [] -> [pcdata "Never delivered"]
+  | l ->
+    (interleave_map l ~sep:(br ())
+       ~f:(fun (del, inv) ->
+         let path = 
+           Option.(value_map ~default:"NO-DIR"
+                     ~f:(fun d-> d#directory) del#client_fastqs_dir) in
+         let path_part =
+           if append_path then
+             span [strong [pcdata ", Path: "]; codef "%s" path]
+           else
+             span [] in
+         span ~a:[a_title path ]
+           [strong [pcdata "Delivery "];
+            layout_id_link "prepare_unaligned_delivery" del#oo#g_id;
+            strong [pcdata "; Invoice "]; 
+            layout_id_link "invoicing" inv#g_id;
+            path_part
+           ]))
+  end
+    
 let detailed_fastq_subtable lib =
   let open Template in
   let open Html5 in
@@ -290,53 +373,8 @@ let detailed_fastq_subtable lib =
         [ `sortable (sprintf "%s:%d" fcid sub#lane_index,
                      [a_link Services.flowcell [pcdata fcid] fcid;
                       pcdataf " (Lane %d)"  sub#lane_index; ]);
-          `text [
-            span ~a:[
-              ksprintf a_style "font-weight: bold; color: %s"
-                (match dmux#b2f#g_status with
-                | `Started | `Inserted -> "blue"
-                | `Succeeded -> "green"
-                | `Failed -> "red")]
-              [pcdata "B2F "];
-            a_link Services.layout [codef "%d" dmux#b2f#g_id]
-              (["bcl_to_fastq"], [dmux#b2f#g_id]);
-            Option.(
-              let default = "" in
-              pcdataf " %s (mismatch: %d) %s (%s)"
-                (value_map dmux#b2f#tiles ~default ~f:(sprintf "(tiles:%s)"))
-                dmux#b2f#mismatch
-                (value_map dmux#b2f#bases_mask
-                   ~default ~f:(sprintf "(bmask:%s)"))
-                (value ~default:"unknown-sample-sheet-kind"
-                   (dmux#assembly >>= fun a ->
-                    return a#kind
-                    >>| Layout.Enumeration_sample_sheet_kind.to_string)));
-          ];
-          `text (
-            let actual_deliveries =
-              List.filter_map dmux#deliveries (fun del ->
-                let open Option in
-                List.find sub#invoices (fun i -> i#g_id = del#oo#invoice#id)
-                >>= fun inv ->
-                Some (del, inv)) in
-            begin match actual_deliveries with
-            | [] -> [pcdata "Never delivered"]
-            | l ->
-              (interleave_map l ~sep:(br ())
-                 ~f:(fun (del, inv) ->
-                   span ~a:[
-                     a_title Option.(value_map ~default:"NO-DIR"
-                                       ~f:(fun d-> d#directory)
-                                       del#client_fastqs_dir) ]
-                     [strong [pcdata "Delivery "];
-                      a_link Services.layout [codef "%d" del#oo#g_id]
-                        (["prepare_unaligned_delivery"],[del#oo#g_id]);
-                      pcdata "; ";
-                      strong [pcdata "Invoice "]; 
-                      a_link Services.layout [codef "%d" inv#g_id]
-                        (["invoicing"],[inv#g_id]);
-                     ]))
-            end);
+          `text (html_detailed_dmux dmux);
+          `text (html_detailed_deliveries sub dmux);
           `text Option.(
             value_map fastq_stats ~default:[pcdata "—"]
               ~f:(fun s ->
@@ -537,18 +575,252 @@ let benchmarks work_started info_got table_generated info =
   ) else
     return Template.(content_list [])
       
+let fastq_path unaligned_path lane_index lib_name barcode read =
+  sprintf "%s/Unaligned/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.fastq.gz"
+    unaligned_path lane_index lib_name lib_name barcode
+    lane_index read
+let fastxqs_path fastxqs_path lane_index lib_name barcode read =
+  sprintf "%s/Unaligned/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.fxqs"
+    fastxqs_path lane_index lib_name lib_name barcode
+    lane_index read
+    
+let fastx_table path =
+  let open Html5 in
+  let open Template in
+  Data_access.File_cache.(
+    get_fastx_quality_stats path
+    >>| List.map ~f:(fun {
+      bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
+      bfxqs_sum; bfxqs_mean; bfxqs_Q1; bfxqs_med;
+      bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
+      bfxqs_A_Count; bfxqs_C_Count; bfxqs_G_Count; bfxqs_T_Count; bfxqs_N_Count;
+      bfxqs_Max_count;} ->
+      let nb0 f = `number (sprintf "%.0f", f) in 
+      let nb2 f = `number (sprintf "%.2f", f) in 
+      [nb0 bfxqs_column; nb0 bfxqs_count; nb0 bfxqs_min; nb0 bfxqs_max;
+       nb0 bfxqs_sum; nb2 bfxqs_mean; nb0 bfxqs_Q1; nb0 bfxqs_med;
+       nb0 bfxqs_Q3; nb0 bfxqs_IQR; nb0 bfxqs_lW; nb0 bfxqs_rW;
+       nb0 bfxqs_A_Count; nb0 bfxqs_C_Count; nb0 bfxqs_G_Count;
+       nb0 bfxqs_T_Count; nb0 bfxqs_N_Count;
+       nb0 bfxqs_Max_count;]))
+  >>= fun rows ->
+  let h s = `head [pcdata s] in
+  return (  
+    [h "column"; h "count"; h "min"; h "max";
+     h "sum"; h "mean"; h "Q1"; h "med";
+     h "Q3"; h "IQR"; h "lW"; h "rW";
+     h "A_Count"; h "C_Count"; h "G_Count"; h "T_Count"; h "N_Count";
+     h "Max_count";]
+    :: rows)
+    
+let rendered_fastx_table path =
+  let open Html5 in
+  let open Template in
+  double_bind (fastx_table path)
+    ~ok:(fun o ->
+      let msg, div =
+        (Template.hide_show_div
+           ~show_message:"Show FASTX quality stats table"
+           ~hide_message:"Hide FASTX quality stats table"
+           [Template.html_of_content (content_table o)]) in
+      return [Template.pretty_box [msg; div]])
+    ~error:(fun e ->
+      let errf fmt =
+        ksprintf (fun s -> [br(); Template.error_span [pcdata s]]) fmt in
+      begin match e with
+      | `empty_fastx_quality_stats s ->
+        return (errf "ERROR: file %s gave empty quality stats" s)
+      | `error_in_fastx_quality_stats_parsing (s, sll) ->
+        return (errf "ERROR: parsing file %s gave an error (%d)"
+                  s (List.length sll))
+      | `io_exn e ->
+        return (errf "I/O Error in with fastx: %s\n%!" (Exn.to_string e))
+      end)
+
+let fastx_quality_plots path =
+  let open Html5 in
+  let open Template in
+  let make_chart =
+    let open Data_access.File_cache in
+    get_fastx_quality_stats path
+    >>= fun stats ->
+    of_list_sequential stats ~f:(fun {
+      bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
+      bfxqs_sum; bfxqs_mean; bfxqs_Q1; bfxqs_med;
+      bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
+      bfxqs_A_Count; bfxqs_C_Count; bfxqs_G_Count; bfxqs_T_Count; bfxqs_N_Count;
+      bfxqs_Max_count;} ->
+      return (
+        [ "A", bfxqs_A_Count;
+          "C", bfxqs_C_Count;
+          "G", bfxqs_G_Count;
+          "T", bfxqs_T_Count;
+          "N", bfxqs_N_Count;],
+        (bfxqs_lW, bfxqs_Q1, bfxqs_med, bfxqs_Q3, bfxqs_rW)))
+    >>| List.unzip
+    >>= fun (acgtn, by5) ->
+    Highchart.make ~more_y:5. ~y_axis_title:"Q Score"
+      ~plot_title:"Quality Plot" [`box_whisker by5]
+    >>= fun qplot ->
+    let msg, div =
+      (Template.hide_show_div ~start_hidden:false
+         ~show_message:"Show Q Score Box-Whisker plot"
+         ~hide_message:"Hide Q Score Box-Whisker plot"
+         qplot) in
+    return [Template.pretty_box [msg; div]]
+    >>= fun qplot ->
+    Highchart.make ~more_y:5. ~y_axis_title:"Counts" ~with_legend:true
+      ~plot_title:"ACGTN Distribution" [`stack acgtn]
+    >>= fun acgtnplot ->
+    let msg, div =
+      (Template.hide_show_div
+         ~show_message:"Show ACGTN distribution plot"
+         ~hide_message:"Hide ACGTN distribution plot"
+         acgtnplot) in
+    return [Template.pretty_box [msg; div]]
+    >>= fun acgtnplot ->
+    return (acgtnplot @ qplot)
+  in
+  let errf fmt =
+    ksprintf (fun s -> [br(); Template.error_span [pcdata s]]) fmt in
+  double_bind make_chart 
+    ~ok:(fun chart ->
+      return chart)
+    ~error:(fun _ -> return (errf "ERROR while getting the fastx plot"))
+
+let per_lirbary_details info =
+  let open Html5 in
+  let open Template in
+  of_list_sequential info#libraries (fun lib ->
+    of_list_sequential lib#submissions (fun sub ->
+      of_list_sequential sub#flowcell#hiseq_raws (fun hr ->
+        let fcid = sub#flowcell#oo#serial_name in
+        let section_title = 
+          span [pcdata "Submission ";
+                a_link Services.flowcell [pcdata fcid] fcid;
+                pcdataf " (Lane %d)"  sub#lane_index;] in
+        of_list_sequential hr#demultiplexings (fun dmux ->
+          let section_title =
+            span (pcdata "Demultiplexing " :: html_detailed_dmux dmux) in
+          let deliv_par = [
+            pcdata "Delivery status: ";
+            ul [
+              li (html_detailed_deliveries ~append_path:true sub dmux);
+            ];
+          ] in
+          of_option dmux#unaligned (fun un ->
+            let barcodes =
+              match lib#barcoding with
+              | `Illumina b ->
+                List.filter_map b (fun i ->
+                  List.Assoc.find Assemble_sample_sheet.illumina_barcodes i)
+              | `Bioo b ->
+                List.filter_map b (fun i ->
+                  List.Assoc.find Assemble_sample_sheet.bioo_barcodes i)
+              | _ -> [] in
+            let fastq_r1s =
+              List.map barcodes (fun seq ->
+                fastq_path un#path sub#lane_index lib#stock#name seq 1) in
+            let fastq_r2s =
+              Option.value_map ~default:[]
+                sub#lane#oo#requested_read_length_2 ~f:(fun _ ->
+                  List.map barcodes (fun seq ->
+                    fastq_path un#path sub#lane_index lib#stock#name seq 2))
+            in
+            of_list_sequential un#fastx_paths (fun path ->
+              
+              let origins =
+                interleave_map ~sep:[br ()] un#fastx_qss ~f:(fun fxqs ->
+                  [pcdata "Function ";
+                   layout_id_link "fastx_quality_stats" fxqs#g_id; ])
+                |! List.concat
+              in
+              let rorigins =
+                interleave_map ~sep:[br ()] un#fastx_results ~f:(fun fxqsr ->
+                  [pcdata "Record ";
+                   layout_id_link "fastx_quality_stats_result" fxqsr#g_id; ])
+                |! List.concat
+              in
+              let fastxqs_r1s =
+                List.map barcodes (fun seq ->
+                  ("R1", fastxqs_path path sub#lane_index lib#stock#name seq 1)) in
+              let fastxqs_r2s =
+                Option.value_map ~default:[]
+                  sub#lane#oo#requested_read_length_2 ~f:(fun _ ->
+                    List.map barcodes (fun seq ->
+                      ("R2", fastxqs_path path sub#lane_index lib#stock#name seq 2)))
+              in
+              of_list_sequential (fastxqs_r1s @ fastxqs_r2s) (fun (kind, path) ->
+                rendered_fastx_table path >>= fun fastx_table ->
+                fastx_quality_plots path >>= fun fastx_qplot ->
+
+                return [
+                  strongf "%s: " kind;
+                  codef "%s" path;
+                  div fastx_table;
+                  div fastx_qplot;
+                ])
+              >>= fun fastx_items ->
+              let details =
+                div [strongf "Fastx Quality Stats:";
+                     ul [li origins; li rorigins; ];
+                     div [ul (List.map fastx_items li)];
+                    ] in
+              
+              return (details))
+            >>= fun fastx_stuff ->
+            let unaligned_par =
+              let fastqs =
+                interleave_map fastq_r1s ~sep:[]
+                  ~f:(fun p -> [strongf "R1: "; codef "%s" p; br ()])
+                @ interleave_map fastq_r2s ~sep:[]
+                  ~f:(fun p -> [strongf "R2: "; codef "%s" p; br ()])
+                |! List.concat
+              in
+              let details =
+                div [
+                  pcdata "Unaligned Directory: ";
+                  ul [
+                    li [strong [pcdata "Value: "];
+                        layout_id_link "bcl_to_fastq_unaligned" un#b2fu#g_id;
+                        strong [pcdata "; Volume: "];
+                        layout_id_link "bcl_to_fastq_unaligned_opaque" un#vol#g_id];
+                    li [strong [pcdata "Path: "]; codef "%s" un#path];
+                    li fastqs;
+
+                  ]] in
+              content_paragraph [div deliv_par; details; div fastx_stuff] in
+            return [unaligned_par])
+          >>| Option.value ~default:[]
+          >>= fun unaligned_related_sections ->
+          let content = unaligned_related_sections in
+          return (content_section section_title (content_list content)))
+        >>= fun dmux_sections ->
+        return (content_section section_title (content_list dmux_sections))))
+    >>| List.concat
+    >>= fun submission_sections ->
+    return (content_section (pcdataf "Library %s" lib#stock#name)
+              (content_list submission_sections)))
+  >>= fun details_sections ->
+  return (content_list details_sections)
+
 let libraries work_started info_got info =
   let open Html5 in
 
   let libraries_table = libraries_table info in
   let table_generated = Time.now () in
   benchmarks work_started info_got table_generated info >>= fun benchmarks ->
+  (if List.length info#libraries = 1 &&  info#can_view_fastq_details
+   then per_lirbary_details info
+   else return (Template.content_list []))
+  >>= fun details ->
   return Template.(
     content_section (pcdataf "Viewing %d Libraries" (List.length info#libraries))
       (content_list [
         content_paragraph (intro_paragraph info);
         benchmarks;
         libraries_table;
+        details;
       ]))
   
 
