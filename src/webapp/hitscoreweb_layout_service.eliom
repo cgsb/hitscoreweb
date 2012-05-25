@@ -55,9 +55,7 @@ let reply ~configuration =
   | Add_function (t, content) ->
     check_access_type_and_sexp t content >>= fun sexp ->
     let query =
-      Sql_query.add_evaluation_sexp
-        ~recomputable:false ~recompute_penalty:0. ~status:"Inserted"
-        ~function_name:t sexp in
+      Sql_query.add_evaluation_sexp ~status:"Inserted" ~function_name:t sexp in
     execute_query_and_succeed ~configuration query
   | Add_volume (kind, content) ->
     check_access_type_and_sexp kind content >>= fun sexp ->
@@ -378,8 +376,6 @@ let evaluations_to_table type_info result_type r =
       sortable_link (string_of_int eval.f_id) eval.f_type
       :: Option.value_map eval.f_result ~default
         ~f:(fun i -> sortable_link (string_of_int i) result_type)
-      :: sortable_text (Bool.to_string eval.f_recomputable)  (*  bool *)
-      :: sortable_text (Float.to_string eval.f_recompute_penalty)  (*  float *)
       :: sortable_timestamp eval.f_inserted  (*  Timestamp.t *)
       :: Option.value_map ~f:sortable_timestamp eval.f_started ~default
       :: Option.value_map ~f:sortable_timestamp eval.f_completed ~default
