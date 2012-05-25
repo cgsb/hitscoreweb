@@ -411,7 +411,10 @@ module Evaluations_service = struct
     of_list_sequential b2fs ~f:(fun b2f ->
       b2f#raw_data#get >>= fun hiseq_raw ->
       let assembly =
-        List.find all_assemblies ~f:(fun g -> g#g_id = b2f#sample_sheet#id) in
+        List.find all_assemblies ~f:(fun g ->
+          match g#g_result with
+          | None -> false
+          | Some r -> r#id = b2f#sample_sheet#id) in
       return (b2f, hiseq_raw, assembly))
     >>= fun b2fs ->
     of_list_sequential b2fs (fun (b2f, hiseq_raw, assembly) ->
