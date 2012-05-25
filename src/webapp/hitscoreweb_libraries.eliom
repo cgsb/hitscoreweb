@@ -852,13 +852,12 @@ let per_lirbary_simple_details info =
               let path = 
                 Option.(value_map ~default:"NO-DIR"
                           ~f:(fun d-> d#directory) del#client_fastqs_dir) in
-              return (content_section (pcdata "Delivery")
-                        (content_paragraph [
-                          strongf "Delivered in ";
-                          codef "%s" path;
-                          div [Option.value ~default:(strongf "No stats available")
-                                 stats];
-                        ]))))
+              return (content_paragraph [
+                strongf "Delivered in ";
+                codef "%s" path;
+                div [Option.value ~default:(strongf "No stats available")
+                        stats];
+              ])))
           >>| List.filter_opt
           >>= fun delivery_sections ->
           return (content_section section_title (content_list delivery_sections))))
@@ -884,12 +883,17 @@ let libraries work_started info_got info =
      else per_lirbary_simple_details info
    else return (Template.content_list []))
   >>= fun details ->
+  let libnb = List.length info#libraries in
   return Template.(
-    content_section (pcdataf "Viewing %d Libraries" (List.length info#libraries))
+    content_section (pcdataf "Viewing %d Librar%s" libnb
+                       (if libnb = 1 then "y" else "ies"))
       (content_list [
-        content_paragraph (intro_paragraph info);
         benchmarks;
-        libraries_table;
+        content_section (pcdataf "Summary Table")
+          (content_list [
+            content_paragraph (intro_paragraph info);
+            libraries_table;
+           ]);
         details;
       ]))
   
