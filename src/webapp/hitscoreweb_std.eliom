@@ -10,6 +10,8 @@ module Html5 = struct
 
   let codef fmt = ksprintf (fun s -> code [pcdata s]) fmt
 
+  let strongf fmt = ksprintf (fun s -> strong [pcdata s]) fmt
+
   let a_hreff fmt = ksprintf (fun s -> a_href (XML.uri_of_string s)) fmt
 
 
