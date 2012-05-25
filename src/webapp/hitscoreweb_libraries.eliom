@@ -689,15 +689,18 @@ let fastx_quality_plots path =
       return chart)
     ~error:(fun _ -> return (errf "ERROR while getting the fastx plot"))
 
-let demuxable_barcode_sequences lib =
-  match lib#barcoding with
-  | `Illumina b ->
-    List.filter_map b (fun i ->
-      List.Assoc.find Assemble_sample_sheet.illumina_barcodes i)
-  | `Bioo b ->
-    List.filter_map b (fun i ->
-      List.Assoc.find Assemble_sample_sheet.bioo_barcodes i)
-  | _ -> []
+let demuxable_barcode_sequences lane lib =
+  if List.length lane#inputs = 1 then
+    ["NoIndex"]
+  else
+    match lib#barcoding with
+    | `Illumina b ->
+      List.filter_map b (fun i ->
+        List.Assoc.find Assemble_sample_sheet.illumina_barcodes i)
+    | `Bioo b ->
+      List.filter_map b (fun i ->
+        List.Assoc.find Assemble_sample_sheet.bioo_barcodes i)
+    | _ -> []
     
 let per_lirbary_details info =
   let open Html5 in
@@ -720,7 +723,7 @@ let per_lirbary_details info =
             ];
           ] in
           of_option dmux#unaligned (fun un ->
-            let barcodes = demuxable_barcode_sequences lib in
+            let barcodes = demuxable_barcode_sequences sub#lane lib in
             let fastq_r1s =
               List.map barcodes (fun seq ->
                 fastq_path un#path sub#lane_index lib#stock#name seq 1) in
@@ -822,7 +825,7 @@ let per_lirbary_simple_details info =
             of_option (choose_delivery_for_user dmux sub) (fun (del, inv) ->
               of_option dmux#unaligned (fun un ->
                 of_list_sequential un#fastx_paths (fun path ->
-                  let barcodes = demuxable_barcode_sequences lib in
+                  let barcodes = demuxable_barcode_sequences sub#lane lib in
                   let fastxqs_r1s =
                     List.map barcodes (fun seq ->
                       ("Read 1",
