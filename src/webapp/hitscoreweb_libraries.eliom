@@ -258,10 +258,20 @@ let init_classy_information ~timeout ~configuration =
   let info_mem = ref None in
   let condition = Lwt_condition.create () in
   let rec update ~configuration =
-    with_database ~configuration (make_classy_information ~configuration)
-    >>= fun info ->
-    info_mem := Some info;
-    Lwt_condition.broadcast condition info;
+    let m =
+      with_database ~configuration (make_classy_information ~configuration)
+      >>= fun info ->
+      info_mem := Some info;
+      Lwt_condition.broadcast condition info;
+      return ()
+    in
+    double_bind m
+      ~ok:return
+      ~error:(fun e ->
+        debug "Updating the classy info gave an error.\n"
+        >>= fun () ->
+        return ())
+    >>= fun () ->
     wrap_io Lwt_unix.sleep timeout
     >>= fun () ->
     update ~configuration in
