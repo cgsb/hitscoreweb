@@ -880,7 +880,7 @@ let libraries work_started info_got info =
   let libraries_table = libraries_table info in
   let table_generated = Time.now () in
   benchmarks work_started info_got table_generated info >>= fun benchmarks ->
-  (if List.length info#libraries = 1
+  (if List.length info#libraries = 1 || List.exists info#showing ((=) `details)
    then if info#can_view_fastq_details
      then per_lirbary_details info
      else per_lirbary_simple_details info
