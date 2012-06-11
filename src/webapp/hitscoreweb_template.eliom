@@ -202,6 +202,9 @@ let html_of_error_sublevel poly_error =
      pcdata "."]
   | `wrong_rights ->
     [pcdata "You don't have enough access rights to do edit this."]
+  | `read_file_error (f, e) ->
+    [pcdata "Error while reading file: "; codef "%s" f;
+     pcdataf ": %s" (Exn.to_string e)]
   | `non_emptiness_violation ->
     [pcdata "You're trying to violate non-emptiness constraints!"]
   | `broker_not_initialized -> [pcdata "The query broker has not been initialized"]
@@ -349,23 +352,23 @@ let a_link ?(a=[]) ?fragment service content args =
 let menu_ul () =
   let open Html5 in
   let real_li s = return (Some (li ~a:[ a_class ["main_menu"]] s)) in
-  let potential_li cap s = 
+  let potential_li (cap, s) = 
     Authentication.authorizes cap
     >>= function
     | true ->  real_li s
     | false -> return None
   in
-  map_sequential ~f:return [
-    potential_li (`view `all_flowcells) 
-      [a_link Services. hiseq_runs [pcdata "HiSeq 2000 Runs"] ()];
-    potential_li (`view `persons)
-      [a_link Services.persons [pcdata "Persons"] (None, [])];
-    potential_li (`view `libraries) [
-      a_link Services.libraries [pcdata "Libraries"] ([`basic], []); ];
-    potential_li (`view `all_evaluations)
-      [a_link Services.evaluations [pcdata "Function evaluations"] ()];
-    potential_li (`view `layout)
-      [a_link Services.layout [ pcdata "Layout Navigaditor" ] ([], [])]
+  while_sequential ~f:potential_li [
+    (`view `all_flowcells, 
+     [a_link Services. hiseq_runs [pcdata "HiSeq 2000 Runs"] ()]);
+    (`view `persons,
+     [a_link Services.persons [pcdata "Persons"] (None, [])]);
+    (`view `libraries,
+     [a_link Services.libraries [pcdata "Libraries"] ([`basic], []); ]);
+    (`view `all_evaluations,
+     [a_link Services.evaluations [pcdata "Function evaluations"] ()]);
+    (`view `layout,
+     [a_link Services.layout [ pcdata "Layout Navigaditor" ] ([], [])]);
   ]
   >>= fun ul_opt ->
   match List.filter_opt ul_opt with

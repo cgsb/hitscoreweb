@@ -190,7 +190,7 @@ let check = function
         set_state (`user_logged (make_user person))
       else
         begin
-          of_option person.g_value.login (fun user -> pam_auth ~user ~password ())
+          map_option person.g_value.login (fun user -> pam_auth ~user ~password ())
           >>= fun pammed ->
           if pammed = Some ()
           then
@@ -274,7 +274,7 @@ let start_impersonation_coservice =
     | None ->
       let check_and_set u =
         user_logged () >>= fun a ->
-        of_option a (fun adminauditor ->
+        map_option a (fun adminauditor ->
           find_user u >>= fun person ->
           authorizes (`impersonate (`person person)) >>= fun can ->
           if can

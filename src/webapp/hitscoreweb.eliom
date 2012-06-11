@@ -88,7 +88,7 @@ module Flowcell_service = struct
         Layout.Record_flowcell.(
           return one.g_value
           >>= fun {serial_name; lanes} ->
-          of_list_sequential (Array.to_list lanes) (fun lane_t ->
+          while_sequential (Array.to_list lanes) (fun lane_t ->
             incr lane;
             Layout.Record_lane.(
               Access.Lane.get ~dbh lane_t >>| (fun l -> l.g_value)
@@ -102,9 +102,9 @@ module Flowcell_service = struct
               >>= fun authorization ->
               if authorization
               then begin
-                of_list_sequential people (Persons_service.person_essentials dbh)
+                while_sequential people (Persons_service.person_essentials dbh)
                 >>= fun people ->
-                of_list_sequential
+                while_sequential
                   (Array.to_list (Array.mapi libraries ~f:(fun i a -> (i,a))))
                   (fun (i, ilibt) ->
                     Layout.Record_input_library.(
@@ -180,7 +180,7 @@ module Flowcell_service = struct
       let layout = Classy.make dbh in
       layout#hiseq_raw#all >>| List.filter ~f:(fun h -> h#flowcell_name = serial_name)
       >>= fun dirs ->
-      of_list_sequential dirs ~f:(fun d ->
+      while_sequential dirs ~f:(fun d ->
         let m = Common.check_hiseq_raw_availability ~dbh ~hiseq_raw:d#g_pointer in
         double_bind m
           ~error:(fun e -> 
@@ -305,7 +305,7 @@ module Flowcell_service = struct
       let layout = Classy.make dbh in
       layout#bcl_to_fastq#all >>| List.filter ~f:(fun b -> b#g_status = `Succeeded)
       >>= fun successes ->
-      of_list_sequential successes ~f:(fun b2f_eval ->
+      while_sequential successes ~f:(fun b2f_eval ->
         b2f_eval#raw_data#get >>| (fun x -> x#flowcell_name)
         >>= fun b2f_fcid ->
         if b2f_fcid <> serial_name then
@@ -408,7 +408,7 @@ module Evaluations_service = struct
     layout#bcl_to_fastq#all
     >>| List.stable_sort ~cmp:(fun a b -> compare b#g_inserted a#g_inserted)
     >>= fun b2fs ->
-    of_list_sequential b2fs ~f:(fun b2f ->
+    while_sequential b2fs ~f:(fun b2f ->
       b2f#raw_data#get >>= fun hiseq_raw ->
       let assembly =
         List.find all_assemblies ~f:(fun g ->
@@ -417,7 +417,7 @@ module Evaluations_service = struct
           | Some r -> r#id = b2f#sample_sheet#id) in
       return (b2f, hiseq_raw, assembly))
     >>= fun b2fs ->
-    of_list_sequential b2fs (fun (b2f, hiseq_raw, assembly) ->
+    while_sequential b2fs (fun (b2f, hiseq_raw, assembly) ->
       let open Template in
       return [
         cell_int b2f#g_id;
@@ -459,13 +459,13 @@ module Evaluations_service = struct
     layout#fastx_quality_stats#all
     >>| List.stable_sort ~cmp:(fun a b -> compare b#g_inserted a#g_inserted)
     >>= fun fxqss ->
-    of_list_sequential fxqss ~f:(fun fxqs ->
+    while_sequential fxqss ~f:(fun fxqs ->
       fxqs#input_dir#get >>= fun gf ->
       let configuration = Configuration.configure ~root_path:"root:/" () in
       Common.path_of_volume ~configuration ~dbh gf#directory#pointer
       >>= fun path ->
       return (path, fxqs))
-    >>= of_list_sequential ~f:(fun (path, fxqs) ->
+    >>= while_sequential ~f:(fun (path, fxqs) ->
       let open Template in
       return [
         cell_int fxqs#g_id;

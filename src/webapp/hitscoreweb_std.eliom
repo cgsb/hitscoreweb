@@ -25,7 +25,9 @@ module Output_app =
 module PGOCaml = struct end
 
 include Hitscore
-include Flow
+include Sequme_flow
+include Sequme_flow_list
+include Sequme_flow_sys
 
 module Xml_tree = struct
   include Xmlm
@@ -34,8 +36,6 @@ module Xml_tree = struct
     let data d = `D d in
     input_doc_tree ~el ~data i
 end
-let read_file file =
-  wrap_io Lwt_io.(fun () -> with_file ~mode:input file (fun i -> read i)) ()
 
 (*
   https://bitbucket.org/yminsky/ocaml-core/src/c0e9df7b574d/base/core/extended/lib/sendmail.mli

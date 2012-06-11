@@ -249,10 +249,10 @@ let get_all_values ?(only=[])  dbh record_name =
     let query = Sql_query.get_all_values_sexp ~record_name in
     Backend.query ~dbh query
     >>= fun results ->
-    of_list_sequential results ~f:(fun row ->
+    while_sequential results ~f:(fun row ->
       of_result (Sql_query.parse_value row))
   | a_bunch ->
-    of_list_sequential a_bunch (fun id ->
+    while_sequential a_bunch (fun id ->
       let query = Sql_query.get_value_sexp ~record_name id in
       Backend.query ~dbh query
       >>= fun r -> of_result (Sql_query.should_be_single r)
@@ -264,10 +264,10 @@ let get_all_evaluations ?(only=[])  dbh function_name =
     let query = Sql_query.get_all_evaluations_sexp ~function_name in
     Backend.query ~dbh query
     >>= fun results ->
-    of_list_sequential results ~f:(fun row ->
+    while_sequential results ~f:(fun row ->
       of_result (Sql_query.parse_evaluation row))
   | a_bunch ->
-    of_list_sequential a_bunch (fun id ->
+    while_sequential a_bunch (fun id ->
       let query = Sql_query.get_evaluation_sexp ~function_name id in
       Backend.query ~dbh query
       >>= fun r -> of_result (Sql_query.should_be_single r)
@@ -285,15 +285,15 @@ let get_all_volumes ~configuration ?(only=[]) dbh volume_kind =
     let query = Sql_query.get_all_volumes_sexp () in
     Backend.query ~dbh query
     >>= fun results ->
-    of_list_sequential results ~f:(fun row ->
+    while_sequential results ~f:(fun row ->
       of_result (Sql_query.parse_volume row)
       >>= fun v ->
       (if v.Sql_query.v_kind = volume_kind then return (Some v) else return None)
       >>= fun opt ->
-      of_option opt enhance_volume)
+      map_option opt enhance_volume)
     >>| List.filter_opt
   | a_bunch ->
-    of_list_sequential a_bunch (fun id ->
+    while_sequential a_bunch (fun id ->
       let query = Sql_query.get_volume_sexp id in
       Backend.query ~dbh query
       >>= fun r -> of_result (Sql_query.should_be_single r)
@@ -452,7 +452,7 @@ let view_layout ~configuration ~main_title ~types ~values =
             content_table ~transpose:(List.length values = 1) table;
           ]))
     in
-    of_list_sequential types ~f:(fun elt ->
+    while_sequential types ~f:(fun elt ->
       match find_node layout elt with
       | Some s -> 
         begin match s with

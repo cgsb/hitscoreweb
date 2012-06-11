@@ -18,10 +18,10 @@ let flowcell_cell ~dbh fc_p =
   Layout.Record_flowcell.(
     Access.Flowcell.get ~dbh fc_p >>= fun fc ->
     let lane_nb = ref 0 in
-    of_list_sequential (Array.to_list fc.g_value.lanes) ~f:(fun lane_p ->
+    while_sequential (Array.to_list fc.g_value.lanes) ~f:(fun lane_p ->
       Layout.Record_lane.(
         Access.Lane.get ~dbh lane_p >>= fun lane ->
-        of_list_sequential (Array.to_list lane.g_value.contacts)
+        while_sequential (Array.to_list lane.g_value.contacts)
           ~f:(Persons_service.person_link ~style:`family_name dbh)
         >>= fun links ->
         incr lane_nb;
@@ -71,7 +71,7 @@ let hiseq_runs ~configuration =
   with_database ~configuration (fun ~dbh ->
     let layout = Classy.make dbh in
     layout#hiseq_run#all >>= fun hiseq_runs ->
-    of_list_sequential hiseq_runs (fun hsr -> 
+    while_sequential hiseq_runs (fun hsr -> 
       let sfc p =
         Option.value_map p ~default:(return (`text [pcdataf "—"]))
           ~f:(fun p -> flowcell_cell ~dbh p#pointer) in
@@ -179,8 +179,8 @@ let person_flowcells ~configuration =
    | `person_not_found person ->
      error (`hiseq_runs (`cannot_retrieve_person_affairs person))))
   >>= fun affairs ->
-  of_list_sequential affairs.pa_flowcells (fun fc ->
-    of_list_sequential  fc.ff_runs (fun run ->
+  while_sequential affairs.pa_flowcells (fun fc ->
+    while_sequential  fc.ff_runs (fun run ->
       Broker.delivered_demultiplexings broker run
       >>| List.filter_map ~f:(fun ddmux ->
         let person_deliveries =
@@ -197,7 +197,7 @@ let person_flowcells ~configuration =
         then None
         else Some (ddmux, person_deliveries))
       >>= fun run_deliveries ->
-      of_list_sequential run_deliveries ~f:(fun (ddmux, pdeliv) ->
+      while_sequential run_deliveries ~f:(fun (ddmux, pdeliv) ->
         let dmux_summary_m =
           Data_access.File_cache.get_demux_summary ddmux.ddmux_summary_path
         in

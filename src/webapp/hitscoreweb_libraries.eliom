@@ -57,7 +57,7 @@ let make_classy_information ~configuration ~dbh =
   layout#fastx_quality_stats_result#all >>= fun fxqs_rs ->
   layout#person#all >>= fun persons ->
 
-  of_list_sequential b2fs (fun b2f ->
+  while_sequential b2fs (fun b2f ->
     let b2fu = getopt_by_id b2fus b2f#g_result in
     let hiseq_raw = get_by_id hiseq_raws b2f#raw_data#id in
     let vol =
@@ -68,7 +68,7 @@ let make_classy_information ~configuration ~dbh =
               volume_path ~configuration volumes vol
               >>= fun path ->
               Some (vol , hiseq_raw, path, b2fu)) in
-    of_option vol (fun (vol, hiseq_raw, path, b2fu) ->
+    map_option vol (fun (vol, hiseq_raw, path, b2fu) ->
       let basecall_stats_path =
         Filename.concat path
           (sprintf "Unaligned/Basecall_Stats_%s/%s"
@@ -116,13 +116,13 @@ let make_classy_information ~configuration ~dbh =
   >>| List.filter_opt
   >>= fun unaligned_volumes ->
   
-  layout#flowcell#all >>= of_list_sequential ~f:(fun fc ->
-    of_list_sequential (Array.to_list fc#lanes) (fun lp ->
+  layout#flowcell#all >>= while_sequential ~f:(fun fc ->
+    while_sequential (Array.to_list fc#lanes) (fun lp ->
       lp#get >>= fun lane ->
-      of_list_sequential (Array.to_list lane#contacts) (fun c ->
+      while_sequential (Array.to_list lane#contacts) (fun c ->
         List.find_exn persons ~f:(fun p -> p#g_id = c#id) |! return)
       >>= fun contacts ->
-      of_list_sequential (Array.to_list lane#libraries) (fun l -> l#get)
+      while_sequential (Array.to_list lane#libraries) (fun l -> l#get)
       >>= fun libs ->
       return (object method oo = lane
                      method inputs = libs
@@ -173,7 +173,7 @@ let make_classy_information ~configuration ~dbh =
   layout#custom_barcode#all >>= fun custom_barcodes ->
   layout#invoicing#all >>= fun invoices ->
   layout#stock_library#all
-  >>= of_list_sequential ~f:(fun sl ->
+  >>= while_sequential ~f:(fun sl ->
     let optid =  Option.map ~f:(fun o -> o#id) in
     let sample =
       List.find_map samples (fun s ->
@@ -226,7 +226,7 @@ let make_classy_information ~configuration ~dbh =
 
 let filter_classy_information  
     ~qualified_names ~configuration ~showing info =
-  of_list_sequential info#libraries ~f:(fun l ->
+  while_sequential info#libraries ~f:(fun l ->
     if qualified_names = []
     || List.exists qualified_names
       ~f:(fun qn -> qn = qualified_name l#stock#project l#stock#name) then
@@ -268,7 +268,7 @@ let init_classy_information ~timeout ~configuration =
     double_bind m
       ~ok:return
       ~error:(fun e ->
-        debug "Updating the classy info gave an error.\n"
+        wrap_io Lwt_io.eprintf "Updating the classy info gave an error.\n"
         >>= fun () ->
         return ())
     >>= fun () ->
@@ -644,8 +644,8 @@ let rendered_fastx_table path =
       | `error_in_fastx_quality_stats_parsing (s, sll) ->
         return (errf "ERROR: parsing file %s gave an error (%d)"
                   s (List.length sll))
-      | `io_exn e ->
-        return (errf "I/O Error in with fastx: %s\n%!" (Exn.to_string e))
+      | `read_file_error (f, e) ->
+        return (errf "I/O Error in with fastx (file %S): %s\n%!" f (Exn.to_string e))
       end)
 
 let fastx_quality_plots path =
@@ -655,7 +655,7 @@ let fastx_quality_plots path =
     let open Data_access.File_cache in
     get_fastx_quality_stats path
     >>= fun stats ->
-    of_list_sequential stats ~f:(fun {
+    while_sequential stats ~f:(fun {
       bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
       bfxqs_sum; bfxqs_mean; bfxqs_Q1; bfxqs_med;
       bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
@@ -715,15 +715,15 @@ let demuxable_barcode_sequences lane lib =
 let per_lirbary_details info =
   let open Html5 in
   let open Template in
-  of_list_sequential info#libraries (fun lib ->
-    of_list_sequential lib#submissions (fun sub ->
-      of_list_sequential sub#flowcell#hiseq_raws (fun hr ->
+  while_sequential info#libraries (fun lib ->
+    while_sequential lib#submissions (fun sub ->
+      while_sequential sub#flowcell#hiseq_raws (fun hr ->
         let fcid = sub#flowcell#oo#serial_name in
         let section_title = 
           span [pcdata "Submission ";
                 a_link Services.flowcell [pcdata fcid] fcid;
                 pcdataf " (Lane %d)"  sub#lane_index;] in
-        of_list_sequential hr#demultiplexings (fun dmux ->
+        while_sequential hr#demultiplexings (fun dmux ->
           let section_title =
             span (pcdata "Demultiplexing " :: html_detailed_dmux dmux) in
           let deliv_par = [
@@ -732,7 +732,7 @@ let per_lirbary_details info =
               li (html_detailed_deliveries ~append_path:true sub dmux);
             ];
           ] in
-          of_option dmux#unaligned (fun un ->
+          map_option dmux#unaligned (fun un ->
             let barcodes = demuxable_barcode_sequences sub#lane lib in
             let fastq_r1s =
               List.map barcodes (fun seq ->
@@ -743,7 +743,7 @@ let per_lirbary_details info =
                   List.map barcodes (fun seq ->
                     fastq_path un#path sub#lane_index lib#stock#name seq 2))
             in
-            of_list_sequential un#fastx_paths (fun path ->
+            while_sequential un#fastx_paths (fun path ->
               
               let origins =
                 interleave_map ~sep:[br ()] un#fastx_qss ~f:(fun fxqs ->
@@ -766,7 +766,7 @@ let per_lirbary_details info =
                     List.map barcodes (fun seq ->
                       ("R2", fastxqs_path path sub#lane_index lib#stock#name seq 2)))
               in
-              of_list_sequential (fastxqs_r1s @ fastxqs_r2s) (fun (kind, path) ->
+              while_sequential (fastxqs_r1s @ fastxqs_r2s) (fun (kind, path) ->
                 rendered_fastx_table path >>= fun fastx_table ->
                 fastx_quality_plots path >>= fun fastx_qplot ->
 
@@ -823,18 +823,18 @@ let per_lirbary_details info =
 let per_lirbary_simple_details info =
   let open Html5 in
   let open Template in
-  of_list_sequential info#libraries (fun lib ->
-    of_list_sequential lib#submissions (fun sub ->
-      of_list_sequential sub#flowcell#hiseq_raws (fun hr ->
+  while_sequential info#libraries (fun lib ->
+    while_sequential lib#submissions (fun sub ->
+      while_sequential sub#flowcell#hiseq_raws (fun hr ->
           let fcid = sub#flowcell#oo#serial_name in
           let section_title = 
             span [pcdata "Submission ";
                   a_link Services.flowcell [pcdata fcid] fcid;
                   pcdataf " (Lane %d)"  sub#lane_index;] in
-          of_list_sequential hr#demultiplexings (fun dmux ->
-            of_option (choose_delivery_for_user dmux sub) (fun (del, inv) ->
-              of_option dmux#unaligned (fun un ->
-                of_list_sequential un#fastx_paths (fun path ->
+          while_sequential hr#demultiplexings (fun dmux ->
+            map_option (choose_delivery_for_user dmux sub) (fun (del, inv) ->
+              map_option dmux#unaligned (fun un ->
+                while_sequential un#fastx_paths (fun path ->
                   let barcodes = demuxable_barcode_sequences sub#lane lib in
                   let fastxqs_r1s =
                     List.map barcodes (fun seq ->
@@ -847,7 +847,7 @@ let per_lirbary_simple_details info =
                           ("Read 2",
                            fastxqs_path path sub#lane_index lib#stock#name seq 2)))
                   in
-                  of_list_sequential (fastxqs_r1s @ fastxqs_r2s) (fun (kind, path) ->
+                  while_sequential (fastxqs_r1s @ fastxqs_r2s) (fun (kind, path) ->
                     rendered_fastx_table path >>= fun fastx_table ->
                     fastx_quality_plots path >>= fun fastx_qplot ->
                     return [

@@ -32,7 +32,7 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) hsc =
   with_database hsc (fun ~dbh ->
     let layout = Classy.make dbh in
     layout#person#all >>= fun people ->
-    of_list_sequential people (fun person ->
+    while_sequential people (fun person ->
       let opt f m = Option.value_map ~f ~default:(f "") m in
       let is_vip = List.exists highlight ((=) person#email) in
       if not is_vip && (highlight <> []) then
