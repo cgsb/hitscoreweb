@@ -41,22 +41,6 @@ let in_progress_animation_div () =
         ~src:(uri_of_string (fun () -> "images/violet_loader.gif"))
         ~alt:"in progress notification" () ]
 
-let in_progress_animation_handler unique_elt = 
-  Eliom_service.onload {{
-    (Html5_to_dom.of_element %unique_elt)##onclick
-    <- Dom_html.(handler (fun ev ->
-      begin match taggedEvent ev with
-      | MouseEvent me when me##ctrlKey = Js._true || me##shiftKey = Js._true
-                           || me##button = 1 ->
-        (* Dirty way of avoiding the 'open in new tab/window' *)
-        Eliom_lib.debug "Mouse Event! Ctrl: %b, Button: %d"
-          (Js.to_bool me##ctrlKey) me##button
-      | _ ->
-        (get_element_exn %in_progress_animation_id) ##style##visibility <-
-          Js.string "visible";
-      end;
-      Js._true));
-  }}
 
 let color_theme =
 object
@@ -339,15 +323,23 @@ let html_of_error  poly_error =
   | e -> html_of_error_sublevel e
 
 let a_link ?(a=[]) ?fragment service content args =
-  let unique_elt =
-    let aa = a in
-    Html5.(
-             (span
-                [Html5.a ~a:aa ?fragment
-                    ~service:(service ()) content args]))
-  in
-  in_progress_animation_handler unique_elt;
-  unique_elt
+  let aa =  a in
+  let open Html5 in
+  let on_click = {{
+    let open Dom_html in
+    begin match taggedEvent _ev with
+    | MouseEvent me when me##ctrlKey = Js._true || me##shiftKey = Js._true
+                                     || me##button = 1 ->
+        (* Dirty way of avoiding the 'open in new tab/window' *)
+      Eliom_lib.debug "Mouse Event! Ctrl: %b, Button: %d"
+        (Js.to_bool me##ctrlKey) me##button
+    | _ ->
+      (get_element_exn %in_progress_animation_id) ##style##visibility <-
+        Js.string "visible"; 
+    end;
+  }} in
+  Html5.a ~a:(a_onclick on_click :: aa) ?fragment
+    ~service:(service ()) content args
 
 let menu_ul () =
   let open Html5 in
