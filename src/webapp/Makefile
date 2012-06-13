@@ -8,7 +8,7 @@ SERVER_PACKAGES := hitscoregen threads core hitscore core_extended
 
 ## Packages to be linked in the client part
 
-CLIENT_PACKAGES := oclosure
+CLIENT_PACKAGES := 
 
 ## Source files for the server part
 COMMON_FILES := \
@@ -28,7 +28,7 @@ COMMON_FILES := \
 SERVER_FILES := $(COMMON_FILES)
 CLIENT_FILES := $(COMMON_FILES)
 
-CLOSURE_CSS_NAMES= common dialog autocomplete
+# CLOSURE_CSS_NAMES= common dialog autocomplete
 
 JQUERY_MIN_JS=../../src/ext/highcharts/jquery.min.js
 HIGHCHARTS_JS=../../src/ext/highcharts/highcharts.js
@@ -63,9 +63,9 @@ export ELIOM_TYPE_DIR   := .
 
 #####################################
 
-all: byte opt js css
+all: byte opt js
 js::  ${APP_NAME}.js
-css::  ${APP_NAME}.css
+# css::  ${APP_NAME}.css
 byte:: ${APP_NAME}.cma 
 opt:: ${APP_NAME}.cmxs 
 
@@ -100,10 +100,10 @@ ${ELIOM_SERVER_DIR}/%.cmx: %.eliom
 %.cmxs: %.cmxa
 	$(ELIOMOPT) -shared -linkall -o $@ $<
 
-OCLOSURE_CSS_DIR=$(shell ocamlfind query oclosure)/closure/goog/css
-CLOSURE_CSS_FILES := $(patsubst %, ${OCLOSURE_CSS_DIR}/%.css,${CLOSURE_CSS_NAMES})
-${APP_NAME}.css: ${CLOSURE_CSS_FILES}
-	cat ${CLOSURE_CSS_FILES} > $@
+#OCLOSURE_CSS_DIR=$(shell ocamlfind query oclosure)/closure/goog/css
+#CLOSURE_CSS_FILES := $(patsubst %, ${OCLOSURE_CSS_DIR}/%.css,${CLOSURE_CSS_NAMES})
+#${APP_NAME}.css: ${CLOSURE_CSS_FILES}
+#	cat ${CLOSURE_CSS_FILES} > $@
 
 ##### Client side compilation ####
 
@@ -116,11 +116,12 @@ CLIENT_OBJS := $(patsubst %.ml,${ELIOM_CLIENT_DIR}/%.cmo, ${CLIENT_OBJS})
 ${APP_NAME}_tmp.js: ${CLIENT_OBJS}
 	${JS_OF_ELIOM} -o $@ ${CLIENT_LIBS} $^
 
-${APP_NAME}_tmp_oclosure.js: ${APP_NAME}_tmp.js
-	oclosure_req $<
+#${APP_NAME}_tmp_oclosure.js: ${APP_NAME}_tmp.js
+#	oclosure_req $<
 
-${APP_NAME}.js: ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB}
-	cat ${HIGHCHARTS_LIB} ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js > $@
+#${APP_NAME}.js: ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB}
+${APP_NAME}.js:  ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB}
+	cat ${HIGHCHARTS_LIB}  ${APP_NAME}_tmp.js > $@
 
 ${ELIOM_CLIENT_DIR}/%.cmi: %.eliom
 	${JS_OF_ELIOM} -c ${CLIENT_INC} $<

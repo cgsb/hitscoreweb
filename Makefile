@@ -15,12 +15,12 @@ mount_hitscoreweb:: _build/hitscoreweb $(TO_MOUNT)
 
 build: mount_hitscoreweb
 	ocaml setup.ml -build hitscorewebpam.mllib
-	make -C _build/hitscoreweb byte js css
+	make -C _build/hitscoreweb byte js 
 	ocaml setup.ml -build
 
 build_opt: mount_hitscoreweb
 	ocaml setup.ml -build hitscorewebpam.mllib
-	make -C _build/hitscoreweb byte opt js css
+	make -C _build/hitscoreweb byte opt js 
 	ocaml setup.ml -build
 
 static: build_opt install

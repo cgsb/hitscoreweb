@@ -5,24 +5,24 @@ open Hitscoreweb_std
 let make = make_delayed
 
 let default =
-  make (Eliom_services.service ~path:[""] ~get_params:Eliom_parameters.unit)
+  make (Eliom_service.service ~path:[""] ~get_params:Eliom_parameter.unit)
 let home =
-  make (Eliom_services.service ~path:["home"] ~get_params:Eliom_parameters.unit)
+  make (Eliom_service.service ~path:["home"] ~get_params:Eliom_parameter.unit)
 
 let hiseq_runs =
   make
-    (Eliom_services.service ~path:["hiseq_runs"] ~get_params:Eliom_parameters.unit)
+    (Eliom_service.service ~path:["hiseq_runs"] ~get_params:Eliom_parameter.unit)
 
 let flowcell =
   make
-    (Eliom_services.service ~path:["flowcell"]
-       ~get_params:Eliom_parameters.(string "serial"))
+    (Eliom_service.service ~path:["flowcell"]
+       ~get_params:Eliom_parameter.(string "serial"))
 
 let persons =
   make (
-    Eliom_services.service
+    Eliom_service.service
       ~path:["persons"] 
-      ~get_params:Eliom_parameters.(opt (bool "transpose")
+      ~get_params:Eliom_parameter.(opt (bool "transpose")
                                     ** set string "email"))
 
 type libraries_show = [ `basic | `stock | `fastq | `details ]
@@ -38,45 +38,45 @@ let string_of_libraries_show  = function
   | `fastq -> "fastq"
   | `details -> "details"
 let libraries_show_eliom_type =
-  Eliom_parameters.user_type
+  Eliom_parameter.user_type
     ~of_string:libraries_show_of_string
     ~to_string:string_of_libraries_show
   
 let libraries =
   make (
-    Eliom_services.service
+    Eliom_service.service
       ~path:["libraries"] 
-      ~get_params:Eliom_parameters.(set libraries_show_eliom_type "show"
+      ~get_params:Eliom_parameter.(set libraries_show_eliom_type "show"
                                     ** set string "qualified_name"))
 
 let evaluations =
-  make (Eliom_services.service
+  make (Eliom_service.service
           ~path:["evaluations"]
-          ~get_params: Eliom_parameters.unit)
+          ~get_params: Eliom_parameter.unit)
           
 let layout =
-  make (Eliom_services.service ~path:["layout"]
-          ~get_params:Eliom_parameters.(set string "type" ** set int "value"))
+  make (Eliom_service.service ~path:["layout"]
+          ~get_params:Eliom_parameter.(set string "type" ** set int "value"))
 
 let stylesheet =
-  make (Eliom_services.service
+  make (Eliom_service.service
           ~path:["gencore_stylesheet"]
-          ~get_params: Eliom_parameters.unit)
+          ~get_params: Eliom_parameter.unit)
     
 let doc =
-  make (Eliom_services.service
+  make (Eliom_service.service
   ~path:["doc"]
-  ~get_params:Eliom_parameters.(suffix (all_suffix "path")))
+  ~get_params:Eliom_parameter.(suffix (all_suffix "path")))
 
 
 let self =
-  make (Eliom_services.service
+  make (Eliom_service.service
           ~path:["self"]
-          ~get_params:Eliom_parameters.(opt (string "action")))
+          ~get_params:Eliom_parameter.(opt (string "action")))
 let person =
-  make (Eliom_services.service
+  make (Eliom_service.service
           ~path:["person"]
-          ~get_params:Eliom_parameters.(string "id" ** opt (string "action")))
+          ~get_params:Eliom_parameter.(string "id" ** opt (string "action")))
   
     
 let register f =
@@ -98,5 +98,5 @@ let register f =
 
 
 let register_css f =
-  Eliom_output.CssText.register 
+  Eliom_registration.CssText.register 
     ~service:(f ())

@@ -538,7 +538,7 @@ module Default_service = struct
                     information see ";
             Template.a_link Services.doc [pcdata "the FAQ"] ["help"; "faq.html"];
             pcdata " or ";
-            a ~a:[
+            core_a ~a:[
               a_hreff "https://docs.google.com/a/nyu.edu/?tab=co#folders/\
                 0B6RMw3n537F2OTc3ZjZlMzktZTY2YS00MmI4LTk0MmQtZmZlYzQ3Nzk3YTRl"]
               [pcdata "GenCore's Google-Docs"];
@@ -577,9 +577,12 @@ module Doc_service = struct
             let new_a, id =
               let already = 
                 List.find_map (to_xmlattribs a) ~f:(fun xmla ->
-                  let open XML in
-                  if aname xmla = "id" then
-                    begin match acontent xmla with
+                  let open Tyxml in
+                  (* Eliom 2.2 changed the signature of the Xml module included
+                     in Html5 disallowing the deconstruction.
+                     That's why there are these two Obj.magic. *)
+                  if aname (Obj.magic xmla: Tyxml.attrib) = "id" then
+                    begin match acontent (Obj.magic xmla: Tyxml.attrib) with
                     | AStr s -> Some s
                     | _ -> None
                     end
@@ -631,12 +634,12 @@ module Doc_service = struct
                   match content with
                   | [] -> []
                   | l -> [ol (frec l)] in
-                li (span [Eliom_output.Html5.a ~fragment:id
-                             ~service:Eliom_services.void_coservice'
+                li (span [Html5.a ~fragment:id
+                             ~service:Eliom_service.void_coservice'
                              name ()] :: next)
               | `N (id, name) ->
-                li (span [Eliom_output.Html5.a ~fragment:id
-                             ~service:Eliom_services.void_coservice'
+                li (span [Html5.a ~fragment:id
+                             ~service:Eliom_service.void_coservice'
                              name ()] :: [])
               ) in
             ol (frec !toc)
@@ -680,17 +683,17 @@ module Doc_service = struct
                 | None -> unique_id "a_id_" in
               begin match find_attr "href" attr with
               | None ->
-                [span [a ~a:[a_id id] (continue inside go_through_inline)]]
+                [span [core_a ~a:[a_id id] (continue inside go_through_inline)]]
               | Some s when String.is_prefix s ~prefix:"mailto:" ->
                 Template.anti_spam_mailto ~id ~mailto:s;
-                [span [a ~a:[a_id id; a_hreff "ah ah no-spam"]
+                [span [core_a ~a:[a_id id; a_hreff "ah ah no-spam"]
                           (continue inside go_through_inline)]]
               | Some s when String.is_prefix s ~prefix:"#" ->
-                [span [Eliom_output.Html5.a ~fragment:(String.chop_prefix_exn s "#")
-                          ~service:Eliom_services.void_coservice'
+                [span [Html5.a ~fragment:(String.chop_prefix_exn s "#")
+                          ~service:Eliom_service.void_coservice'
                           (continue inside go_through_inline) ()]]
               | Some s ->
-                [span [a ~a:[a_id id; a_hreff "%s" s]
+                [span [core_a ~a:[a_id id; a_hreff "%s" s]
                           (continue inside go_through_inline)]]
               end
             | `E (((_,"i"), _), inside) -> [i (continue inside go_through_inline)]
@@ -714,7 +717,7 @@ module Doc_service = struct
 end
 
 let () =
-  Eliom_services.register_eliom_module
+  Eliom_service.register_eliom_module
     "hitscoreweb" 
     (fun () ->
       
@@ -734,9 +737,9 @@ let () =
            404. anyway, It Works™.
         *)        
         let send ?code e =
-          Lwt.bind (Template.default (error e)) (Eliom_output.Html5.send ?code)
-        in
-        Eliom_output.set_exn_handler (function
+          Lwt.bind (Template.default (error e))
+            (Eliom_registration.Html5.send ?code) in
+        Eliom_registration.set_exn_handler (function
           | Eliom_common.Eliom_404 -> send ~code:404 `eliom_404
           | Eliom_common.Eliom_Wrong_parameter -> send `eliom_wrong_parameter
           | Eliom_common.Eliom_Typing_Error l -> send (`eliom_typing_error l)

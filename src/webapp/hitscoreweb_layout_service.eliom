@@ -30,9 +30,9 @@ type down_message =
 
 
 let caml_service =
-  make_delayed (Eliom_services.service 
+  make_delayed (Eliom_service.service 
           ~path:["layout_caml_service"]
-          ~get_params:Eliom_parameters.(caml "param" Json.t<up_message>))
+          ~get_params:Eliom_parameter.(caml "param" Json.t<up_message>))
 
 let check_access_type_and_sexp t content =
   Authentication.restrict_access (`edit `layout) >>= fun () ->
@@ -81,7 +81,7 @@ let init_caml_service ~configuration =
           (fun s -> Lwt.return (Error_string ("Error: " ^ s)))
           fmt
       in
-      Eliom_output.Caml.register ~service:(caml_service ())
+      Eliom_registration.Ocaml.register ~service:(caml_service ())
         (fun param () ->
           Lwt.bind (reply ~configuration param) (function
           | Ok o -> Lwt.return (o : down_message)
@@ -97,17 +97,16 @@ let init_caml_service ~configuration =
 {client{
 
 let sexp_area ?value () =
-  Eliom_client.Html5.of_textarea
-    (Eliom_output.Html5.raw_textarea
-       ~cols:50 ~rows:20 ?value ~name:"sexpinput" ()) 
+  Html5_to_dom.of_textarea
+    Html5.(raw_textarea ~a:[ a_cols 50; a_rows 20] ?value ~name:"sexpinput" ()) 
 
 let submit_button ?(visible=true) f =
   let open Html5 in
   let submit =
-    Eliom_output.Html5.button
+    Html5.button
       ~a:(if visible then [] else [a_style "visibility:hidden"])
       ~button_type:`Button [pcdata "submit"] in
-  let btn_elt = Eliom_client.Html5.of_button submit in
+  let btn_elt = Html5_to_dom.of_button submit in
   btn_elt##onclick <- Dom_html.handler (fun ev ->
     Lwt.ignore_result (f ev btn_elt); Js._true);
   btn_elt
@@ -128,7 +127,7 @@ let add_or_modify_sexp_interface
   let caml = caml_service () in
   let (type_name: string) = "" ^ type_name in
   (* the "" ^ _ is to please js_of_eliom's typing issues *)
-  Eliom_services.onload {{
+  Eliom_service.onload {{
     let open Html5 in
     let open Lwt in
     let open Printf in

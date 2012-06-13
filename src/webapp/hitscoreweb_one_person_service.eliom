@@ -24,18 +24,18 @@ type one_time_post_coservice_error =
 | `wrong_rights ]
 
 let one_time_post_coservice_error =
-  Eliom_references.eref ~secure:true
+  Eliom_reference.eref ~secure:true
     ~scope:Eliom_common.client_process (None: one_time_post_coservice_error option)
 
 
 let email_verification_tokens =
-  Eliom_references.eref ~secure:true
+  Eliom_reference.eref ~secure:true
     ~scope:Eliom_common.global ([]: (string * string * string) list)
 
 let email_verification_service =
-  make_delayed (Eliom_services.service
+  make_delayed (Eliom_service.service
                   ~path:["email_verification"]
-                  ~get_params:Eliom_parameters.(string "identifier"
+                  ~get_params:Eliom_parameter.(string "identifier"
                                                 ** string "new_email"
                                                 ** opt (string "old_email")
                                                 ** string "key")) 
@@ -51,7 +51,7 @@ let init_email_verification_service ~configuration =
         >>= fun can_edit ->
         if can_edit 
         then (
-          wrap_io Eliom_references.get email_verification_tokens
+          wrap_io Eliom_reference.get email_verification_tokens
           >>= fun tokens ->
           begin match List.find tokens ~f:(fun (i, _, k) -> i = id && k = key) with
           | Some (_, next, _) ->
@@ -84,7 +84,7 @@ let init_email_verification_service ~configuration =
             >>= fun () ->
             let new_tokens =
               List.filter tokens ~f:(fun (i, _, k) -> not (i = id && k = key)) in
-            wrap_io (Eliom_references.set email_verification_tokens) new_tokens
+            wrap_io (Eliom_reference.set email_verification_tokens) new_tokens
             >>= fun () ->
             return [pcdata  "Your new email was successfully verified"]
           | None ->
@@ -119,9 +119,9 @@ let password_minimum_size = 8
 }}
 
 let caml_service =
-  make_delayed (Eliom_services.service 
+  make_delayed (Eliom_service.service 
           ~path:["one_person_caml_service"]
-          ~get_params:Eliom_parameters.(caml "param" Json.t<up_message>))
+          ~get_params:Eliom_parameter.(caml "param" Json.t<up_message>))
 
 let do_edition id cap edition =
   let edition_m =
@@ -155,13 +155,13 @@ let add_or_change_email ~id ?current ~next person =
     b64#put_string s;
     b64#get_string in
   let service = 
-    Eliom_services.preapply (email_verification_service ())
+    Eliom_service.preapply (email_verification_service ())
       (id, (next, (current, key))) in
-  let uri = Eliom_output.Html5.make_string_uri ~absolute:true ~service () in
+  let uri = Html5.make_string_uri ~absolute:true ~service () in
   wrap_io Lwt.(fun () ->
-    Eliom_references.get email_verification_tokens
+    Eliom_reference.get email_verification_tokens
     >>= fun tokens ->
-    Eliom_references.set email_verification_tokens ((id, next, key) :: tokens)) ()
+    Eliom_reference.set email_verification_tokens ((id, next, key) :: tokens)) ()
   >>= fun () ->
   send_mail ~sender:"gencore.bio@nyu.edu"
     ~subject:"Gencore Email Verification"
@@ -234,7 +234,7 @@ let init_caml_service ~configuration =
           (fun s -> Lwt.fail (Failure ("wrong reply from server: " ^ s)))
           fmt
       in
-      Eliom_output.Caml.register ~service:(caml_service ())
+      Eliom_registration.Ocaml.register ~service:(caml_service ())
         (fun param () ->
           Lwt.bind (reply ~configuration param) (function
           | Ok o -> Lwt.return (o : down_message)
@@ -247,7 +247,7 @@ let change_password_interface person_email =
     [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
         [pcdata "You may change your GenCore password"]] in
   let caml = caml_service () in
-  Eliom_services.onload {{
+  Eliom_service.onload {{
     let open Html5 in
     let open Lwt in
     try
@@ -264,7 +264,7 @@ let change_password_interface person_email =
               Js.string "Please, enter a <strong>good</strong> password twice: ";
             the_span##classList##remove(Js.string "like_link"); 
             let pw1, pw2, submit =
-              let open Eliom_output.Html5 in
+              let open Html5 in
               (string_input ~input_type:`Password (),
                string_input ~input_type:`Password (),
                button ~a:[a_style "visibility:hidden"]
@@ -293,11 +293,11 @@ let change_password_interface person_email =
                     );
                   Js._true)
             in
-            let i_elt_1 = Eliom_client.Html5.of_input pw1 in
-            let i_elt_2 = Eliom_client.Html5.of_input pw2 in
-            let btn_elt = Eliom_client.Html5.of_button submit in
+            let i_elt_1 = Html5_to_dom.of_input pw1 in
+            let i_elt_2 = Html5_to_dom.of_input pw2 in
+            let btn_elt = Html5_to_dom.of_button submit in
             let msg_elt =
-              Eliom_client.Html5.of_element
+              Html5_to_dom.of_element
                 (span ~a:[a_style " color: red; "] []) in
             i_elt_1##onchange  <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
             i_elt_1##onkeyup   <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
@@ -354,7 +354,7 @@ let change_emails_interface person_email secondary_emails =
     [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
         [pcdata "You may change your emails"]] in
   let caml = caml_service () in
-  Eliom_services.onload {{
+  Eliom_service.onload {{
     let open Html5 in
     let open Lwt in
     try
@@ -365,8 +365,8 @@ let change_emails_interface person_email secondary_emails =
         
         let change_email_button email =
           let span = 
-            unique (span ~a:[a_class ["like_link"]] [pcdata "change"]) in
-          let elt = Eliom_client.Html5.of_element span in
+            (span ~a:[a_class ["like_link"]] [pcdata "change"]) in
+          let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
             dbg "change %s" email;
             elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
@@ -374,11 +374,11 @@ let change_emails_interface person_email secondary_emails =
             elt##classList##remove(Js.string "like_link"); 
             elt##style##fontWeight <- Js.string "bold";
             let field, submit =
-              let open Eliom_output.Html5 in
+              let open Html5 in
               (string_input ~input_type:`Text ~value:email (),
                button ~button_type:`Button [pcdata "submit"]) in
-            let submit_elt = Eliom_client.Html5.of_element submit in
-            let field_elt = Eliom_client.Html5.of_input field in
+            let submit_elt = Html5_to_dom.of_element submit in
+            let field_elt = Html5_to_dom.of_input field in
             submit_elt##onclick <- Dom_html.(handler (fun ev ->
               elt##innerHTML <- Js.string "<b>In progress …</b>";
               Lwt.ignore_result 
@@ -414,9 +414,9 @@ let change_emails_interface person_email secondary_emails =
 
         let add_email_button person_email =
           let span = 
-            unique (span ~a:[a_class ["like_link"]]
-                      [pcdata "add an email address"]) in
-          let elt = Eliom_client.Html5.of_element span in
+            (span ~a:[a_class ["like_link"]]
+               [pcdata "add an email address"]) in
+          let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
             dbg "add email";
             elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
@@ -424,11 +424,11 @@ let change_emails_interface person_email secondary_emails =
             elt##classList##remove(Js.string "like_link"); 
             elt##style##fontWeight <- Js.string "bold";
             let field, submit =
-              let open Eliom_output.Html5 in
+              let open Html5 in
               (string_input ~input_type:`Text (),
                button ~button_type:`Button [pcdata "submit"]) in
-            let submit_elt = Eliom_client.Html5.of_element submit in
-            let field_elt = Eliom_client.Html5.of_input field in
+            let submit_elt = Html5_to_dom.of_element submit in
+            let field_elt = Html5_to_dom.of_input field in
             submit_elt##onclick <- Dom_html.(handler (fun ev ->
               elt##innerHTML <- Js.string "<b>In progress …</b>";
               Lwt.ignore_result 
@@ -464,8 +464,8 @@ let change_emails_interface person_email secondary_emails =
           
         let set_primary_email_button email =
           let span = 
-            unique (span ~a:[a_class ["like_link"]] [pcdata "set as primary"]) in
-          let elt = Eliom_client.Html5.of_element span in
+            (span ~a:[a_class ["like_link"]] [pcdata "set as primary"]) in
+          let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
             dbg "set_primary_email_button %s" email;
             elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
@@ -498,8 +498,8 @@ let change_emails_interface person_email secondary_emails =
             
         let delete_email_button email =
           let span = 
-            unique (span ~a:[a_class ["like_link"]] [pcdata "delete"]) in
-          let elt = Eliom_client.Html5.of_element span in
+            (span ~a:[a_class ["like_link"]] [pcdata "delete"]) in
+          let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
             dbg "delete_email_button %s" email;
             elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
@@ -538,7 +538,7 @@ let change_emails_interface person_email secondary_emails =
               Js.string "Please, configure your email addresses: ";
             the_span##classList##remove(Js.string "like_link"); 
             let to_attach =
-              Eliom_client.Html5.of_div
+              Html5_to_dom.of_div
                 (div [ul
                          (li [pcdata %person_email;
                               pcdata " (primary) → ";
@@ -565,9 +565,9 @@ let change_emails_interface person_email secondary_emails =
 let make_view_page ~home ~configuration person =
   let open Html5 in
   let open Template in
-  wrap_io Eliom_references.get one_time_post_coservice_error
+  wrap_io Eliom_reference.get one_time_post_coservice_error
   >>= fun potential_error_to_display ->
-  wrap_io (Eliom_references.set one_time_post_coservice_error) None
+  wrap_io (Eliom_reference.set one_time_post_coservice_error) None
   >>= fun () ->
   with_database ~configuration (fun ~dbh ->
     let open Layout.Record_person in
@@ -649,11 +649,11 @@ let make_view_page ~home ~configuration person =
 
 
 let one_time_post_coservice ~redirection ~configuration person =
-  Eliom_output.Redirection.register_post_coservice
+  Eliom_registration.Redirection.register_post_coservice
     ~scope:Eliom_common.session
     ~max_use:1
     ~fallback:Services.(home ())
-    ~post_params:Eliom_parameters.(
+    ~post_params:Eliom_parameter.(
       string "print_name"
       ** string "given_name"
       ** string "middle_name"
@@ -689,7 +689,7 @@ let one_time_post_coservice ~redirection ~configuration person =
          | Ok () ->
            return redirection
          | Error e ->
-           Eliom_references.set one_time_post_coservice_error (Some e)
+           Eliom_reference.set one_time_post_coservice_error (Some e)
            >>= fun () ->
            return redirection)))
 
@@ -706,7 +706,7 @@ let make_edit_page ~home ~configuration person =
       let id = not_null_id () in
       span [
         pcdataf "%s: " item_name;
-        Eliom_output.Html5.string_input
+        Html5.string_input
           ~input_type:`Text ~a:[ a_id id; ] ~name ~value ();
         span ~a:[ a_id (id ^ "not_null_error_message");
                   a_style "visibility: hidden; color: red";
@@ -718,7 +718,7 @@ let make_edit_page ~home ~configuration person =
       let post_coservice =
         one_time_post_coservice ~configuration
           ~redirection:(home "view" ()) person in
-      Eliom_output.Html5.(
+      Eliom_registration.Html5.(
         post_form ~service:post_coservice
           (fun (print_name, (given_name, (middle_name, (family_name, nickname)))) ->
             [ul [
@@ -736,7 +736,7 @@ let make_edit_page ~home ~configuration person =
                   string_input ~input_type:`Text ~name:nickname
                     ?value:person.g_value.nickname ();];
              ]; 
-             Eliom_output.Html5.string_input
+             Html5.string_input
                ~a:[ a_id "edit_submit"] ~input_type:`Submit ~value:"Go" ();
              span ~a:[a_id "edit_error_message";
                       a_style "visibility: hidden; color: red; font-weight: bold;"]
@@ -744,7 +744,7 @@ let make_edit_page ~home ~configuration person =
             ]) ())
     in
 
-    Eliom_services.onload {{
+    Eliom_service.onload {{
       let open Dom_html in
       let hide_exn id =
         (get_element_exn id)##style##visibility <- Js.string "hidden"; in
@@ -822,7 +822,7 @@ let make_self ~configuration =
           >>= fun person ->
           make_generic ~configuration person action
             ~home:(fun a () ->
-              Eliom_services.preapply Services.(self ()) (Some a))
+              Eliom_service.preapply Services.(self ()) (Some a))
       end)
     
 let make_person ~configuration =
@@ -833,6 +833,6 @@ let make_person ~configuration =
         >>= fun person ->
         make_generic ~configuration person action
           ~home:(fun a () ->
-            Eliom_services.preapply Services.(person ()) (id, Some a))
+            Eliom_service.preapply Services.(person ()) (id, Some a))
       end)
       

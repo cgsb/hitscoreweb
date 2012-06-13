@@ -4,7 +4,7 @@ include Core.Std
 let (|>) x f = f x
 {shared{
 module Html5 = struct
-  include Eliom_pervasives.HTML5.M
+  include Eliom_content.Html5.D
   open Printf 
   let pcdataf fmt = ksprintf pcdata fmt
 
@@ -12,13 +12,18 @@ module Html5 = struct
 
   let strongf fmt = ksprintf (fun s -> strong [pcdata s]) fmt
 
-  let a_hreff fmt = ksprintf (fun s -> a_href (XML.uri_of_string s)) fmt
+  let a_hreff fmt = ksprintf (fun s -> a_href (Xml.uri_of_string s)) fmt
 
+  let core_a = Eliom_content_core.Html5.D.a
 
 end
 }}
+{client{
+module Html5_to_dom = Eliom_content.Html5.To_dom
+}}
+module Tyxml = Xml
 module Output_app =
-  Eliom_output.Eliom_appl (struct
+  Eliom_registration.App (struct
     let application_name = "hitscoreweb"
   end)
 
@@ -162,7 +167,7 @@ let unique_id: string -> string =
 
 (* This is still not perfect as it goes to the top of the page *)
 let reload () =
-  Eliom_client.change_page ~service: Eliom_services.void_coservice' () ()
+  Eliom_client.change_page ~service: Eliom_service.void_coservice' () ()
 
 }}
 

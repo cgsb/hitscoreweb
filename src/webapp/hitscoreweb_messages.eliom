@@ -2,7 +2,7 @@ open Hitscoreweb_std
 open Html5
   
 class head_cell
-  (cell: HTML5_types.span_content_fun Html5.elt list)
+  (cell: Html5_types.span_content_fun Html5.elt list)
   (tooltip: string) =
 object (self)
   method cell = cell

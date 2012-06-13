@@ -7,8 +7,8 @@ module Authentication = Hitscoreweb_authentication
 module Msg = Hitscoreweb_messages
 
 let make_unsafe_eval_string_onload to_run =
-  Eliom_services.onload {{
-    Eliom_pervasives.debug "Running %S" %to_run;
+  Eliom_service.onload {{
+    Eliom_lib.debug "Running %S" %to_run;
     Js.Unsafe.eval_string %to_run
   }}
 
@@ -38,18 +38,18 @@ let in_progress_animation_div () =
                     background-color: rgba(200, 200, 200, 0.5);";
            a_id in_progress_animation_id ]
     [ img 
-        ~src:(uri_of_string "images/violet_loader.gif")
+        ~src:(uri_of_string (fun () -> "images/violet_loader.gif"))
         ~alt:"in progress notification" () ]
 
 let in_progress_animation_handler unique_elt = 
-  Eliom_services.onload {{
-    (Eliom_client.Html5.of_element %unique_elt)##onclick
+  Eliom_service.onload {{
+    (Html5_to_dom.of_element %unique_elt)##onclick
     <- Dom_html.(handler (fun ev ->
       begin match taggedEvent ev with
       | MouseEvent me when me##ctrlKey = Js._true || me##shiftKey = Js._true
                            || me##button = 1 ->
         (* Dirty way of avoiding the 'open in new tab/window' *)
-        Eliom_pervasives.debug "Mouse Event! Ctrl: %b, Button: %d"
+        Eliom_lib.debug "Mouse Event! Ctrl: %b, Button: %d"
           (Js.to_bool me##ctrlKey) me##button
       | _ ->
         (get_element_exn %in_progress_animation_id) ##style##visibility <-
@@ -341,9 +341,9 @@ let html_of_error  poly_error =
 let a_link ?(a=[]) ?fragment service content args =
   let unique_elt =
     let aa = a in
-    HTML5.M.(unique
+    Html5.(
              (span
-                [Eliom_output.Html5.a ~a:aa ?fragment
+                [Html5.a ~a:aa ?fragment
                     ~service:(service ()) content args]))
   in
   in_progress_animation_handler unique_elt;
@@ -382,8 +382,8 @@ let default ?(title) content =
     Html5.(
       html
         (head (title (pcdata page_title)) [
-          link ~rel:[`Stylesheet] ~href:(uri_of_string "hitscoreweb.css") ();
-          link ~rel:[`Stylesheet] ~href:(Eliom_output.Html5.make_uri
+          (* link ~rel:[`Stylesheet] ~href:(uri_of_string "hitscoreweb.css") (); *)
+          link ~rel:[`Stylesheet] ~href:(Html5.make_uri
                                            ~service:Services.(stylesheet ()) ()) ();
         ])
         (body [
@@ -425,10 +425,10 @@ let default ?(title) content =
     Lwt.return html
   | Error e -> error_page (html_of_error e))
 
-type table_cell_html5 = HTML5_types.flow5 Html5.elt list
+type table_cell_html5 = Html5_types.flow5 Html5.elt list
 
 type table_cell =
-[ `head of HTML5_types.span_content_fun Html5.elt list
+[ `head of Html5_types.span_content_fun Html5.elt list
 | `head_cell of Msg.head_cell
 | `text of table_cell_html5
 | `sortable of string * table_cell_html5
@@ -439,11 +439,11 @@ type table_cell =
   
 type content =
 | Description of
-    (HTML5_types.phrasing Html5.elt * HTML5_types.flow5 Html5.elt) list 
-| Section of HTML5_types.phrasing Html5.elt * content 
+    (Html5_types.phrasing Html5.elt * Html5_types.flow5 Html5.elt) list 
+| Section of Html5_types.phrasing Html5.elt * content 
 | List of content list
 | Table of table_cell list list
-| Paragraph of HTML5_types.flow5 Html5.elt list
+| Paragraph of Html5_types.flow5 Html5.elt list
     
 let content_description l = Description l
 let content_description_opt l = Description (List.filter_opt l)
@@ -931,7 +931,7 @@ let involution =
         
 let anti_spam_mailto ~id ~mailto =
   let (encoded:string) = (involution mailto : string) in
-  Eliom_services.onload {{
+  Eliom_service.onload {{
     let open Dom_html in
     begin match opt_tagged (document##getElementById (Js.string %id)) with
     | Some (A anchor) ->
