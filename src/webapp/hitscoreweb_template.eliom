@@ -258,36 +258,6 @@ let html_of_error_sublevel poly_error =
           sprintf "cannot find find user %s with key %s" id key)]
   | `more_than_one_flowcell_called serial_name ->
     [pcdataf "More than one flowcell is called: %s" serial_name]
-(*
-
-  | `layout_inconsistency (place, problem) ->
-    let place_presentation =
-      match place with
-      | `Record r -> [ pcdata "The record "; code [pcdata r ]]  
-      | `File_system ->   [ pcdata "The File-System"]
-      | `Function f -> [ pcdata "The function "; code [pcdata f]]
-    in
-    let error_message =
-      match problem with
-      | `select_did_not_return_one_tuple (s, i) ->
-        [code [ksprintf pcdata
-                  "(select_did_not_return_one_tuple %s %d)" s i]]
-      | `more_than_one_person_with_that_email ->
-        [pcdata "There is (are?) more than one person with that email address."]
-      | `more_than_one_flowcell_called s ->
-        [ksprintf pcdata "There are more than one flowcells called %s" s]
-      | `insert_did_not_return_one_id (s, l) ->
-        [pcdataf "Insert in %s did not return one id but %d." s (List.length l)]
-      | `no_last_modified_timestamp _ ->
-        [pcdataf "Missing last-modified information."]
-      | `insert_cache_did_not_return_one_id (s, l) ->
-        [pcdataf "Insert-cache in %s did not return one id but %d." s (List.length l)]
-    in
-    ([pcdata "Layout Inconsistency in "]
-     @ place_presentation
-     @ [pcdata ":"; br ()]
-     @ error_message)
-*)
   | `Layout l -> html_of_layout_error l
   | `db_backend_error _
   | `result_not_unique _ 
@@ -304,22 +274,6 @@ let html_of_error  poly_error =
   match poly_error with
   | `broker_error e -> html_of_error_sublevel e
   | `Layout_service e -> html_of_error_sublevel e
-    (*
-  | `layout_edit_coservice_error e ->
-    pcdata "Error while editing: "
-    :: (match e with
-    | `fields_wrong_typing -> [pcdata "Fields have wrong types"]
-      (*
-     | `fields_wrong_typing -> [pcdata "Fields have wrong types"]
-     | `wrong_id -> [pcdata "Could not get a decent g_id value"]
-     | `wrong_rights ->
-       [pcdata "You don't have enough access rights to do edit this.."]
-     | `layout_inconsistency (`Record "log", _) -> 
-       [pcdata "Error while logging (chances are that the editing actually worked!)"]
-     | `broker_not_initialized
-     |  `io_exn _ | `pg_exn _ as e -> 
-       html_of_error_sublevel e *)
-    ) *)
   | e -> html_of_error_sublevel e
 
 let a_link ?(a=[]) ?fragment service content args =
@@ -722,7 +676,9 @@ module Highchart = struct
   for(i=0; i<quartile1.length; i++)
   {
      
-       chart.renderer.rect(quartile3[i].plotX-semiwidth+chart.plotLeft-translate,quartile3[i].plotY+chart.plotTop,fwidth,quartile1[i].plotY-quartile3[i].plotY, 0)
+       chart.renderer.rect(quartile3[i].plotX-semiwidth+chart.plotLeft-translate,
+                           quartile3[i].plotY+chart.plotTop,
+                           fwidth,quartile1[i].plotY-quartile3[i].plotY, 0)
           .attr({
           'stroke-width': stroke_width,
           stroke: '#aaa',
@@ -731,7 +687,10 @@ module Highchart = struct
       })
       .add();  
 
-      chart.renderer.path(['M',max[i].plotX-semiwidth+chart.plotLeft-translate,max[i].plotY+chart.plotTop,'L',max[i].plotX+semiwidth+chart.plotLeft-translate,max[i].plotY+chart.plotTop])
+      chart.renderer.path(['M',max[i].plotX-semiwidth+chart.plotLeft-translate,
+                          max[i].plotY+chart.plotTop,'L',
+                          max[i].plotX+semiwidth+chart.plotLeft-translate,
+                          max[i].plotY+chart.plotTop])
           .attr({
           'stroke-width': stroke_width,
           stroke: 'blue',
@@ -739,7 +698,10 @@ module Highchart = struct
       })
       .add();  
       
-              chart.renderer.path(['M',median[i].plotX-semiwidth+chart.plotLeft-translate,median[i].plotY+chart.plotTop,'L',median[i].plotX+semiwidth+chart.plotLeft-translate,median[i].plotY+chart.plotTop])
+     chart.renderer.path(['M',median[i].plotX-semiwidth+chart.plotLeft-translate,
+                         median[i].plotY+chart.plotTop,'L',
+                         median[i].plotX+semiwidth+chart.plotLeft-translate,
+                         median[i].plotY+chart.plotTop])
           .attr({
           'stroke-width': stroke_width,
           stroke: 'green',
@@ -748,7 +710,10 @@ module Highchart = struct
       .add();  
       
       
-              chart.renderer.path(['M',min[i].plotX-semiwidth+chart.plotLeft-translate,min[i].plotY+chart.plotTop,'L',min[i].plotX+semiwidth+chart.plotLeft-translate,min[i].plotY+chart.plotTop])
+     chart.renderer.path(['M',min[i].plotX-semiwidth+chart.plotLeft-translate,
+                         min[i].plotY+chart.plotTop,'L',
+                         min[i].plotX+semiwidth+chart.plotLeft-translate,
+                         min[i].plotY+chart.plotTop])
           .attr({
           'stroke-width': stroke_width,
           stroke: 'red',
@@ -756,7 +721,10 @@ module Highchart = struct
       })
       .add();
 
-              chart.renderer.path(['M',min[i].plotX+chart.plotLeft-translate,min[i].plotY+chart.plotTop,'L',max[i].plotX+chart.plotLeft-translate,max[i].plotY+chart.plotTop])
+     chart.renderer.path(['M',min[i].plotX+chart.plotLeft-translate,
+                     min[i].plotY+chart.plotTop,'L',
+                     max[i].plotX+chart.plotLeft-translate,
+                     max[i].plotY+chart.plotTop])
           .attr({
           'stroke-width': stroke_width,
           stroke: '#aaa',
