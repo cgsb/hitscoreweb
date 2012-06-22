@@ -42,6 +42,50 @@ module Xml_tree = struct
     input_doc_tree ~el ~data i
 end
 
+  
+let log_session_info =
+  Eliom_reference.eref ~scope:Eliom_common.session "NO-SESSION"
+
+let log_function  =
+  ref (None : (string -> unit Lwt.t) option)
+
+let log s =
+  begin match !log_function with
+  | None -> 
+    let open Lwt in
+    let file_name =
+      Filename.(
+        concat
+          (dirname (Ocsigen_messages.error_log_path ())) "hitscoreweb.log") in
+    (* eprintf "logging to %s\n%!" file_name; *)
+    Lwt_log.file ~mode:`Append
+      ~template:"$(message)"
+      ~file_name ()
+    >>= fun file_logger ->
+    let lwt_log s = Lwt_log.notice ~logger:file_logger s in
+    log_function := Some lwt_log;
+    return (Ok lwt_log)
+  | Some f -> return f 
+  end
+  >>= fun lwt_log ->
+  begin
+    try (* Hackish way of knowing is session info is available. *)
+      if Eliom_state.(
+        volatile_data_state_status ~scope:Eliom_common.session ()
+        = Alive_state)
+      then
+        wrap_io Eliom_reference.get log_session_info
+      else 
+        return "NO-SESSION"
+    with
+      e -> return "NO-SESSION"
+  end
+  >>= fun session_info ->
+  wrap_io lwt_log (sprintf "[%s][%s] %s" Time.(now () |! to_string) session_info s)
+
+let logf fmt = ksprintf log fmt
+
+  
 (*
   https://bitbucket.org/yminsky/ocaml-core/src/c0e9df7b574d/base/core/extended/lib/sendmail.mli
 *)

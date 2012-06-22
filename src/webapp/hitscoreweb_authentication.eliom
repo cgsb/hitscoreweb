@@ -116,7 +116,11 @@ let get_configuration () =
 let set_state s =
   let module LRP = Layout.Record_person in
   let prf fmt =
-    ksprintf Ocsigen_messages.accesslog ("Authentication-state: " ^^ fmt) in
+    ksprintf (fun s ->
+      Ocsigen_messages.accesslog ("Authentication-state: " ^ s);
+      wrap_io (Eliom_reference.set log_session_info) s >>= fun () ->
+      logf "Auth-state: %s" s
+    ) fmt in
   begin match s with
   | `nothing -> prf "NOTHING"
   | `user_logged u -> prf "USER-LOGGED: %d" u.person.LRP.id
@@ -132,7 +136,8 @@ let set_state s =
       | `broker_not_initialized -> "broker_not_initialized"
       | `login_not_found s -> sprintf "login_not_found: %S" s
       | `person_not_unique s -> sprintf "person_not_unique: %S" s)
-  end;
+  end
+  >>= fun () ->
   let on_exn e = `auth_state_exn e in
   wrap_io ~on_exn Eliom_reference.get authentication_history
   >>= fun ah ->
