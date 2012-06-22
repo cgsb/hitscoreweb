@@ -82,7 +82,7 @@ let global_hitscore_configuration = ref None
 
 let config
     ?(authentication=`pam "login") ?(debug=false)
-    ?ssl
+    ?ssl ~session_timeout
     ?(port=80) ~runtime_root ?conf_root ?ssl_dir
     ~static_dirs ?log_root kind output_string =
   let out = output_string in
@@ -102,8 +102,10 @@ let config
     <extension findlib-package=\"ocsigenserver.ext.ocsipersist-sqlite\">
       <database file=\"%s/ocsidb\"/>
     </extension>
-    <extension findlib-package=\"eliom.server\"/> "
-        runtime_root
+    <extension findlib-package=\"eliom.server\">
+       <volatiletimeout value=\"%d\"/></extension>
+   "
+        runtime_root session_timeout
     | `Static ->
       sprintf "
     <extension name=\"staticmod\"/>
@@ -181,7 +183,8 @@ let syscmdf fmt =
 
 let syscmd_exn s = syscmd s |> Result.ok_exn
 
-let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
+let testing ~session_timeout
+    ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
   let runtime_root = "/tmp/hitscoreweb" in
   let www_dir =
     Option.(bind !global_hitscore_configuration
@@ -196,7 +199,7 @@ let testing ?authentication ?debug ?ssl ?ssl_dir ?(port=8080) kind =
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
   with_file (sprintf "%s/hitscoreweb.conf" runtime_root)
-    ~f:(fun o -> config ?authentication ?ssl ?ssl_dir
+    ~f:(fun o -> config ~session_timeout ?authentication ?ssl ?ssl_dir
       ?debug ~static_dirs:[runtime_root ^ "/static"; www_dir]
       ~port ~runtime_root kind (output_string o));
   syscmdf "cp _build/hitscoreweb/hitscoreweb.js %s/static/" 
@@ -335,7 +338,7 @@ exit 0
   output_string esac
 
 
-let rpm_build ?authentication ?(release=1) ?ssl ?ssl_dir () =
+let rpm_build ~session_timeout ?authentication ?(release=1) ?ssl ?ssl_dir () =
   let () =
     match Unix.system 
       "test \"`ocamlfind list | grep batteries | grep 1.4 | wc -l`\" -eq 0"
@@ -392,7 +395,8 @@ let rpm_build ?authentication ?(release=1) ?ssl ?ssl_dir () =
     ~f:(fun o -> output_string o (mime_types));
 
   with_file conf_tmp ~f:(fun o -> 
-    config ~port:80 ~runtime_root ~conf_root ?ssl ?ssl_dir ?authentication
+    config ~session_timeout
+      ~port:80 ~runtime_root ~conf_root ?ssl ?ssl_dir ?authentication
       ~static_dirs:[static_dir;  static_www]
       ~log_root:log_dir `Static (output_string o));
   
@@ -518,6 +522,7 @@ let () =
     let ssl_cert, ssl_key = ref "", ref "" in
     let ssl_dir = ref None in
     let pam_service = ref "gencore" in
+    let session_timeout = ref 172800 in
     let options = [
       (`run, "-port", Arg.Set_int port,
        sprintf "p\n\tPort number (default: %d), \
@@ -531,6 +536,9 @@ let () =
         (default is the same as the one used for hitscoreweb.conf)");
       (`all, "-pam", Arg.String (fun s -> pam_service := s),
        sprintf "<service>\n\tSet the PAM service used (default %S)" !pam_service);
+      (`all, "-session-timeout", Arg.Set_int session_timeout,
+       sprintf "<int-secs>\n\tSet the session-timeout (default %d)"
+         !session_timeout);
     ] in
     let anon_args = ref [] in
     let anon s = anon_args := s :: !anon_args in
@@ -556,10 +564,18 @@ let () =
       | "", "" -> None
       | c, k -> Some (c,k) in
     let authentication = `pam !pam_service in
+    let session_timeout = !session_timeout in
     begin match cmd with
-    | "test"  -> testing ~port:!port ?ssl ?ssl_dir:!ssl_dir ~authentication ~debug:true `Ocsigen
-    | "static" -> testing ~port:!port ?ssl ?ssl_dir:!ssl_dir ~authentication `Static
-    | "rpm" -> rpm_build ~release:!rpm_release ?ssl ?ssl_dir:!ssl_dir ~authentication ()
-    | "sysv" -> sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
+    | "test"  ->
+      testing ~port:!port ~session_timeout
+        ?ssl ?ssl_dir:!ssl_dir ~authentication ~debug:true `Ocsigen
+    | "static" ->
+      testing ~port:!port ?ssl ~session_timeout
+        ?ssl_dir:!ssl_dir ~authentication `Static
+    | "rpm" ->
+      rpm_build ~release:!rpm_release ~session_timeout
+        ?ssl ?ssl_dir:!ssl_dir ~authentication ()
+    | "sysv" ->
+      sysv_init_file ~path_to_binary:"/bin/hitscoreweb" print_string
     | not_found -> eprintf "Unknown command: %s.\n" not_found
     end
