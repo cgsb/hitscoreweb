@@ -846,6 +846,7 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);
 
+      logf "All services are registered" |! Lwt.ignore_result
       
     )
 

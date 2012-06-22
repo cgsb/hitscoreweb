@@ -22,7 +22,9 @@ let rec update  ~configuration () =
   with_database configuration (fun ~dbh ->
     begin match !_global_broker with
     | Some b ->
-      Broker.reload b ~dbh ~configuration 
+      Broker.reload b ~dbh ~configuration
+      >>= fun () ->
+      logf "Broker reloaded"
     | None -> return ()
     end)
   >>= fun () ->
@@ -39,6 +41,7 @@ let init ~loop_time ~configuration () =
        (fun () -> Lwt_mutex.unlock broker_mutex)) in
     Broker.create ~mutex ~dbh ~configuration ()
     >>= fun broker ->
+    logf "Broker created" >>= fun () ->
     _global_broker := Some broker;
     return ())
   >>= fun () ->

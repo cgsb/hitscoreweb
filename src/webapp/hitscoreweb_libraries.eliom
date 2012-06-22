@@ -217,6 +217,7 @@ let make_classy_information ~configuration ~dbh =
                    method preparator = preparator end))
   >>= fun libraries ->
   let created = Time.now () in
+  logf "{libraries} Static info updated" >>= fun () ->
   return (object (self)
     method creation_started_on = creation_started_on
     method created_on = created 

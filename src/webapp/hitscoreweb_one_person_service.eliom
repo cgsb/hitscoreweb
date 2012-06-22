@@ -4,6 +4,8 @@ open Hitscoreweb_std
 open Printf
 }}
 
+let logf fmt = logf ("{one-person} " ^^ fmt)
+  
 module Data_access = Hitscoreweb_data_access
 
 module Queries = Hitscoreweb_queries
@@ -130,21 +132,47 @@ let do_edition id cap edition =
     Authentication.authorizes (`edit (cap person))
     >>= fun can_edit ->
     if can_edit 
-    then (edition person >>= fun () -> return Success)
-    else
+    then (edition person >>= fun () ->
+          logf "Edition of %s successful" id >>= fun () ->
+          return Success)
+    else (
+      logf "Attempt to modify %s with authorization" id
+      >>= fun () ->
       return (Error_string "Trying to mess around? \
-                    You do not have the right to modify this")
+                    You do not have the right to modify this"))
   in
+  let informationless_error = Error_string "Edition error … deeply sorry." in
   double_bind edition_m ~ok:return
     ~error:(function
     | `cannot_find_secondary_email ->
+      logf "`cannot_find_secondary_email for %s" id >>= fun () ->
       return (Error_string "Did not find that secondary email")
     | `wrong_parameter s ->
+      logf "`wrong_parameter for %s: %S" id s >>= fun () ->
       return (Error_string (sprintf "Wrong Parameter(s): %s" s))
-    | `email_verification_in_progress (42, next) ->
+    | `email_verification_in_progress (_, next) ->
+      logf "`email_verification_in_progress for %s" id >>= fun () ->
       return (Email_verification_in_progress (40, next))
-    | e ->
-      return (Error_string "Edition error … deeply sorry."))
+    | `io_exn e | `auth_state_exn e | `sendmail e ->
+      logf "exn for %s: %s" id Exn.(to_string e) >>= fun () ->
+      return (informationless_error)
+    | `person_not_found p ->
+      logf "Person %S not found (edition for %s)" p id
+      >>= fun () ->
+      return informationless_error
+    | `person_not_unique p ->
+      logf "Person %S not unique (edition for %s)" p id
+      >>= fun () ->
+      return informationless_error
+    | `broker_not_initialized | `broker_error _ ->
+      logf "Broker error (edition for %s)" id
+      >>= fun () ->
+      return informationless_error
+    | `db_backend_error _ ->
+      logf "DB-Backend error (edition for %s)" id
+      >>= fun () ->
+      return informationless_error
+    )
 
 let add_or_change_email ~id ?current ~next person =
   let key =
@@ -665,11 +693,11 @@ let one_time_post_coservice ~redirection ~configuration person =
       let modification =
         Authentication.authorizes (`edit (`names_of_person person))
         >>= fun can_edit ->
+        let open Layout.Record_person in
         if can_edit 
         then 
           if given_name <> "" && family_name <> ""
           then 
-            let open Layout.Record_person in
             let print_name = if print_name = "" then None else Some print_name in
             let middle_name = if middle_name = "" then None else Some middle_name in
             let nickname = if nickname = "" then None else Some nickname in
@@ -679,9 +707,18 @@ let one_time_post_coservice ~redirection ~configuration person =
                     middle_name; family_name; nickname; } in
               { person with g_value} in
             with_database ~configuration (Data_access.modify_person ~person)
+             >>= fun () ->
+            logf "Edition of %d (%s)'s names successful" person.g_id
+              person.g_value.email
           else
+            logf "Error in Edition of %d (%s)'s names: `non_emptiness_violation"
+              person.g_id person.g_value.email
+             >>= fun () ->
             error `non_emptiness_violation
         else 
+            logf "Error in Edition of %d (%s)'s names: `wrong_rights"
+              person.g_id person.g_value.email
+             >>= fun () ->
           error `wrong_rights
       in 
       Lwt.(
