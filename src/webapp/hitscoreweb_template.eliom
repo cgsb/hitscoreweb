@@ -282,8 +282,8 @@ let a_link ?(a=[]) ?fragment service content args =
   let on_click = {{
     let open Dom_html in
     begin match taggedEvent _ev with
-    | MouseEvent me when me##ctrlKey = Js._true || me##shiftKey = Js._true
-                                     || me##button = 1 ->
+    | MouseEvent me when me##ctrlKey = Js._true || me##metaKey = Js._true
+                      || me##shiftKey = Js._true || me##button = 1 ->
         (* Dirty way of avoiding the 'open in new tab/window' *)
       Eliom_lib.debug "Mouse Event! Ctrl: %b, Button: %d"
         (Js.to_bool me##ctrlKey) me##button
