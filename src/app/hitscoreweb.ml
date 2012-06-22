@@ -112,7 +112,8 @@ let config
     <extension name=\"ocsipersist\">
       <database file=\"%s/ocsidb\"/>
     </extension>
-    <extension name=\"eliom\"/>" runtime_root
+    <extension name=\"eliom\">
+       <volatiletimeout value=\"%d\"/></extension> " runtime_root session_timeout
   in
   let hitscore_module =
     match kind with
