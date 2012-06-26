@@ -254,8 +254,8 @@ module Flowcell_service = struct
         `head_cell Msg.lane;
         `head_cell Msg.library_name;
         `head_cell Msg.number_of_reads;
-        `head_cell Msg.percent_bases_over_q30;
         `head_cell Msg.zero_mismatch;
+        `head_cell Msg.percent_bases_over_q30;
         `head_cell Msg.mean_qs] in
       let other_rows =
         List.mapi (Array.to_list ls_la) (fun i ls_l ->
