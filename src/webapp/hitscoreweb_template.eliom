@@ -163,6 +163,7 @@ let html_of_layout_error (where, what) =
   [pcdataf "LAYOUT-ERROR (%s): %s"
       (match where with
       | `Dump -> "Dump"
+      | `Identification -> "Identification"
       | `File_system -> "File-system"
       | `Function f -> sprintf  "function %S" f
       | `Record r -> sprintf "record %S" r) 
