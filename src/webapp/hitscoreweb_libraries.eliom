@@ -376,32 +376,35 @@ let detailed_fastq_subtable lib =
   let open Template in
   let open Html5 in
   let module Bui = Hitscore_interfaces.B2F_unaligned_information in
-  `subtable (List.map lib#submissions (fun sub ->
-    List.map sub#flowcell#hiseq_raws (fun hs ->
-      List.map hs#demultiplexings (fun dmux ->
-        let fastq_stats = get_fastq_stats lib sub dmux in
-        let fcid = sub#flowcell#oo#serial_name in
-        [ `sortable (sprintf "%s:%d" fcid sub#lane_index,
-                     [a_link Services.flowcell [pcdata fcid] fcid;
-                      pcdataf " (Lane %d)"  sub#lane_index; ]);
-          `text (html_detailed_dmux dmux);
-          `text (html_detailed_deliveries sub dmux);
-          `text Option.(
-            value_map fastq_stats ~default:[pcdata "—"]
-              ~f:(fun s ->
-                [codef "%s"
-                    (pretty_string_of_float ~sof:(sprintf "%.0f")
-                       s.Bui.cluster_count)]));
-          `text Option.(
-            value_map fastq_stats ~default:[pcdata "—"]
-              ~f:(fun s ->
-                [codef "%.2f%%" (100. *. s.Bui.yield_q30 /. s.Bui.yield) ]));
-          `text Option.(
-            value_map fastq_stats ~default:[pcdata "—"]
-              ~f:(fun s ->
-                [codef "%.2f" (s.Bui.quality_score_sum /. s.Bui.yield)]));
-          
-        ])) |! List.concat) |! List.concat)
+  let subtable =
+    List.map lib#submissions (fun sub ->
+      List.map sub#flowcell#hiseq_raws (fun hs ->
+        List.map hs#demultiplexings (fun dmux ->
+          let fastq_stats = get_fastq_stats lib sub dmux in
+          let fcid = sub#flowcell#oo#serial_name in
+          [ `sortable (sprintf "%s:%d" fcid sub#lane_index,
+                       [a_link Services.flowcell [pcdata fcid] fcid;
+                        pcdataf " (Lane %d)"  sub#lane_index; ]);
+            `text (html_detailed_dmux dmux);
+            `text (html_detailed_deliveries sub dmux);
+            `text Option.(
+              value_map fastq_stats ~default:[pcdata "—"]
+                ~f:(fun s ->
+                  [codef "%s"
+                      (pretty_string_of_float ~sof:(sprintf "%.0f")
+                         s.Bui.cluster_count)]));
+            `text Option.(
+              value_map fastq_stats ~default:[pcdata "—"]
+                ~f:(fun s ->
+                  [codef "%.2f%%" (100. *. s.Bui.yield_q30 /. s.Bui.yield) ]));
+            `text Option.(
+              value_map fastq_stats ~default:[pcdata "—"]
+                ~f:(fun s ->
+                  [codef "%.2f" (s.Bui.quality_score_sum /. s.Bui.yield)]));
+            
+        ])) |! List.concat) |! List.concat in
+  let empty_row = [List.init 6 (fun _ -> `text [pcdata ""])] in
+  `subtable (if subtable = [] then empty_row else subtable)
 
 let choose_delivery_for_user dmux sub =
   let open Option in
@@ -421,46 +424,49 @@ let simple_fastq_subtable lib =
   let open Template in
   let open Html5 in
   let module Bui = Hitscore_interfaces.B2F_unaligned_information in
-  `subtable (List.map lib#submissions (fun sub ->
-    List.map sub#flowcell#hiseq_raws (fun hs ->
-      List.filter_map hs#demultiplexings (fun dmux ->
-        let open Option in
-        let fastq_stats = get_fastq_stats lib sub dmux in
-        let fcid = sub#flowcell#oo#serial_name in
-        choose_delivery_for_user dmux sub
-        >>= fun (del, inv) ->
-        return [
-          `sortable (sprintf "%s:%d" fcid sub#lane_index,
-                     [a_link Services.flowcell [pcdata fcid] fcid;
-                      pcdataf " (Lane %d)"  sub#lane_index; ]);
-          `text [
-            Option.(
-              let default = "" in
-              pcdataf " %s (mismatch: %d) %s (%s)"
-                (value_map dmux#b2f#tiles ~default ~f:(sprintf "(tiles:%s)"))
-                dmux#b2f#mismatch
-                (value_map dmux#b2f#bases_mask
-                   ~default ~f:(sprintf "(bmask:%s)"))
-                (value ~default:"unknown-sample-sheet-kind"
-                   (dmux#assembly >>= fun a ->
-                    return a#kind
-                    >>| Layout.Enumeration_sample_sheet_kind.to_string)));
-          ];
-          `text Option.(
-            value_map fastq_stats ~default:[pcdata "—"]
-              ~f:(fun s ->
-                [codef "%s"
-                    (pretty_string_of_float ~sof:(sprintf "%.0f")
-                       s.Bui.cluster_count)]));
-          `text Option.(
-            value_map fastq_stats ~default:[pcdata "—"]
-              ~f:(fun s ->
-                [codef "%.2f%%" (100. *. s.Bui.yield_q30 /. s.Bui.yield) ]));
-          `text Option.(
-            value_map fastq_stats ~default:[pcdata "—"]
-              ~f:(fun s ->
-                [codef "%.2f" (s.Bui.quality_score_sum /. s.Bui.yield)]));
-        ]) |! List.concat) |! List.concat))
+  let subtable =
+    List.map lib#submissions (fun sub ->
+      List.map sub#flowcell#hiseq_raws (fun hs ->
+        List.filter_map hs#demultiplexings (fun dmux ->
+          let open Option in
+          let fastq_stats = get_fastq_stats lib sub dmux in
+          let fcid = sub#flowcell#oo#serial_name in
+          choose_delivery_for_user dmux sub
+          >>= fun (del, inv) ->
+          return [
+            `sortable (sprintf "%s:%d" fcid sub#lane_index,
+                       [a_link Services.flowcell [pcdata fcid] fcid;
+                        pcdataf " (Lane %d)"  sub#lane_index; ]);
+            `text [
+              Option.(
+                let default = "" in
+                pcdataf " %s (mismatch: %d) %s (%s)"
+                  (value_map dmux#b2f#tiles ~default ~f:(sprintf "(tiles:%s)"))
+                  dmux#b2f#mismatch
+                  (value_map dmux#b2f#bases_mask
+                     ~default ~f:(sprintf "(bmask:%s)"))
+                  (value ~default:"unknown-sample-sheet-kind"
+                     (dmux#assembly >>= fun a ->
+                      return a#kind
+                      >>| Layout.Enumeration_sample_sheet_kind.to_string)));
+            ];
+            `text Option.(
+              value_map fastq_stats ~default:[pcdata "—"]
+                ~f:(fun s ->
+                  [codef "%s"
+                      (pretty_string_of_float ~sof:(sprintf "%.0f")
+                         s.Bui.cluster_count)]));
+            `text Option.(
+              value_map fastq_stats ~default:[pcdata "—"]
+                ~f:(fun s ->
+                  [codef "%.2f%%" (100. *. s.Bui.yield_q30 /. s.Bui.yield) ]));
+            `text Option.(
+              value_map fastq_stats ~default:[pcdata "—"]
+                ~f:(fun s ->
+                  [codef "%.2f" (s.Bui.quality_score_sum /. s.Bui.yield)]));
+          ]) |! List.concat) |! List.concat) in
+  let empty_row = [List.init 5 (fun _ -> `text [pcdata ""])] in
+  `subtable (if subtable = [] || subtable = [[]] then empty_row else subtable)
 
 let libraries_table info =
   let open Template in
