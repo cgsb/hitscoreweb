@@ -313,7 +313,7 @@ let menu_ul () =
     (`view `persons,
      [a_link Services.persons [pcdata "Persons"] (None, [])]);
     (`view `libraries,
-     [a_link Services.libraries [pcdata "Libraries"] ([`basic], []); ]);
+     [a_link Services.libraries [pcdata "Libraries"] ([`basic; `fastq], []); ]);
     (`view `all_evaluations,
      [a_link Services.evaluations [pcdata "Function evaluations"] ()]);
     (`view `layout,

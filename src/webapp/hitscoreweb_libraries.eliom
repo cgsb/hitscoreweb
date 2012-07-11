@@ -303,10 +303,11 @@ let intro_paragraph info =
     Template.a_link Services.libraries [pcdata name]
       (shwg, info#qualified_names) in
   let links =
-    List.map [ [`basic], "Basic"; [`fastq], "Fastq Info"; [`stock], "Stock Info";
+    List.map [ [`basic; `stock], "Metadata";
+               [`basic; `fastq], "Sequencing Info";
                [`basic;`stock; `fastq], "Full" ] make_link
     |! interleave_list ~sep:(pcdata ", ") in
-  [pcdata "Choose view: ";] @ links @ [pcdata "."]
+  [b [pcdata "Choose view: "]] @ links @ [pcdata "."] @ [br ()]
 
 let get_fastq_stats lib sub dmux =
   let open Option in
@@ -485,7 +486,7 @@ let libraries_table info =
       basic (fun () -> cell_option (Option.map lib#sample (fun s -> s#sample#name)));
       basic (fun () ->
         cell_option Option.(lib#sample >>= fun s -> s#organism >>= fun o -> o#name));
-      basic (fun () ->
+      stock (fun () ->
         `sortable (
           List.length lib#submissions |! Int.to_string,
           begin match lib#submissions with
@@ -550,7 +551,7 @@ let libraries_table info =
       basic (fun () -> `head_cell Msg.library_description);
       basic (fun () -> `head_cell Msg.sample_name);
       basic (fun () -> `head_cell Msg.organism_name);
-      basic (fun () -> `head_cell Msg.library_submissions);
+      stock (fun () -> `head_cell Msg.library_submissions);
       basic (fun () -> `head_cell Msg.library_application);
       stock (fun () -> `head_cell Msg.library_barcode);
       stock (fun () -> `head_cell Msg.library_p5);
