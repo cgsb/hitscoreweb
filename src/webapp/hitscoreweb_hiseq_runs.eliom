@@ -104,7 +104,7 @@ let lanes_table broker lanes dmux_sum_opt =
     sprintf "%s%s" Option.(value_map p ~default:"" ~f:(sprintf "%s.")) n in
   let lib_link l =
     Template.a_link Services.libraries
-      [pcdata (lib_name l)] ([`basic], [lib_name l]) in
+      [pcdata l.lil_stock.SL.g_value.SL.name] ([`basic], [lib_name l]) in
   let nb0 f = `number (sprintf "%.0f", f) in 
   let nb2 f = `number (sprintf "%.2f", f) in 
   let one_lane l =
@@ -127,16 +127,17 @@ let lanes_table broker lanes dmux_sum_opt =
                   nb2 (100. *. found.Bui.yield_q30 /. found.Bui.yield);
                   nb2 (found.Bui.quality_score_sum /. found.Bui.yield)]
         in
-        let name = lib_name lib in
-        let desc =
-          value ~default:""
-            lib.lil_stock.SL.g_value.SL.description in
-        [ `sortable (name, [lib_link lib]);
+        let desc = value ~default:"" lib.lil_stock.SL.g_value.SL.description in
+        let proj = Option.value ~default:"" lib.lil_stock.SL.g_value.SL.project in
+        [ `sortable (lib.lil_stock.SL.g_value.SL.name, [lib_link lib]);
+          `sortable (proj, [pcdata proj]);
           `sortable (desc, [pcdata desc]) ] 
         @ (value ~default:[] stats))) 
   in
   let base_head =
-    [ `head_cell Msg.lane; `head_cell Msg.library_qn;
+    [ `head_cell Msg.lane;
+      `head_cell Msg.library_name;
+      `head_cell Msg.library_project;
       `head_cell Msg.library_description ] in
   let summary_head =
     match dmux_sum_opt with

@@ -19,7 +19,7 @@ let qualified_name po n =
 
 let qualified_link ~showing po n =
   let qn = qualified_name po n in
-  [Template.a_link Services.libraries [Html5.pcdata qn] (showing, [qn])]
+  [Template.a_link Services.libraries [Html5.pcdata n] (showing, [qn])]
 
 let filter_map l ~filter ~map =
   List.filter_map l ~f:(fun x -> if filter x then Some (map x) else None)
@@ -479,9 +479,10 @@ let libraries_table info =
   let rows =
     List.map info#libraries (fun lib -> [
       everywhere (fun () ->
-        `sortable (qualified_name lib#stock#project lib#stock#name,
+        `sortable (lib#stock#name,
                    qualified_link ~showing:info#showing
                      lib#stock#project lib#stock#name));
+      everywhere (fun () -> cell_option lib#stock#project);
       basic (fun () -> cell_option lib#stock#description);
       basic (fun () -> cell_option (Option.map lib#sample (fun s -> s#sample#name)));
       basic (fun () ->
@@ -547,7 +548,8 @@ let libraries_table info =
          fastq (fun () -> `head_cell Msg.mean_qs); ]
     in
     [
-      everywhere (fun () -> `head_cell Msg.library_qn);
+      everywhere (fun () -> `head_cell Msg.library_name);
+      everywhere (fun () -> `head_cell Msg.library_project);
       basic (fun () -> `head_cell Msg.library_description);
       basic (fun () -> `head_cell Msg.sample_name);
       basic (fun () -> `head_cell Msg.organism_name);

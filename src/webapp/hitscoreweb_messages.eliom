@@ -16,6 +16,8 @@ let library_qn =
   head_text "Lib ID" "Project name '.' library name"
 let library_name =
   head_text "Lib ID" "Library name"
+let library_project =
+  head_text "Project" "Project name"
 let number_of_reads =
   head_text "# Reads" "Total umber of reads"
 let percent_bases_over_q30 =

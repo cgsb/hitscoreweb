@@ -48,19 +48,27 @@ module Flowcell_service = struct
       
   let sortable_libraries_cell libs =
     let open Html5 in
-    let qnames =
-      List.map libs (function (l, None) -> l
-      | (l, Some p) -> sprintf "%s.%s" p l) in
-    let sortability = String.concat ~sep:", " qnames in
+    let qname = function (l, None) -> l | (l, Some p) -> sprintf "%s.%s" p l in
+    let sortability = String.concat ~sep:", " (List.map ~f:qname libs) in
+    let paragraphs =
+      List.sort ~cmp:(fun (_, a) (_, b) -> compare a b) libs
+      |! List.group ~break:(fun (_, a) (_, b) -> a <> b)
+      |! List.map ~f:(fun l ->
+        p (Option.(value ~default:(pcdata "No Project: ")
+                     (List.hd l >>= fun (_, p) ->
+                      p >>= fun p -> return (b [pcdataf "%s: " p])))
+           :: 
+             (List.map l (fun (n, p) ->
+               Template.a_link Services.libraries
+                 [pcdata n] ([`basic;`fastq], [qname (n, p)]))
+               |! interleave_list ~sep:(pcdata ", ")))) in
     let cell =
-      (List.map qnames (fun qn ->
-        Template.a_link Services.libraries [pcdata qn] ([`basic], [qn]))
-        |! interleave_list ~sep:(pcdata ", "))
-      @ [
-        if List.length qnames > 1 then
-          small [
+      paragraphs @ [
+        if List.length libs > 1 then
+          p [
             pcdata " (";
-            Template.a_link Services.libraries [pcdata "all"] ([`basic], qnames);
+            Template.a_link Services.libraries [pcdata "all"]
+              ([`basic; `fastq], List.map ~f:qname libs);
             pcdata ")"
           ]
         else
