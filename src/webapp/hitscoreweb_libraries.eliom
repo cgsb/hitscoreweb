@@ -405,7 +405,7 @@ let detailed_fastq_subtable lib =
             
         ])) |! List.concat) |! List.concat in
   let empty_row = [List.init 6 (fun _ -> `text [pcdata ""])] in
-  `subtable (if subtable = [] then empty_row else subtable)
+  `subtable (if List.concat subtable = [] then empty_row else subtable)
 
 let choose_delivery_for_user dmux sub =
   let open Option in
@@ -467,7 +467,7 @@ let simple_fastq_subtable lib =
                   [codef "%.2f" (s.Bui.quality_score_sum /. s.Bui.yield)]));
           ]) |! List.concat) |! List.concat) in
   let empty_row = [List.init 5 (fun _ -> `text [pcdata ""])] in
-  `subtable (if subtable = [] || subtable = [[]] then empty_row else subtable)
+  `subtable (if List.concat subtable = [] then empty_row else subtable)
 
 let libraries_table info =
   let open Template in
