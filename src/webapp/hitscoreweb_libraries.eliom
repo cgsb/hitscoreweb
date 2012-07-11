@@ -168,6 +168,29 @@ let make_classy_information ~configuration ~dbh =
                    method lanes = lanes
                    method hiseq_raws = hiseq_raws end))
   >>= fun flowcells ->
+
+  layout#bioanalyzer#all
+  >>= while_sequential ~f:(fun ba ->
+    map_option Option.(ba#files >>= fun v -> get_by_id volumes v#id) (fun vol ->
+      Common.all_paths_of_volume ~configuration ~dbh vol#g_pointer)
+    >>= fun paths ->
+    return (object
+      method bioanalyzer = ba
+      method paths = Option.value ~default:[] paths
+    end))
+  >>= fun bioanalyzers ->
+
+  layout#agarose_gel#all
+  >>= while_sequential ~f:(fun ag ->
+    map_option Option.(ag#files >>= fun v -> get_by_id volumes v#id) (fun vol ->
+      Common.all_paths_of_volume ~configuration ~dbh vol#g_pointer)
+    >>= fun paths ->
+    return (object
+      method agarose_gel = ag
+      method paths = Option.value ~default:[] paths
+    end))
+  >>= fun agarose_gels ->
+  
   layout#sample#all >>= fun samples ->
   layout#organism#all >>= fun organisms ->
   layout#custom_barcode#all >>= fun custom_barcodes ->
@@ -210,11 +233,19 @@ let make_classy_information ~configuration ~dbh =
           List.filter custom_barcodes (fun cb ->
             Array.exists sl#custom_barcodes (fun b -> b#id = cb#g_id)) in
         `Custom barcodes in
-    return (object method stock = sl (* library *)
-                   method submissions = submissions
-                   method sample = sample
-                   method barcoding = barcoding
-                   method preparator = preparator end))
+    let bios =
+      List.filter bioanalyzers (fun b -> b#bioanalyzer#library#id = sl#g_id) in
+    let agels = 
+      List.filter agarose_gels (fun b -> b#agarose_gel#library#id = sl#g_id) in
+    return (object
+      method stock = sl (* library *)
+      method submissions = submissions
+      method sample = sample
+      method barcoding = barcoding
+      method preparator = preparator
+      method bioanalyzers = bios
+      method agarose_gels = agels
+    end))
   >>= fun libraries ->
   let created = Time.now () in
   logf "{libraries} Static info updated" >>= fun () ->
@@ -469,6 +500,16 @@ let simple_fastq_subtable lib =
   let empty_row = [List.init 5 (fun _ -> `text [pcdata ""])] in
   `subtable (if List.concat subtable = [] then empty_row else subtable)
 
+let make_file_links paths =
+  let open Html5 in
+  List.map paths (fun path ->
+    match Filename.split_extension path |! snd with
+    | Some "pdf" | Some "PDF" -> b ~a:[ a_title path ] [pcdata "PDF"]
+    | Some "xad" | Some "XAD" -> b ~a:[ a_title path ] [pcdata "XAD"]
+    | Some "pptx" | Some "PPTX" -> b ~a:[ a_title path ] [pcdata "PPTX"]
+    | _ -> b ~a:[ a_title path ] [pcdata "???"])
+  |! interleave_list ~sep:(pcdata ", ")
+
 let libraries_table info =
   let open Template in
   let open Html5 in
@@ -526,7 +567,32 @@ let libraries_table info =
         Option.value_map lib#preparator ~default:(`text []) ~f:(fun p ->
           `sortable (p#email,
                      [a_link Services.persons [pcdata p#email] (None, [p#email])])));
+      stock (fun () ->
+        let subtable =
+          List.map lib#bioanalyzers (fun b ->
+            [ cell_int_option b#bioanalyzer#well_number;
+              cell_fmt_option "%.2f" b#bioanalyzer#mean_fragment_size;
+              cell_fmt_option "%.2f" b#bioanalyzer#min_fragment_size;
+              cell_fmt_option "%.2f" b#bioanalyzer#max_fragment_size;
+              `text (make_file_links b#paths);
+            ]) in
+        if lib#bioanalyzers = []
+        then `subtable [List.init 5 (fun _ -> cell_text "")]
+        else `subtable subtable);
+      stock (fun () ->
+        let subtable =
+          List.map lib#agarose_gels (fun a ->
+            [ cell_int_option a#agarose_gel#well_number;
+              cell_fmt_option "%.2f" a#agarose_gel#mean_fragment_size;
+              cell_fmt_option "%.2f" a#agarose_gel#min_fragment_size;
+              cell_fmt_option "%.2f" a#agarose_gel#max_fragment_size;
+              `text (make_file_links a#paths);
+            ]) in
+        if lib#agarose_gels = []
+        then `subtable [List.init 5 (fun _ -> cell_text "")]
+        else `subtable subtable);
       stock (fun () -> cell_option lib#stock#note) ;
+              
       fastq (fun () ->
         if info#can_view_fastq_details then
           detailed_fastq_subtable lib
@@ -562,6 +628,18 @@ let libraries_table info =
       stock (fun () -> `head_cell Msg.library_truseq_control);
       stock (fun () -> `head_cell Msg.library_rnaseq_control);
       stock (fun () -> `head_cell Msg.library_preparator);
+
+      stock (fun () -> `head_cell Msg.bioanalyzer_well_nb);
+      stock (fun () -> `head_cell Msg.bioanalyzer_mean);
+      stock (fun () -> `head_cell Msg.bioanalyzer_min);
+      stock (fun () -> `head_cell Msg.bioanalyzer_max);
+      stock (fun () -> `head_cell Msg.bioanalyzer_files);
+      stock (fun () -> `head_cell Msg.agarose_gel_well_nb);
+      stock (fun () -> `head_cell Msg.agarose_gel_mean);
+      stock (fun () -> `head_cell Msg.agarose_gel_min);
+      stock (fun () -> `head_cell Msg.agarose_gel_max);
+      stock (fun () -> `head_cell Msg.agarose_gel_files);
+
       stock (fun () -> `head_cell Msg.library_note);
       fastq (fun () -> `head_cell Msg.library_submissions);
     ] @ fastq_part

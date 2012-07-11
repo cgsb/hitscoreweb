@@ -416,6 +416,10 @@ let cell_option o =
   cell_text (Option.value ~default:"—" o)
 
 let cell_fmt fmt = ksprintf cell_text fmt
+let cell_fmt_option fmt onearg =
+  match onearg with
+  | Some s -> cell_fmt fmt s
+  | None -> cell_option None
 
 let cell_timestamp t =
   let open Html5 in

@@ -58,6 +58,17 @@ let library_truseq_control = head_text "TruSeq Ctrl" "TruSeq Control"
 let library_rnaseq_control = head_text "RNASeq Ctrl" "RNA-Seq Control"
 let library_preparator = head_text "Preparator" "Email of the library preparator"
 let library_note = head_text "Note" "Note(s) about the library"
+
+let bioanalyzer_well_nb = head_text "Bioanalyzer: Well NB" "Well Number"
+let bioanalyzer_mean = head_text "Bioanalyzer: Mean" "Average Fragment Size"
+let bioanalyzer_min = head_text "Bioanalyzer: Min" "Min Fragment Size"
+let bioanalyzer_max = head_text "Bioanalyzer: Max" "Max Fragment Size"
+let bioanalyzer_files = head_text "Bioanalyzer: Files" "Bioanalyzer Files"
+let agarose_gel_well_nb = head_text "Agarose Gel: Well NB" "Well Number"
+let agarose_gel_mean = head_text "Agarose Gel: Mean" "Average Fragment Size"
+let agarose_gel_min = head_text "Agarose Gel: Min" "Min Fragment Size"
+let agarose_gel_max = head_text "Agarose Gel: Max" "Max Fragment Size"
+let agarose_gel_files = head_text "Agarose Gel: Files" "Agarose Gel Files"
   
 let demux_options =
   head_text "Demultiplexing Options" "Options used whie demultiplexing"
