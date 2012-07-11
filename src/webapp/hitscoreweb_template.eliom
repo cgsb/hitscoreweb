@@ -527,7 +527,8 @@ let rec html_of_content ?(section_level=2) content =
     let rec make_cell ?(colspan=1) ?(rowspan=1) ?orderable idx cell =
       let really_orderable =
         (* Really orderable: if there is more than one sortable
-           element in that column. *)
+           element in that column.
+           AND there are no subtables*)
         List.length t > 1
         && List.exists (List.map t (fun l -> List.nth l idx))
           ~f:(function Some (`sortable _) | Some (`number _)-> true | _ -> false)
@@ -582,13 +583,20 @@ let rec html_of_content ?(section_level=2) content =
           [div [html_of_content (Table (`normal, h :: t))]]
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
+    let flattened = flatten_table t in
+    let orderable =
+      if List.exists t (fun l -> List.exists l (function
+      | `subtable s when List.length s > 1 -> true
+      | _ -> false))
+      then None
+      else Some id in
     div [
       table 
         ~a:[ a_id id;
              a_style "border: 3px  solid black; \
                         border-collapse: collapse; " ]
-        (tr (List.mapi h (make_cell ~orderable:id)))
-        (List.map (flatten_table t) (fun (i, subrows) ->
+        (tr (List.mapi h (make_cell ?orderable)))
+        (List.map flattened (fun (i, subrows) ->
           List.map subrows (fun l ->
             tr ~a:[ a_class
                       [if style = `alternate_colors && i mod 2 = 1 then
