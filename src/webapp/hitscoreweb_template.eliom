@@ -495,6 +495,8 @@ let flatten_table l =
       List.map row (fun cell ->
         match cell with
         | `subtable [] -> [`text []]
+        | `subtable [h] ->
+          List.map h (fun a -> `with_geometry (max_height, 1, a))
         | `subtable (h :: t) ->
           after_the_row := t;
           h
