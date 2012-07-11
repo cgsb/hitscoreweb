@@ -45,6 +45,7 @@ let in_progress_animation_div () =
 let color_theme =
 object
   method title_violet = "#30053F"
+  method light_violet = "#ECD5F4"
 end
     
 let css_service_handler ~configuration () () =
@@ -88,7 +89,7 @@ let css_service_handler ~configuration () () =
   out ".main_page { position: absolute; top: 100px; width: auto}";
   out ".main_page a:link {color : #960F00; }\n";
   out ".main_page .like_link {color : #960F00; text-decoration: underline; }\n";
-  out ".main_page a:hover {background-color : #ECD5F4; }\n";
+  out ".main_page a:hover {background-color : %s; }\n" color_theme#light_violet;
   out ".main_page a:visited {color : #480007; }\n";
   out ".main_page h1 {font-weight: 900; color : %s;
            font-variant: small-caps; font-size: 200%% }\n"
@@ -104,6 +105,7 @@ let css_service_handler ~configuration () () =
           max-width: 40em;
           border: 1px solid black; padding: 3px; }"; 
   out ".content_table_number {text-align:right; font-family: monospace}\n";
+  out ".odd_colored_row { background-color: %s }" color_theme#light_violet;
 
   out "
     @media (max-width: 63em) {
@@ -389,14 +391,14 @@ type content =
     (Html5_types.phrasing Html5.elt * Html5_types.flow5 Html5.elt) list 
 | Section of Html5_types.phrasing Html5.elt * content 
 | List of content list
-| Table of table_cell list list
+| Table of [`alternate_colors | `normal] * table_cell list list
 | Paragraph of Html5_types.flow5 Html5.elt list
     
 let content_description l = Description l
 let content_description_opt l = Description (List.filter_opt l)
 let content_section t c = Section (t, c)
 let content_list l = List l
-let content_table ?(transpose=false) l =
+let content_table ?(transpose=false) ?(style=`normal) l =
   let t = function
     | [] -> []
     | hl :: tll ->
@@ -405,7 +407,7 @@ let content_table ?(transpose=false) l =
         h :: (List.map tll (fun tl ->
           Option.value ~default:(`text []) (List.nth tl i))))
   in
-  Table (if transpose then t l else l)
+  Table (style, if transpose then t l else l)
     
 let cell_text s =
   let open Html5 in
@@ -486,7 +488,7 @@ let flatten_table l =
                        ~f:(fun cur row -> cur + total_subtables_height row))
       | flat_one -> max current 1)
   in
-  List.map l (fun row ->
+  List.mapi l (fun i row ->
     let max_height = total_subtables_height row in
     let after_the_row = ref [] in
     let the_row =
@@ -498,8 +500,8 @@ let flatten_table l =
           h
         | any_other -> [`with_geometry (max_height, 1, any_other)])
       |! List.concat in
-    the_row :: !after_the_row
-  ) |! List.concat
+    (i, the_row :: !after_the_row)
+  )
     
 let rec html_of_content ?(section_level=2) content =
   let open Html5 in
@@ -520,8 +522,8 @@ let rec html_of_content ?(section_level=2) content =
          html_of_content ~section_level:(section_level + 1) content]
   | List cl ->
     div (List.map cl (html_of_content ~section_level))
-  | Table [] -> div []
-  | Table (h :: t) ->
+  | Table (_, []) -> div []
+  | Table (style, h :: t) ->
     let rec make_cell ?(colspan=1) ?(rowspan=1) ?orderable idx cell =
       let really_orderable =
         (* Really orderable: if there is more than one sortable
@@ -577,7 +579,7 @@ let rec html_of_content ?(section_level=2) content =
         td  ~a:[ a_class ["content_table_text"];
                  a_colspan (List.length h * colspan);
                  a_rowspan rowspan; ]
-          [div [html_of_content (Table (h :: t))]]
+          [div [html_of_content (Table (`normal, h :: t))]]
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
     div [
@@ -586,8 +588,12 @@ let rec html_of_content ?(section_level=2) content =
              a_style "border: 3px  solid black; \
                         border-collapse: collapse; " ]
         (tr (List.mapi h (make_cell ~orderable:id)))
-        (List.map (flatten_table t) (fun l ->
-          tr (List.mapi l (make_cell ?orderable:None))))
+        (List.map (flatten_table t) (fun (i, subrows) ->
+          List.map subrows (fun l ->
+            tr ~a:[ a_class
+                      [if style = `alternate_colors && i mod 2 = 1 then
+                          "odd_colored_row" else ""]]
+              (List.mapi l (make_cell ?orderable:None)))) |! List.concat)
     ]
 
 let make_content ~configuration ~main_title content =

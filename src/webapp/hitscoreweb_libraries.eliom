@@ -569,7 +569,7 @@ let libraries_table info =
         if List.exists where ~f:(fun w -> List.exists info#showing ((=) w))
         then Some (what ()) else None)) in
   
-  Template.content_table table
+  Template.content_table ~style:`alternate_colors table
     
 let benchmarks work_started info_got table_generated info =
   let open Html5 in
