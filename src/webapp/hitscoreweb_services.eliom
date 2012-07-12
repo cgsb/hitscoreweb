@@ -13,6 +13,10 @@ let hiseq_runs =
   make
     (Eliom_service.service ~path:["hiseq_runs"] ~get_params:Eliom_parameter.unit)
 
+let facility_statistics =
+  make
+    (Eliom_service.service ~path:["stats"] ~get_params:Eliom_parameter.unit)
+
 let flowcell =
   make
     (Eliom_service.service ~path:["flowcell"]

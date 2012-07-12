@@ -26,6 +26,7 @@ type capability = [
            | `demux_info
            | `benchmarks
            | `libraries_detailed_fastq_information
+           | `facility_statistics
            | `flowcell]
 | `edit of [
   | `password_of_person of Layout.Record_person.t

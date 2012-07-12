@@ -820,6 +820,9 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register hiseq_runs)
         Hitscoreweb_hiseq_runs.(make hitscore_configuration);
       
+      Services.(register facility_statistics)
+        Hitscoreweb_facility_stats.(make ~configuration:hitscore_configuration);
+      
       Services.(register persons) Persons_service.(make hitscore_configuration);
       
       Services.(register libraries) 
