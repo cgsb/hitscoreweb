@@ -333,9 +333,12 @@ let default ?(title) content =
     Html5.(
       html
         (head (title (pcdata page_title)) [
-          (* link ~rel:[`Stylesheet] ~href:(uri_of_string "hitscoreweb.css") (); *)
+          link ~rel:[`Stylesheet]
+            ~href:(uri_of_string (fun () -> "hitscoreweb.css")) ();
           link ~rel:[`Stylesheet] ~href:(Html5.make_uri
                                            ~service:Services.(stylesheet ()) ()) ();
+        (* js_script () ~uri:(uri_of_string (fun () -> *)
+        (* "https://closure-library.googlecode.com/svn/trunk/closure/goog/base.js")); *)
         ])
         (body [
           in_progress_animation_div ();
