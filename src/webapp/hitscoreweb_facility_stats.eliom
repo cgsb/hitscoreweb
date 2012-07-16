@@ -54,6 +54,56 @@ let gencore_users_stats layout =
                   && a <> [| "NYU"; "Biology"; "CGSB" |]));
             ]))
 
+
+let mini_run_plan layout =
+  let open Template in
+  let open Html5 in
+  layout#hiseq_run#all
+  >>| List.sort ~cmp:(fun a b -> compare a#date b#date)
+  >>= while_sequential ~f:(fun hsr ->
+    let l = [hsr#flowcell_a; hsr#flowcell_b] |! List.filter_opt in
+    while_sequential l (fun fc_p ->
+      fc_p#get >>= fun fc ->
+      while_sequential (Array.to_list fc#lanes) (fun l ->
+        l#get >>= fun one_lane ->
+        while_sequential (Array.to_list one_lane#contacts) (fun p ->
+          p#get >>= fun person ->
+          if Array.exists person#roles ((=) `pi)
+          then return  (Some person)
+          else return None)
+        >>| List.filter_opt
+        >>= fun pi_s ->
+        let run_type =
+          match one_lane#requested_read_length_1, one_lane#requested_read_length_2 with
+          | n, None -> sprintf "SE %d" n
+          | n, Some s -> sprintf "PE %dx%d" n s
+        in
+        return (pi_s, run_type))
+      >>= fun pi_runs ->
+      return (object
+        method run = hsr
+        method fcid = fc#serial_name
+        method run_type =
+          List.nth pi_runs 1 |! Option.value_map ~default:"???" ~f:snd
+        method pi_s =
+          List.map pi_runs (fun (pis, _) -> List.map pis (fun p -> p#family_name))
+          |! List.concat
+          |! List.dedup
+      end)))
+  >>| List.concat
+  >>= fun flowcells ->
+  let table =
+    let rows =
+      List.map flowcells (fun f ->
+        [ `text [pcdata (Time.to_local_date f#run#date |! Date.to_string)];
+          `text [pcdata f#fcid];
+          `text [pcdata f#run_type];
+          `text [pcdata String.(concat ~sep:", " f#pi_s)] ]) in
+    content_table (
+      [`head [pcdata "Run Date"]; `head [pcdata "FCID"];
+       `head [pcdata "run Type"]; `head [pcdata "P.I.(s)"] ]
+      :: rows) in
+  return (content_section (pcdata "Mini-Run-Plan") table)
   
 let statistics_page configuration =
   let open Template in
@@ -62,7 +112,9 @@ let statistics_page configuration =
     let layout = Classy.make dbh in
     gencore_users_stats layout
     >>= fun users_section ->
-    return (users_section))
+    mini_run_plan layout
+    >>= fun run_plan_section ->
+    return (content_list [users_section; run_plan_section]))
 
 let make ~configuration =
   (fun () () ->
