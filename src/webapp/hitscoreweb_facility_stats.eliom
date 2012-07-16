@@ -55,9 +55,7 @@ let gencore_users_stats layout =
             ]))
 
 
-let mini_run_plan layout =
-  let open Template in
-  let open Html5 in
+let flowcell_data layout =
   layout#hiseq_run#all
   >>| List.sort ~cmp:(fun a b -> compare a#date b#date)
   >>= while_sequential ~f:(fun hsr ->
@@ -78,20 +76,26 @@ let mini_run_plan layout =
           | n, None -> sprintf "SE %d" n
           | n, Some s -> sprintf "PE %dx%d" n s
         in
-        return (pi_s, run_type))
+        return (pi_s, run_type, Array.length one_lane#libraries))
       >>= fun pi_runs ->
       return (object
         method run = hsr
         method fcid = fc#serial_name
         method run_type =
-          List.nth pi_runs 1 |! Option.value_map ~default:"???" ~f:snd
+          List.nth pi_runs 1 |! Option.value_map ~default:"???" ~f:snd3
         method pi_s =
-          List.map pi_runs (fun (pis, _) -> List.map pis (fun p -> p#family_name))
+          List.map pi_runs (fun (pis, _, _) -> List.map pis (fun p -> p#family_name))
           |! List.concat
           |! List.dedup
+        method nb_of_libraries = 
+          List.fold_left (List.map pi_runs trd3)
+            ~init:0 ~f:(fun a b -> a + b)
       end)))
   >>| List.concat
-  >>= fun flowcells ->
+
+let mini_run_plan flowcells =
+  let open Template in
+  let open Html5 in
   let table =
     let rows =
       List.map flowcells (fun f ->
@@ -103,8 +107,30 @@ let mini_run_plan layout =
       [`head [pcdata "Run Date"]; `head [pcdata "FCID"];
        `head [pcdata "run Type"]; `head [pcdata "P.I.(s)"] ]
       :: rows) in
-  return (content_section (pcdata "Mini-Run-Plan") table)
+  (content_section (pcdata "Mini-Run-Plan") table)
   
+
+let libraries_per_month flowcells =
+  let open Template in
+  let open Html5 in
+  let ym t =
+    let d = Time.to_local_date t in
+    (Date.year d, Date.month d) in
+  let per_month =
+    List.group flowcells ~break:(fun fa fb ->
+      ym fa#run#date <> ym fb#run#date) in
+  let table =
+    let rows =
+      List.map per_month (fun l ->
+        let yr, mth = ym ((List.hd_exn l) #run#date) in
+        let libraries =
+          List.fold_left l ~init:0 ~f:(fun c f -> c + f#nb_of_libraries) in
+        [ `text [pcdataf "%d, %s" yr (Month.to_string mth)];
+          `text [pcdataf "%d" libraries] ]) in
+    content_table ([ `head [pcdata "Month"]; `head [pcdata "# Libraries"] ] :: rows)
+  in
+  (content_section (pcdata "Libraries Per Month") table) 
+    
 let statistics_page configuration =
   let open Template in
   let open Html5 in
@@ -112,9 +138,10 @@ let statistics_page configuration =
     let layout = Classy.make dbh in
     gencore_users_stats layout
     >>= fun users_section ->
-    mini_run_plan layout
-    >>= fun run_plan_section ->
-    return (content_list [users_section; run_plan_section]))
+    flowcell_data layout >>= fun flowcells ->
+    return (content_list [users_section;
+                          mini_run_plan flowcells;
+                          libraries_per_month flowcells]))
 
 let make ~configuration =
   (fun () () ->
