@@ -38,7 +38,7 @@ let gencore_users_stats layout =
           `text [pcdataf "%d" pi#nb_of_libraries];
           `text [pcdataf "%d" pi#nb_of_lanes]; ]) in
     content_table (
-      [`head [pcdata "Name"]; `head [pcdata "# libraries"]; `head [pcdata "# Lanes"]]
+      [`head [pcdata "Name"]; `head [pcdata "# Libraries"]; `head [pcdata "# Lanes"]]
       :: rows
     )
   in
@@ -105,7 +105,7 @@ let mini_run_plan flowcells =
           `text [pcdata String.(concat ~sep:", " f#pi_s)] ]) in
     content_table (
       [`head [pcdata "Run Date"]; `head [pcdata "FCID"];
-       `head [pcdata "run Type"]; `head [pcdata "P.I.(s)"] ]
+       `head [pcdata "Run Type"]; `head [pcdata "P.I.(s)"] ]
       :: rows) in
   (content_section (pcdata "Mini-Run-Plan") table)
   
