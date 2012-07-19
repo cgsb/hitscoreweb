@@ -542,7 +542,8 @@ let libraries_table info =
                 br ();
               ])
           end));
-      basic (fun () -> cell_option lib#stock#application);
+      basic (fun () ->
+        cell_fmt "%s" (String.concat ~sep:"/" (Array.to_list lib#stock#application)));
       stock (fun () ->
         let strlist l = String.concat ~sep:"," (List.map l ~f:(sprintf "%d")) in
         match lib#barcoding with
