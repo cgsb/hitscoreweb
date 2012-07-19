@@ -85,6 +85,7 @@ let person =
     
 let register f =
   Output_app.register 
+    ~content_type:"text/html"
     ~error_handler:(fun sel -> 
       List.iter sel ~f:(fun (s, e) -> 
         eprintf "Errors: %S %S\n%!" s (Exn.to_string e));

@@ -50,7 +50,7 @@ ELIOMOPT    := eliomopt -thread -pp $(CAMLP4) -I . -I ../src/simple_pam
 ELIOMDEPSERVER := eliomdep -server -pp $(CAMLP4) -I .
 ELIOMDEPCLIENT := eliomdep -client -pp $(CAMLP4) -I .
 
-JS_OF_ELIOM := js_of_eliom -pp $(CAMLP4) -I _client/ -I . -I ../src/simple_pam
+JS_OF_ELIOM := js_of_eliom -jsopt -pretty -pp $(CAMLP4) -I _client/ -I . -I ../src/simple_pam
 
 ## Where to put intermediate object files.
 ## - ELIOM_{SERVER,CLIENT}_DIR must be distinct
