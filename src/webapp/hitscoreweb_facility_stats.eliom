@@ -185,14 +185,20 @@ let test_calendars () =
   let open Html5 in
   Eliom_service.onload {{
     dbg "I'm there";
-    let do_calendar () =
+    let span = get_element_exn "label_iso_8601" in
+    let date = ref None in
+    let rec do_calendar () =
       let dp_iso_8601 = jsnew Goog.Ui.datePicker(Js.null, Js.null) in
       let attach = get_element_exn "attach_stats_table" in
       let sub = Html5.(div ~a:[ a_id "attach_calendar" ] []) |! Html5_to_dom.of_div in
-      sub##onclick <- Dom_html.handler (fun _ ->
-        dbg "onclick of attach_calendar";
-        Js._true);
       Dom.appendChild attach sub;
+      span##onclick <- Dom_html.handler (fun _ -> Js._true);
+      begin match !date with
+      | Some d ->
+        dp_iso_8601##setDate(Goog.Tools.Union.i1 d);
+      | None ->
+        dp_iso_8601##selectNone();
+      end;
       dp_iso_8601##render(Js.some sub);
       Goog.Events.listen
         (Goog.Tools.Union.i1 dp_iso_8601)
@@ -201,43 +207,34 @@ let test_calendars () =
           dbg "callback there";
           begin match Js.Opt.to_option (dp_iso_8601##getDate()) with
           | Some d ->
-            let s = d##toIsoString(Js.some Js._true, Js.null) in   
-            dbg "Date: %s" (Js.to_string s);
+            date := Some d;
+            let s = Js.to_string d##toIsoString(Js.some Js._true, Js.null) in   
+            dbg "Date: %s" s;
+            span##innerHTML <- Printf.ksprintf Js.string "<b>Date: %s</b>" s;
           | None ->
-            dbg "No date"
-          end))
+            date := None;
+            dbg "No date";
+            span##innerHTML <- Printf.ksprintf Js.string "<b>No Date.</b>";
+          end;
+          dp_iso_8601##dispose();
+          span##onclick <- Dom_html.handler(fun _ ->
+            do_calendar ();
+            Js._true);
+         ))
         Js.null |! dbg "Listener: %d";
     in
-
-    let span = get_element_exn "label_iso_8601" in
     span##onclick <- Dom_html.handler(fun _ ->
-      span##innerHTML <- Js.string "<b>Processing …</b>";
+      (* span##innerHTML <- Js.string "<b>Processing …</b>"; *)
       do_calendar ();
-
       Js._true);
 
     dbg "End";
   }};
-  let s =
-    cdata_script ""
-     (* "
-var dp_iso_8601_2 = new goog.ui.DatePicker();
-    dp_iso_8601_2.render(document.getElementById('attach_stats_table2'));
-
-    goog.events.listen(dp_iso_8601_2,
-        goog.ui.DatePicker.Events.CHANGE, function(event) {
-      goog.dom.setTextContent(document.getElementById('label_iso_8601'),
-          event.date ?
-          event.date.toIsoString(true) : 'none');
-    });
-    " *)
-  in
   (content_section (pcdata "Test Calendar")
      (content_paragraph [
        Eliom_content.Html5.D.div ~a:[ a_id "attach_stats_table"] [];
        div ~a:[ a_id "attach_stats_table2"] [];
        span ~a:[ a_id "label_iso_8601"; a_style "clear:both" ] [pcdata "brout"];
-       script s;
      ]))
 
 let statistics_page configuration =
