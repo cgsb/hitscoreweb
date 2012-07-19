@@ -131,6 +131,55 @@ let libraries_per_month flowcells =
   in
   (content_section (pcdata "Libraries Per Month") table) 
     
+let hiseq_stats layout =
+  let open Template in
+  let open Html5 in
+  layout#hiseq_statistics#all
+  >>= while_sequential ~f:(fun hs ->
+    hs#run#get >>= fun hsr ->
+    return (hs, hsr))
+  >>| List.sort ~cmp:(fun (_, a) (_, b) -> compare a#date b#date)
+  >>= fun hstats ->
+  while_sequential hstats (fun (hs, hsr) ->
+    let stat s =
+      Option.value_map ~default:(`text []) s ~f:(fun s ->
+        let str = Time.to_local_date s |! Date.to_string in
+        `sortable (str, [pcdata str])) in
+    let fc_row side stats p =
+      p#get >>= fun fc ->
+      let fc_link =
+        a_link Services.flowcell [strong [pcdataf "%s" fc#serial_name]] fc#serial_name
+      in
+      let hr_date = Time.to_local_date hsr#date |! Date.to_string in
+      [ `sortable (hr_date, [strongf "%s / %s" hr_date side]);
+        `sortable (fc#serial_name, [fc_link])
+      ] @ stats
+      |! return in
+    map_option hsr#flowcell_a (fc_row "A" [
+      stat hs#a_clustered;
+      stat hs#a_started;
+      stat hs#a_finished;
+      stat hs#a_returned; ])
+    >>= fun a_row ->
+    map_option hsr#flowcell_b (fc_row "B" [
+      stat hs#b_clustered;
+      stat hs#b_started;
+      stat hs#b_finished;
+      stat hs#b_returned;])
+    >>= fun b_row ->
+    return (List.filter_opt [a_row; b_row]))
+  >>| List.concat 
+  >>= fun rows ->
+  let head =
+    [`head [pcdata "Hiseq-run"];
+     `head [pcdata "Flowcell ID"];
+     `head [pcdata "Date Clustered"];
+     `head [pcdata "Date Started"];
+     `head [pcdata "Date Finished"];
+     `head [pcdata "Date Returned"]; ] in
+  return (content_section (pcdata "Stats Draft") (content_table (head :: rows)))
+
+    
 let test_calendars () =
   let open Template in
   let open Html5 in
@@ -160,10 +209,10 @@ let test_calendars () =
         Js.null |! dbg "Listener: %d";
     in
 
-    do_calendar ();
     let span = get_element_exn "label_iso_8601" in
     span##onclick <- Dom_html.handler(fun _ ->
       span##innerHTML <- Js.string "<b>Processing …</b>";
+      do_calendar ();
 
       Js._true);
 
@@ -183,12 +232,13 @@ var dp_iso_8601_2 = new goog.ui.DatePicker();
     });
     " *)
   in
-  (content_paragraph [
-    Eliom_content.Html5.D.div ~a:[ a_id "attach_stats_table"] [];
-    div ~a:[ a_id "attach_stats_table2"] [];
-    span ~a:[ a_id "label_iso_8601" ] [pcdata "brout"];
-    script s;
-  ])
+  (content_section (pcdata "Test Calendar")
+     (content_paragraph [
+       Eliom_content.Html5.D.div ~a:[ a_id "attach_stats_table"] [];
+       div ~a:[ a_id "attach_stats_table2"] [];
+       span ~a:[ a_id "label_iso_8601"; a_style "clear:both" ] [pcdata "brout"];
+       script s;
+     ]))
 
 let statistics_page configuration =
   let open Template in
@@ -198,10 +248,12 @@ let statistics_page configuration =
     gencore_users_stats layout
     >>= fun users_section ->
     flowcell_data layout >>= fun flowcells ->
+    hiseq_stats layout >>= fun hstats ->
     return (content_list [users_section;
                           mini_run_plan flowcells;
                           libraries_per_month flowcells;
-                          test_calendars ()]))
+                          test_calendars ();
+                          hstats]))
 
 let make ~configuration =
   (fun () () ->
