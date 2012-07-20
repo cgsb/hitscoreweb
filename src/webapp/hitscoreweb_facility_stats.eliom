@@ -394,64 +394,6 @@ let hiseq_stats layout =
      `head [pcdata "Date Returned"]; ] in
   return (content_section (pcdata "Stats Draft") (content_table (head :: rows)))
 
-    
-let test_calendars () =
-  let open Template in
-  let open Html5 in
-  Eliom_service.onload {{
-    dbg "I'm there";
-    let span = get_element_exn "label_iso_8601" in
-    let date = ref None in
-    let rec do_calendar () =
-      let dp_iso_8601 = jsnew Goog.Ui.datePicker(Js.null, Js.null) in
-      let attach = get_element_exn "attach_stats_table" in
-      let sub = Html5.(div ~a:[ a_id "attach_calendar" ] []) |! Html5_to_dom.of_div in
-      Dom.appendChild attach sub;
-      span##onclick <- Dom_html.handler (fun _ -> Js._true);
-      begin match !date with
-      | Some d ->
-        dp_iso_8601##setDate(Goog.Tools.Union.i1 d);
-      | None ->
-        dp_iso_8601##selectNone();
-      end;
-      dp_iso_8601##render(Js.some sub);
-      Goog.Events.listen
-        (Goog.Tools.Union.i1 dp_iso_8601)
-        (Js.string "select")
-        (Js.wrap_callback (fun _ ->
-          dbg "callback there";
-          begin match Js.Opt.to_option (dp_iso_8601##getDate()) with
-          | Some d ->
-            date := Some d;
-            let s = Js.to_string d##toIsoString(Js.some Js._true, Js.null) in   
-            dbg "Date: %s" s;
-            span##innerHTML <- Printf.ksprintf Js.string "<b>Date: %s</b>" s;
-          | None ->
-            date := None;
-            dbg "No date";
-            span##innerHTML <- Printf.ksprintf Js.string "<b>No Date.</b>";
-          end;
-          dp_iso_8601##dispose();
-          span##onclick <- Dom_html.handler(fun _ ->
-            do_calendar ();
-            Js._true);
-         ))
-        Js.null |! dbg "Listener: %d";
-    in
-    span##onclick <- Dom_html.handler(fun _ ->
-      (* span##innerHTML <- Js.string "<b>Processing …</b>"; *)
-      do_calendar ();
-      Js._true);
-
-    dbg "End";
-  }};
-  (content_section (pcdata "Test Calendar")
-     (content_paragraph [
-       Eliom_content.Html5.D.div ~a:[ a_id "attach_stats_table"] [];
-       div ~a:[ a_id "attach_stats_table2"] [];
-       span ~a:[ a_id "label_iso_8601"; a_style "clear:both" ] [pcdata "brout"];
-     ]))
-
 let statistics_page configuration =
   let open Template in
   let open Html5 in
@@ -464,7 +406,6 @@ let statistics_page configuration =
     return (content_list [users_section;
                           mini_run_plan flowcells;
                           libraries_per_month flowcells;
-                          test_calendars ();
                           hstats]))
 
 let make ~configuration =
