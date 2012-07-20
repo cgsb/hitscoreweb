@@ -32,6 +32,7 @@ type capability = [
   | `password_of_person of Layout.Record_person.t
   | `names_of_person of Layout.Record_person.t
   | `emails_of_person of Layout.Record_person.t
+  | `facility_statistics
   | `layout]
 | `impersonate of [`person of Layout.Record_person.t | `users]
 ]
@@ -58,6 +59,8 @@ let roles_allow ?(impersonation=false) ?person roles (cap:capability) =
   | `view (`person p) when id_opt = Some p.P.g_id -> true
   | `edit (`password_of_person p) when id_opt = Some p.P.g_id ->
     p.P.g_value.P.password_hash <> None
+  | `edit `facility_statistics ->
+    List.exists roles (fun c -> c = `auditor || c = `administrator)
   | `edit _ | `view `benchmarks ->
     if List.exists roles (fun c -> c = `administrator) then true else false
   | `view something ->

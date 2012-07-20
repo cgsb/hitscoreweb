@@ -131,6 +131,220 @@ let libraries_per_month flowcells =
   in
   (content_section (pcdata "Libraries Per Month") table) 
     
+
+
+{shared{
+type up_message =
+| Change_date of string * string option  (* 'g_id:field', newdate *)
+deriving (Json)
+
+type down_message = 
+| Success
+| Error_string of string
+
+}}
+
+let caml_service =
+  make_delayed (Eliom_service.service 
+          ~path:["stats_edition_caml_service"]
+          ~get_params:Eliom_parameter.(caml "param" Json.t<up_message>))
+
+let reply ~configuration = function
+  | Change_date (id_field, newdate) ->
+    Authentication.authorizes (`edit `facility_statistics)
+    >>= fun authorization ->
+    let errorf fmt = ksprintf (fun s -> error (`error_string s)) fmt in
+    let date_time y m d =
+      let y = Int.of_string y in
+      let m = Int.of_string m |! Core.Month.of_int_exn in
+      let d = Int.of_string d in
+      Time.of_local_date_ofday
+        (Date.create_exn ~y ~m ~d) (Core.Ofday.create  ~hr:10 ()) in 
+    if authorization then 
+      begin match String.split ~on:':' id_field with
+      | [ g_id; field ] ->
+        begin match try Some (Int.of_string g_id) with e -> None with
+        | Some g ->
+          let open Layout.Record_hiseq_statistics in
+          with_database ~configuration (fun ~dbh ->
+            Access.Hiseq_statistics.get ~dbh (unsafe_cast g)
+            >>= fun hs ->
+            begin match Option.map newdate (String.split ~on:'-') with
+            | Some [yr; m; d] ->
+              begin try 
+                      return (Some (date_time yr m d))
+                with e ->
+                  errorf "Cannot parse date: %s"
+                    (Option.value ~default:"None" newdate)
+              end
+            | None ->
+              return None
+            | _ ->
+              errorf "Cannot parse date: %s"
+                (Option.value ~default:"None" newdate)
+            end
+            >>= fun newtime ->
+            begin match field with
+            | "a_clustered" ->
+              return { hs.g_value with a_clustered = newtime }
+            | "a_started" -> 
+              return { hs.g_value with a_started = newtime }
+            | "a_finished"  ->
+              return { hs.g_value with a_finished = newtime }
+            | "a_returned"  -> 
+              return { hs.g_value with a_returned = newtime }
+            | "b_clustered" -> 
+              return { hs.g_value with b_clustered = newtime }
+            | "b_started"   ->  
+              return { hs.g_value with b_started = newtime }
+            | "b_finished"  ->  
+              return { hs.g_value with b_finished = newtime }
+            | "b_returned"  ->
+              return { hs.g_value with b_returned = newtime }
+            | _ ->
+              errorf "Cannot parse: %s" id_field
+            end
+            >>= fun newvalue ->
+            let newhs = { hs with g_value = newvalue } in
+            Access.Hiseq_statistics.update ~dbh newhs
+            >>= fun () ->
+            return Success
+          )
+        | None ->
+          errorf "Cannot parse: %s" id_field
+        end
+      | _ ->
+        errorf "Cannot parse: %s" id_field
+      end
+    else
+      errorf "Wrong Credentials !!!"
+    
+let init_caml_service ~configuration =
+  let already = ref false in
+  fun () ->
+    if !already then () else (
+      already := true;
+      let fail fmt =
+        ksprintf
+          (fun s -> Lwt.fail (Failure ("wrong reply from server: " ^ s)))
+          fmt
+      in
+      Eliom_registration.Ocaml.register ~service:(caml_service ())
+        (fun param () ->
+          Lwt.bind (reply ~configuration param) (function
+          | Ok o -> Lwt.return (o : down_message)
+          | Error (`error_string s) -> Lwt.return (Error_string s)
+          | Error e -> fail "unknown error")))
+
+
+
+
+
+    
+{client{    
+let rec popup_date_picker field_name button_id attach_id caml =
+  dbg "Clicked %s (%s)" field_name button_id;
+  let button = get_element_exn button_id in
+  let attach = get_element_exn attach_id in
+  dbg "Button: %s" (Js.to_string button##title);
+  let date_picker = jsnew Goog.Ui.datePicker(Js.null, Js.null) in
+  let remove_date_picker need_once =
+    date_picker##dispose();
+    let once = ref (not need_once) in
+    button##onclick <- Dom_html.handler(fun _ ->
+      dbg "button-onclick: once = %b" !once;
+      if !once then (
+        popup_date_picker field_name button_id attach_id caml;
+      ) else (
+        once := true;
+      );
+      Js._true);
+  in
+  button##onclick <- Dom_html.handler (fun _ ->
+    dbg "removing date_picker";
+    remove_date_picker false;
+    Js._true);
+  begin match Js.to_string button##title with
+  | "None" ->
+    date_picker##selectNone();
+  | s ->
+    begin match (Js.string s)##split (Js.string "-")
+                |! Js.str_array |! Js.to_array with
+    | [| yr; m; d |] ->
+      let date = jsnew Js.date_day(int_of_string (Js.to_string yr),
+                                   int_of_string (Js.to_string m) - 1,
+                                   int_of_string (Js.to_string d)) in
+      dbg "Date: %s --> %s" s (Js.to_string date##toString());
+      date_picker##setDate(Goog.Tools.Union.i2 date);
+    | l ->
+      dbg "non split: %s" s;
+      date_picker##selectNone();
+    end
+  end;
+  date_picker##render(Js.some attach);
+  Goog.Events.listen (Goog.Tools.Union.i1 date_picker) (Js.string "select")
+    (Js.wrap_callback (fun _ ->
+      dbg "callback there";
+      Lwt.ignore_result (
+        begin match Js.Opt.to_option (date_picker##getDate()) with
+        | Some d ->
+          let date = d##toIsoString(Js.some Js._true, Js.null) in
+          button##title <- date;
+          button##innerHTML <- date;
+          dbg "Date: %s" (Js.to_string date);
+          Eliom_client.call_caml_service ~service:caml
+            (Change_date (field_name, Some (Js.to_string date))) ()
+        | None ->
+          button##title <- Js.string "None";
+          button##innerHTML <- Js.string "None";
+          dbg "No date";
+          Eliom_client.call_caml_service ~service:caml
+            (Change_date (field_name, None)) ()
+        end
+        >>= fun reply ->
+        begin match reply with
+        | Success ->
+          button##style##background <- Js.string "#80D969";
+        | Error_string err ->
+          button##style##background <- Js.string "#D43223";
+          button##style##color <- Js.string "#000000";
+          button##innerHTML <- Printf.ksprintf Js.string "<b>Error: %s</b>" err
+        end;
+        dbg "disposing date_picker";
+        remove_date_picker false;
+        Lwt.return ()
+     (* dbg "end of goog callback" *)
+      )
+     ))
+    Js.null |! dbg "Listener: %d";
+  ()
+    
+}}
+
+let changeable_date name value =
+  let open Template in
+  let open Html5 in
+  let str =
+    Option.value_map value ~default:"None" ~f:(fun s ->
+      Time.to_local_date s |! Date.to_string) in
+  let button_id = unique_id "changeable_date" in
+  let attach_id = unique_id "attach_date_picker" in 
+  let caml = caml_service () in
+  let span =
+    Eliom_content.Html5.D.(
+      div [
+        div ~a:[ a_id button_id;
+                  a_title str;
+                  a_class ["like_link"];
+                  a_onclick {{
+                    popup_date_picker %name %button_id %attach_id %caml
+                  }}]
+          [pcdata str];
+        div ~a:[ a_id attach_id ] []
+      ])
+  in
+  (str, span)
+    
 let hiseq_stats layout =
   let open Template in
   let open Html5 in
@@ -141,10 +355,9 @@ let hiseq_stats layout =
   >>| List.sort ~cmp:(fun (_, a) (_, b) -> compare a#date b#date)
   >>= fun hstats ->
   while_sequential hstats (fun (hs, hsr) ->
-    let stat s =
-      Option.value_map ~default:(`text []) s ~f:(fun s ->
-        let str = Time.to_local_date s |! Date.to_string in
-        `sortable (str, [pcdata str])) in
+    let stat name s =
+      let str, span = changeable_date (sprintf "%d:%s" hs#g_id name) s in
+      `sortable (str, [span]) in
     let fc_row side stats p =
       p#get >>= fun fc ->
       let fc_link =
@@ -155,17 +368,19 @@ let hiseq_stats layout =
         `sortable (fc#serial_name, [fc_link])
       ] @ stats
       |! return in
-    map_option hsr#flowcell_a (fc_row "A" [
-      stat hs#a_clustered;
-      stat hs#a_started;
-      stat hs#a_finished;
-      stat hs#a_returned; ])
+    map_option hsr#flowcell_a (fun p ->
+      fc_row "A" [
+        stat "a_clustered" hs#a_clustered;
+        stat "a_started"   hs#a_started;
+        stat "a_finished"  hs#a_finished;
+        stat "a_returned"  hs#a_returned; ] p)
     >>= fun a_row ->
-    map_option hsr#flowcell_b (fc_row "B" [
-      stat hs#b_clustered;
-      stat hs#b_started;
-      stat hs#b_finished;
-      stat hs#b_returned;])
+    map_option hsr#flowcell_b (fun p ->
+      fc_row "B" [
+        stat "b_clustered" hs#b_clustered;
+        stat "b_started"   hs#b_started;
+        stat "b_finished"  hs#b_finished;
+        stat "b_returned"  hs#b_returned; ] p)
     >>= fun b_row ->
     return (List.filter_opt [a_row; b_row]))
   >>| List.concat 
@@ -202,7 +417,7 @@ let test_calendars () =
       dp_iso_8601##render(Js.some sub);
       Goog.Events.listen
         (Goog.Tools.Union.i1 dp_iso_8601)
-        (Js.string "change")
+        (Js.string "select")
         (Js.wrap_callback (fun _ ->
           dbg "callback there";
           begin match Js.Opt.to_option (dp_iso_8601##getDate()) with
