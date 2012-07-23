@@ -63,6 +63,8 @@ let css_service_handler ~configuration () () =
     out "%s" (css_triangle_arrow ~background ~css_class:"sort_reverse_button" `down);
   in
 
+  let top_baner_max_height, main_margin_top = "6em", "7em" in
+
   out ".top_banner {position: fixed; top:0px; \
                     right: 1%%; left: 1%%; z-index: 100; \
                     padding: 4px; color: white; font-weight: 900;\
@@ -71,6 +73,7 @@ let css_service_handler ~configuration () () =
                     border-bottom:2px solid #7F1DAF; \
                     border-top:1px solid #421857; \
                     background-color: #5C2079; background-opacity: 1;  }";
+  out ".top_banner { max-height: %s ; }" top_baner_max_height;
   out ".top_banner .top_menu a {
                     text-decoration: none;
                     padding: 4px; margin-left: 10px;
@@ -79,6 +82,7 @@ let css_service_handler ~configuration () () =
                     border-bottom:2px solid #7F1DAF;
                     border-top:1px solid #421857;
         }\n";
+  out "html, body { height: 100%%; width: 100%%; }";
   out ".top_banner .top_menu { margin-bottom: 10px; }\n";
   out ".top_banner a:link {color : #FFC800; }\n";
   out ".top_banner a:hover {background-color : #7F1DAF; }\n";
@@ -86,7 +90,9 @@ let css_service_handler ~configuration () () =
   out ".top_banner a:visited {color : #FFC800;}\n";
   out ".top_banner form { display: inline; padding: 10px; }";
   out ".top_banner .main_menu { padding: 0px; display: inline; }\n";
-  out ".main_page { position: absolute; top: 100px; width: auto}";
+  out ".footer { position: relative; height: 5%%; bottom: 1px; }";
+  out ".main_page { min-height: 80%%; margin-top: %s; width: 100%%}"
+    main_margin_top;
   out ".main_page a:link {color : #960F00; }\n";
   out ".main_page .like_link {color : #960F00; text-decoration: underline; }\n";
   out ".main_page a:hover {background-color : %s; }\n" color_theme#light_violet;
@@ -349,7 +355,18 @@ let default ?(title) content =
               Option.value ~default:(span []) main_menu];
             div auth_state;
           ];
-          div ~a:[ a_class ["main_page"]] html_stuff;
+          div ~a:[ a_class ["main_page"]] [
+            div html_stuff;
+          ];
+          div ~a:[ a_class ["footer"] ] [
+            hr ();
+            core_a ~a:[ a_hreff "http://gencore.bio.nyu.edu" ] [pcdata "Gencore"];
+            pcdata " 2011 — 2012.  ";
+            core_a ~a:[ a_hreff "http://www.ocaml.org" ] [pcdata "OCaml"];
+            pcdata "/";
+            core_a ~a:[ a_hreff "http://ocsigen.org" ] [pcdata "Ocsigen"];
+            pcdata " powered.";
+          ];
         ]))
   in
   let html_result =
