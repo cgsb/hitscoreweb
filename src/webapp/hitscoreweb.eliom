@@ -725,6 +725,20 @@ module Doc_service = struct
 end
 
 let () =
+  let open Lwt in
+  Ocsigen_extensions.register_command_function ~prefix:"maintenance"
+    (fun s c -> match c with
+    | ["on"] ->
+      log "Goin' maintenance mode\n" >>= fun _ ->
+      Authentication.maintenance_mode_on ();
+      return ()
+    | ["off"] ->
+      log "Leavin' maintenance mode\n" >>= fun _ ->
+      Authentication.maintenance_mode_off ();
+      return ()
+    | _ -> raise Ocsigen_extensions.Unknown_command)
+
+let () =
   Eliom_service.register_eliom_module
     "hitscoreweb" 
     (fun () ->

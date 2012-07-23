@@ -112,6 +112,8 @@ let css_service_handler ~configuration () () =
           border: 1px solid black; padding: 3px; }"; 
   out ".content_table_number {text-align:right; font-family: monospace}\n";
   out ".odd_colored_row { background-color: %s }" color_theme#light_violet;
+  out ".big_warning { background-color: #E03007; color: #D7E007; \
+                      font-weight: bold; padding: 3px; font-size: 110%% }";
 
   out "
     @media (max-width: 63em) {

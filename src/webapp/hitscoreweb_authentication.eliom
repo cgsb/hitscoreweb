@@ -37,7 +37,9 @@ type capability = [
 | `impersonate of [`person of Layout.Record_person.t | `users]
 ]
 
-let roles_allow ?(impersonation=false) ?person roles (cap:capability) =
+let roles_allow
+    ~maintenance_mode
+    ?(impersonation=false) ?person roles (cap:capability) =
   let module P = Layout.Record_person in
   let id_opt = Option.map person (fun p -> p.P.id) in
   let is_part_of_crew people =
@@ -53,7 +55,7 @@ let roles_allow ?(impersonation=false) ?person roles (cap:capability) =
     List.exists roles (fun c -> c = `auditor || c = `administrator)
     && Array.for_all pp.P.g_value.P.roles
       ~f:(fun r -> r <> `auditor && r <> `administrator)
-  | `edit something when impersonation -> false
+  | `edit something when impersonation || maintenance_mode -> false
   | `edit (`names_of_person p)
   (* | `edit (`emails_of_person p) *)
   | `view (`person p) when id_opt = Some p.P.g_id -> true
@@ -105,7 +107,15 @@ let authentication_configuration =
 
 let global_authentication_disabled = ref false
 let global_pam_service = ref ("")  
+let global_maintenance_mode = ref false
 
+let is_maintenance_mode () =
+  !global_maintenance_mode
+let maintenance_mode_on () =
+  global_maintenance_mode := true
+let maintenance_mode_off () =
+  global_maintenance_mode := false
+    
 let init ?(disabled=false) ?(pam_service="") configuration  =
   authentication_configuration := (Some configuration);
   global_pam_service := pam_service;
@@ -218,10 +228,13 @@ let logout () =
 let authorizes (cap:capability) =
   get_state ()
   >>= fun state ->
+  let maintenance_mode = !global_maintenance_mode in
   begin match state with
-  | `user_logged u -> return (roles_allow ~person:u.person u.roles cap)
+  | `user_logged u ->
+    return (roles_allow ~maintenance_mode ~person:u.person u.roles cap)
   | `user_impersonating (_, u) ->
-    return (roles_allow ~impersonation:true ~person:u.person u.roles cap)
+    return (roles_allow ~maintenance_mode
+              ~impersonation:true ~person:u.person u.roles cap)
   | _ -> return !global_authentication_disabled
   end
 
@@ -444,16 +457,23 @@ let display_state ?in_progress_element () =
   >>= fun state ->
   let impersonation_form =
     if can_impersonate then [pcdata "; "; start_impersonating_form ()] else [] in
+  let maintenance_warning =
+    if is_maintenance_mode () then
+      [ span ~a:[ a_class ["big_warning"] ] [pcdataf "Read-Only (Maintenance)"] ]
+    else [] in
   return (state
           :: (match s with
           | `user_logged _ -> 
             impersonation_form @ [pcdata "; "; logout_form () ()]
+            @ maintenance_warning
           | `user_impersonating _ -> 
             [stop_impersonating_form () ()] @ [pcdata "; "; logout_form () ()]
+            @ maintenance_warning
           | _ -> 
              if Eliom_request_info.get_ssl () then
                [pcdata ". ";
                 login_form ?set_visibility_to:in_progress_element ()]
+               @ maintenance_warning
              else
                [pcdata ": ";
                 Html5.a
