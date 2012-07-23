@@ -392,7 +392,7 @@ let hiseq_stats layout =
      `head [pcdata "Date Started"];
      `head [pcdata "Date Finished"];
      `head [pcdata "Date Returned"]; ] in
-  return (content_section (pcdata "Stats Draft") (content_table (head :: rows)))
+  return (content_section (pcdata "HiSeq Statistics Editor") (content_table (head :: rows)))
 
 let statistics_page configuration =
   let open Template in
