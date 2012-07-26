@@ -353,7 +353,7 @@ let default ?(title) content =
           div ~a:[ a_class ["top_banner"] ] [
             div ~a:[ a_class ["top_menu"] ] [
               a_link Services.default [pcdata "Home"] ();
-              a_link Services.doc [pcdata "FAQ"] ["help"; "faq.html"];
+              a_link Services.doc [pcdata "FAQ"] ["help"; "faq"];
               Option.value ~default:(span []) main_menu];
             div auth_state;
           ];

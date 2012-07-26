@@ -544,7 +544,7 @@ module Default_service = struct
           p [
             pcdata "This is Gencore's website; for library submission \
                     information see ";
-            Template.a_link Services.doc [pcdata "the FAQ"] ["help"; "faq.html"];
+            Template.a_link Services.doc [pcdata "the FAQ"] ["help"; "faq"];
             pcdata " or ";
             core_a ~a:[
               a_hreff "https://docs.google.com/a/nyu.edu/?tab=co#folders/\
@@ -561,167 +561,85 @@ end
 
 module Doc_service = struct
 
+  let sdx_to_html document =
+    let open Sequme_doc_syntax in
+    let open Html5 in
+    let rec inline = function
+      | Bold inside -> b (List.map inside inline)
+      | Italic inside -> i (List.map inside inline)
+      | Code  inside -> code (List.map inside inline)
+      | Link (options, inside) ->
+        begin match options with
+        | [] -> span (List.map inside inline)
+        | `url url :: _ when String.is_prefix url ~prefix:"mailto:" ->
+          let id = unique_id "aid" in
+          Template.anti_spam_mailto ~id ~mailto:url;
+          span [core_a ~a:[a_id id; a_hreff "ah ah no-spam"]
+                   (List.map inside inline)]
+        | `url url :: _ ->
+          span [core_a ~a:[a_hreff "%s" url] (List.map inside inline)]
+        | `local l :: _ ->
+          span [Html5.a ~fragment:l ~service:Eliom_service.void_coservice'
+                   (List.map inside inline) ()]
+        end
+      | Text s ->
+        pcdata s in
+    let rec structural = function
+      | Section (level, idopt, inside) ->
+        let a = Option.value_map idopt ~default:[] ~f:(fun id -> [a_id id]) in
+        begin match level with
+        | `one   -> h1 ~a (List.map inside inline)
+        | `two   -> h2 ~a (List.map inside inline)
+        | `three -> h3 ~a (List.map inside inline)
+        | `four  -> h4 ~a (List.map inside inline)
+        end
+      | Code_bloc (options, inside) -> pre (List.map inside inline)
+      | Paragraph -> p []
+      | Line_break -> br ()
+      | Inline i ->  span (List.map i inline)
+      | Numbered_list items ->
+        ol (List.map items (function `item ls -> li (List.map ls structural)))
+      | Unnumbered_list items ->
+        ul (List.map items (function `item ls -> li (List.map ls structural)))
+    in
+    List.map document structural
+
+    
+    
   let make ~configuration =
     (fun path () ->
       let open Html5 in
       let content = 
         begin match Configuration.root_path configuration with
         | Some rootpath ->
-          read_file (String.concat ~sep:"/" (rootpath :: "doc" :: path))
-          >>= fun file_content ->
-          begin try
-            let content = "<content>" ^ file_content ^ "</content>" in
-            return Xml_tree.(in_tree (make_input (`String (0, content))))
-            with
-            | Xml_tree.Error (p, e) -> error (`xml_parsing_error (p, e))
-          end
-          >>= fun xml ->
-          let continue l f = List.map l f |! List.concat in
-          let find_attr name attrs =
-            List.find_map attrs (fun ((_, attr), value) ->
-              if name = attr then Some value else None) in
-          let toc = ref [] in
-          let n a level l =
-            let new_a, id =
-              let already = 
-                List.find_map (to_xmlattribs a) ~f:(fun xmla ->
-                  let open Tyxml in
-                  (* Eliom 2.2 changed the signature of the Xml module included
-                     in Html5 disallowing the deconstruction.
-                     That's why there are these two Obj.magic. *)
-                  if aname (Obj.magic xmla: Tyxml.attrib) = "id" then
-                    begin match acontent (Obj.magic xmla: Tyxml.attrib) with
-                    | AStr s -> Some s
-                    | _ -> None
-                    end
-                  else None) in
-              match already with
-              | None -> let id = unique_id "h" in (a_id id :: a, id) 
-              | Some id -> (a, id) in
-            begin match level with
-            | 1 -> toc := `N ((id, l)) :: !toc;
-            | 2 ->
-              begin match !toc with
-              | `C (hh1, chh2) :: rest ->
-                toc := `C (hh1, `N (id, l) :: chh2) :: rest
-              | `N (hh1) :: rest ->
-                toc := `C (hh1, `N (id, l) :: []) :: rest
-              | [] ->
-                toc := `C (("noid", [pcdata "no h1"]), [`N (id,l)]) :: [];
-              end;
-            | 3 ->
-              begin match !toc with
-              | [] ->
-                toc := `C (("noid", [pcdata "no h1"]),
-                           [`C (("noid", [pcdata "no h2"]), [`N (id,l)])]) :: [];
-              | `N hh1 :: rest | `C (hh1, []) :: rest->
-                toc := `C (hh1,
-                           [`C (("noid", [pcdata "no h2"]),
-                                [`N (id,l)])]) :: rest;
-              | `C (hh1, `N hh2 :: rest2) :: rest1 ->
-                toc := `C (hh1,
-                           `C (hh2,
-                               [`N (id,l)]) :: rest2) :: rest1;
-              | `C (hh1, `C (hh2, chh2) :: rest2) :: rest1 ->
-                toc := `C (hh1,
-                           `C (hh2,
-                               `N (id,l) :: chh2) :: rest2) :: rest1;
-              end
-            | n -> failwithf "TOC Generation for level %d: NOT IMPLEMENTED" n ()
-            end;
-            new_a
-          in
-          let h1 ?(a=[]) l = Html5.h1 ~a:(n a 1 l) l in 
-          let h2 ?(a=[]) l = Html5.h2 ~a:(n a 2 l) l in 
-          let h3 ?(a=[]) l = Html5.h3 ~a:(n a 3 l) l in 
-          let make_toc () =
-            let rec frec subtoc =
-              List.rev_map subtoc ~f:(function
-              | `C ((id, name), content) ->
-                let next =
-                  match content with
-                  | [] -> []
-                  | l -> [ol (frec l)] in
-                li (span [Html5.a ~fragment:id
-                             ~service:Eliom_service.void_coservice'
-                             name ()] :: next)
-              | `N (id, name) ->
-                li (span [Html5.a ~fragment:id
-                             ~service:Eliom_service.void_coservice'
-                             name ()] :: [])
-              ) in
-            ol (frec !toc)
-          in
-          let propagate_common attr =
-            List.filter_opt [
-              Option.map (find_attr "id" attr) (a_id);
-              Option.map (find_attr "class" attr) (fun s ->
-                a_class (String.split ~on:' ' s));
-            ] in
-          let first_h1 = ref [] in
-          let rec go_through = function
-            | `E (((_,"content"), _), inside) -> continue inside go_through
-            | `E (((_,"h1"), attr), inside) ->
-              let a = propagate_common attr in
-              let h = [h1 ~a (continue inside go_through_inline)] in
-              begin match !first_h1 with
-              | [] -> first_h1 := h; []
-              | _ -> h
-              end
-            | `E (((_,"h2"), attr), inside) ->
-              let a = propagate_common attr in
-              [h2 ~a (continue inside go_through_inline)]
-            | `E (((_,"h3"), attr), inside) ->
-              let a = propagate_common attr in
-              [h3 ~a (continue inside go_through_inline)]
-            | `E (((_,"p"), _), inside) -> [p (continue inside go_through_inline)]
-            | `E (((_,"ul"), _), inside) -> [ul (continue inside go_through_list)]
-            | `E (((_,"ol"), _), inside) -> [ol (continue inside go_through_list)]
-            | `E (_) as e -> [span (continue [e] go_through_inline)]
-            | `D s -> [pcdata s]
-          and go_through_list = function
-            | `E (((_,"li"), _), inside) -> [li (continue inside go_through)]
-            | `E (t, tl) -> []
-            | `D s -> []
-          and go_through_inline = function
-            | `E (((_,"a"), attr), inside) ->
-              let id = 
-                match find_attr "id" attr with
-                | Some s -> s
-                | None -> unique_id "a_id_" in
-              begin match find_attr "href" attr with
-              | None ->
-                [span [core_a ~a:[a_id id] (continue inside go_through_inline)]]
-              | Some s when String.is_prefix s ~prefix:"mailto:" ->
-                Template.anti_spam_mailto ~id ~mailto:s;
-                [span [core_a ~a:[a_id id; a_hreff "ah ah no-spam"]
-                          (continue inside go_through_inline)]]
-              | Some s when String.is_prefix s ~prefix:"#" ->
-                [span [Html5.a ~fragment:(String.chop_prefix_exn s "#")
-                          ~service:Eliom_service.void_coservice'
-                          (continue inside go_through_inline) ()]]
-              | Some s ->
-                [span [core_a ~a:[a_id id; a_hreff "%s" s]
-                          (continue inside go_through_inline)]]
-              end
-            | `E (((_,"i"), _), inside) -> [i (continue inside go_through_inline)]
-            | `E (((_,"b"), _), inside) -> [b (continue inside go_through_inline)]
-            | `E (((_,"tt"), _), inside) -> [kbd (continue inside go_through_inline)]
-            | `E (((_,"code"), _), inside) ->
-              [code (continue inside go_through_inline)]
-            | `E (t, tl) -> continue tl go_through_inline
-            | `D s -> [pcdata s]
-          in
-          let html = go_through (snd xml) in
-          return [div ~a:[a_class ["doc_doc"]] !first_h1;
-                  div ~a:[ a_class ["doc_toc"]] (try [make_toc ()] with e -> []);
-                  div ~a:[a_class ["doc_doc"]] html]
+          read_file (rootpath ^/ "doc" ^/
+                       (sprintf "%s.sdx" (String.concat path ~sep:"/")))
         | None ->
           error `root_directory_not_configured
         end
+        >>= fun file_content ->
+        begin match Sequme_doc_syntax.parse ~pedantic:false file_content with
+        | Ok document ->
+          let subdocs = Sequme_doc_syntax.extract_level_one document in
+          let divs = 
+            List.map subdocs (fun (_, title, content) ->
+              let sec1 = Sequme_doc_syntax.Section (`one, None, title) in
+              let (toc, doc) =
+                Sequme_doc_syntax.table_of_contents ~toplevel:`two content in
+              let header = sdx_to_html [sec1] in
+              let tochtml =
+                sdx_to_html [Sequme_doc_syntax.toc_to_numbered_list toc] in
+              let content_html = sdx_to_html doc in
+              div [div ~a:[a_class ["doc_doc"]] header;
+                   div ~a:[ a_class ["doc_toc"]] tochtml;
+                   div ~a:[a_class ["doc_doc"]] content_html])
+          in
+          return divs
+        | Error _ ->
+          return [pcdata "Error: could not parse content"]
+        end
       in
       Template.default ~title:"Home" content)
-
 end
 
 let () =
