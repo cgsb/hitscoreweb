@@ -41,7 +41,10 @@ doc:
 	ocaml setup.ml -doc
 
 clean:
-	ocaml setup.ml -clean
+	rm -fr _build
+
+distclean: clean
+	rm -f setup.data setup.log
 
 
 # clean everything and uninstall
