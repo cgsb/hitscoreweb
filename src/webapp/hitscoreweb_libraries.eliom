@@ -56,6 +56,7 @@ let make_classy_information ~configuration ~dbh =
   layout#fastx_quality_stats#all >>= fun fxqss ->
   layout#fastx_quality_stats_result#all >>= fun fxqs_rs ->
   layout#person#all >>= fun persons ->
+  layout#protocol#all >>= fun protocols ->
 
   while_sequential b2fs (fun b2f ->
     let b2fu = getopt_by_id b2fus b2f#g_result in
@@ -237,6 +238,12 @@ let make_classy_information ~configuration ~dbh =
       List.filter bioanalyzers (fun b -> b#bioanalyzer#library#id = sl#g_id) in
     let agels = 
       List.filter agarose_gels (fun b -> b#agarose_gel#library#id = sl#g_id) in
+    let prot =
+      List.find protocols (fun p ->
+        Some p#g_pointer = Option.map sl#protocol (fun x -> x#pointer)) in
+    map_option Option.(prot >>= fun v -> get_by_id volumes v#doc#id) (fun vol ->
+      Common.all_paths_of_volume ~configuration ~dbh vol#g_pointer)
+    >>= fun protocol_paths ->
     return (object
       method stock = sl (* library *)
       method submissions = submissions
@@ -245,6 +252,8 @@ let make_classy_information ~configuration ~dbh =
       method preparator = preparator
       method bioanalyzers = bios
       method agarose_gels = agels
+      method protocol = prot
+      method protocol_paths = protocol_paths
     end))
   >>= fun libraries ->
   let created = Time.now () in
