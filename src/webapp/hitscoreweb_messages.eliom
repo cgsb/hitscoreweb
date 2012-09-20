@@ -69,6 +69,8 @@ let agarose_gel_mean = head_text "Agarose Gel: Mean" "Average Fragment Size"
 let agarose_gel_min = head_text "Agarose Gel: Min" "Min Fragment Size"
 let agarose_gel_max = head_text "Agarose Gel: Max" "Max Fragment Size"
 let agarose_gel_files = head_text "Agarose Gel: Files" "Agarose Gel Files"
+
+let protocol = head_text "Protocol" "Protocol Description (if available)"
   
 let demux_options =
   head_text "Demultiplexing Options" "Options used whie demultiplexing"

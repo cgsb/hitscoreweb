@@ -601,6 +601,9 @@ let libraries_table info =
         if lib#agarose_gels = []
         then `subtable [List.init 5 (fun _ -> cell_text "")]
         else `subtable subtable);
+      stock (fun () ->
+        Option.value_map lib#protocol ~default:(`text [])
+          ~f:(fun p -> cell_text p#name));
       stock (fun () -> cell_option lib#stock#note) ;
               
       fastq (fun () ->
@@ -649,7 +652,7 @@ let libraries_table info =
       stock (fun () -> `head_cell Msg.agarose_gel_min);
       stock (fun () -> `head_cell Msg.agarose_gel_max);
       stock (fun () -> `head_cell Msg.agarose_gel_files);
-
+      stock (fun () -> `head_cell Msg.protocol);
       stock (fun () -> `head_cell Msg.library_note);
       fastq (fun () -> `head_cell Msg.library_submissions);
     ] @ fastq_part
