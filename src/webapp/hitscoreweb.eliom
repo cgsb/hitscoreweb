@@ -641,20 +641,58 @@ module Doc_service = struct
       in
       Template.default ~title:"Home" content)
 end
-
 module File_service = struct
 
+  let people_of_libraries ~layout libs =
+    while_sequential libs ~f:(fun sl ->
+      layout#input_library#all
+      >>| List.filter ~f:(fun il -> il#library#id = sl#g_id))
+    >>| List.concat
+    >>= while_sequential ~f:(fun il ->
+      layout#lane#all
+      >>| List.filter ~f:(fun lane ->
+        Array.exists lane#libraries (fun l -> l#id = il#g_id)))
+    >>| List.concat
+    >>| List.map ~f:(fun lane ->
+      Array.(to_list (map lane#contacts ~f:(fun c -> c#pointer))))
+    >>| List.concat
+    
   let indentify_and_verify ~configuration vol path =
     with_database ~configuration (fun ~dbh ->
       let vol_pointer = Layout.File_system.(unsafe_cast vol) in
       Common.all_paths_of_volume ~dbh ~configuration vol_pointer
       >>= fun all_paths ->
-      Access.Volume.get ~dbh vol_pointer
+      let layout = Classy.make dbh in
+      layout#file_system#get vol_pointer
       >>= fun vol_content ->
-      begin match vol_content.Layout.File_system.g_kind with
-      | `protocol_directory | `bioanalyzer_directory | `agarose_gel_directory ->
-        return ()
+      begin match vol_content#g_kind with
+      | `protocol_directory ->
+        layout#protocol#all
+        >>| List.filter ~f:(fun p -> p#doc#id = vol_content#g_id)
+        >>= while_sequential ~f:(fun prot ->
+          layout#stock_library#all
+          >>| List.filter ~f:(fun sl ->
+            match sl#protocol with None -> false | Some p -> p#id = prot#g_id))
+        >>| List.concat
+      | `bioanalyzer_directory  ->
+        layout#bioanalyzer#all
+        >>| List.filter ~f:(fun p ->
+          match p#files with None -> false | Some f -> f#id = vol_content#g_id)
+        >>= while_sequential ~f:(fun bio -> bio#library#get)
+      | `agarose_gel_directory ->
+        layout#agarose_gel#all
+        >>| List.filter ~f:(fun p ->
+          match p#files with None -> false | Some f -> f#id = vol_content#g_id)
+        >>= while_sequential ~f:(fun ag -> ag#library#get)
       | k -> error (`forbidden_volume_kind k)
+      end
+      >>= fun stock_libraries ->
+      people_of_libraries ~layout stock_libraries
+      >>= fun people ->
+      Authentication.authorizes (`view (`libraries_of people))
+      >>= begin function
+      | true -> return ()
+      | false -> error (`wrong_access_rights)
       end
       >>= fun () ->
       let content_type =
