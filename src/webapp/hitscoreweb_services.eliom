@@ -82,6 +82,12 @@ let person =
           ~path:["person"]
           ~get_params:Eliom_parameter.(string "id" ** opt (string "action")))
   
+let file =
+  make (Eliom_service.service
+          ~path:["file"]
+          ~get_params:Eliom_parameter.(suffix (int "vol" ** string "path")))
+let register_file s =
+  Eliom_registration.Any.register ~service:(s ())
     
 let register f =
   Output_app.register 

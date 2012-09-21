@@ -1,7 +1,7 @@
 open Hitscoreweb_std
 
 module Msg = Hitscoreweb_messages
-  
+
 module Data_access = Hitscoreweb_data_access
 
 module Queries = Hitscoreweb_queries
@@ -13,21 +13,21 @@ module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 
 module Layout_service = Hitscoreweb_layout_service
-    
+
 module One_person_service = Hitscoreweb_one_person_service
 
 module Persons_service = Hitscoreweb_persons
 
 module Flowcell_service = struct
-    
+
 
   let sortable_people_cell people =
     let open Html5 in
     let sortability =
       List.map people trd3 |! String.concat ~sep:", " in
-    let cell = 
+    let cell =
       (List.map people (fun (f, l, e) ->
-        [ 
+        [
           Template.a_link Services.persons
             [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
           br () ]) |! List.concat)
@@ -45,7 +45,7 @@ module Flowcell_service = struct
     in
     (sortability, cell)
 
-      
+
   let sortable_libraries_cell libs =
     let open Html5 in
     let qname = function (l, None) -> l | (l, Some p) -> sprintf "%s.%s" p l in
@@ -57,7 +57,7 @@ module Flowcell_service = struct
         p (Option.(value ~default:(pcdata "No Project: ")
                      (List.hd l >>= fun (_, p) ->
                       p >>= fun p -> return (b [pcdataf "%s: " p])))
-           :: 
+           ::
              (List.map l (fun (n, p) ->
                Template.a_link Services.libraries
                  [pcdata n] ([`basic;`fastq], [qname (n, p)]))
@@ -77,7 +77,7 @@ module Flowcell_service = struct
     in
     (sortability, cell)
 
-  let get_flowcell_by_serial_name ~dbh serial_name = 
+  let get_flowcell_by_serial_name ~dbh serial_name =
     Access.Flowcell.get_all ~dbh
     >>| List.filter ~f:(fun f ->
       Layout.Record_flowcell.(f.g_value.serial_name) = serial_name)
@@ -87,7 +87,7 @@ module Flowcell_service = struct
     | [] -> error (`no_flowcell_named serial_name)
     | more ->
       error (`more_than_one_flowcell_called serial_name)
-      
+
   let flowcell_lanes_table hsc ~serial_name =
     with_database hsc (fun ~dbh ->
       get_flowcell_by_serial_name ~dbh serial_name >>= fun one ->
@@ -143,9 +143,9 @@ module Flowcell_service = struct
       in
       lanes >>= fun lanes ->
       return Template.(Html5.(
-        content_section 
+        content_section
           (ksprintf pcdata "Lanes of %s" serial_name)
-          (content_table 
+          (content_table
              ([ `head_cell Msg.lane;
 	        `head_cell Msg.seeding_concentration;
 	        `head_cell Msg.volume;
@@ -154,7 +154,7 @@ module Flowcell_service = struct
               :: lanes)))))
 
   let get_clusters_info ~configuration path =
-    let make file = 
+    let make file =
       Data_access.File_cache.get_clusters_info file >>= fun ci_om ->
       let open Html5 in
       let open Template in
@@ -169,11 +169,11 @@ module Flowcell_service = struct
             Option.(value_map ~default:"" ~f:(sprintf "%.2f") (map cio ~f:g)) in
           let r s = [div ~a:[ a_style "text-align:right"] [codef "%s" s]] in
           [ `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
-            (let s = f (fun x -> x.clusters_raw      ) in `sortable (s, r s));  
-            (let s = f (fun x -> x.clusters_raw_sd   ) in `sortable (s, r s));     
-            (let s = f (fun x -> x.clusters_pf       ) in `sortable (s, r s));  
-            (let s = f (fun x -> x.clusters_pf_sd    ) in `sortable (s, r s));    
-            (let s = f (fun x -> x.prc_pf_clusters   ) in `sortable (s, r s));     
+            (let s = f (fun x -> x.clusters_raw      ) in `sortable (s, r s));
+            (let s = f (fun x -> x.clusters_raw_sd   ) in `sortable (s, r s));
+            (let s = f (fun x -> x.clusters_pf       ) in `sortable (s, r s));
+            (let s = f (fun x -> x.clusters_pf_sd    ) in `sortable (s, r s));
+            (let s = f (fun x -> x.prc_pf_clusters   ) in `sortable (s, r s));
             (let s = f (fun x -> x.prc_pf_clusters_sd) in `sortable (s, r s)); ])
       in
       return (content_table (first_row :: other_rows))
@@ -191,7 +191,7 @@ module Flowcell_service = struct
       while_sequential dirs ~f:(fun d ->
         let m = Common.check_hiseq_raw_availability ~dbh ~hiseq_raw:d#g_pointer in
         double_bind m
-          ~error:(fun e -> 
+          ~error:(fun e ->
             match e with
             | `hiseq_dir_deleted -> return false
             | `Layout _ as e -> error e)
@@ -210,10 +210,10 @@ module Flowcell_service = struct
           >>= fun cluster_stats_subsection ->
           let intro_paragraph =
             content_paragraph [
-              ul [            
+              ul [
                 li [ strong [pcdataf "Host:" ]; pcdataf " %s" d#host; ];
                 li [ strong [pcdataf "Path: "]; codef "%s" d#hiseq_dir_name];
-                li [ strong [pcdataf "Run-type: "]; 
+                li [ strong [pcdataf "Run-type: "];
                      pcdataf "%d%s%s."
                        d#read_length_1
                        (Option.value_map ~default:""
@@ -238,7 +238,7 @@ module Flowcell_service = struct
 
   type demux_stats_filter =
   [`none | `barcoded of int * string | `non_barcoded of int ]
-    
+
   let apply_demux_stats_filter
       ~filter ~lane_index ~library_name ~only_one_in_the_lane ~f =
     match filter with
@@ -251,7 +251,7 @@ module Flowcell_service = struct
           || library_name = sprintf "UndeterminedLane%d" lane
             || only_one_in_the_lane) -> Some (f ())
     | _ -> None
-    
+
   let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
     (* eprintf "demux: %s\n%!" dmux_sum; *)
     let make dmux_sum =
@@ -270,8 +270,8 @@ module Flowcell_service = struct
           let only_one_in_the_lane = List.length ls_l = 1 in
           List.filter_map ls_l (fun ls ->
             let open Hitscore_interfaces.B2F_unaligned_information in
-            let nb2 f = `number (sprintf "%.2f", f) in 
-            let nb0 f = `number (sprintf "%.0f", f) in 
+            let nb2 f = `number (sprintf "%.2f", f) in
+            let nb0 f = `number (sprintf "%.0f", f) in
             let make_row () =
               let name =
                 if ls.name = sprintf "lane%d" (i + 1)
@@ -296,7 +296,7 @@ module Flowcell_service = struct
     in
     let dmux_sum = Filename.concat path "Flowcell_demux_summary.xml" in
     make dmux_sum
-      
+
   let basecall_stats_path_of_unaligned ~configuration ~dbh directory serial_name =
     Common.all_paths_of_volume ~configuration ~dbh directory
     >>= (function
@@ -400,15 +400,15 @@ module Flowcell_service = struct
            make_content ~configuration ~main_title content
          | false ->
            Template.make_authentication_error ~configuration ~main_title
-             (return [Html5.pcdataf 
+             (return [Html5.pcdataf
                          "You may not view the flowcell called %s."
                          serial_name])))
 
 
 end
 
-  
-  
+
+
 module Evaluations_service = struct
 
   let b2f_section dbh layout =
@@ -445,14 +445,14 @@ module Evaluations_service = struct
       ])
     >>= fun rows ->
     return Template.(
-      let tab = 
+      let tab =
         content_table (
           [`head [Html5.pcdata "Id"];
-           `head [Html5.pcdata "Status"]; 
-           `head [Html5.pcdata "Inserted"]; 
-           `head [Html5.pcdata "Started"]; 
-           `head [Html5.pcdata "Completed"]; 
-           `head [Html5.pcdata "Flowcell"]; 
+           `head [Html5.pcdata "Status"];
+           `head [Html5.pcdata "Inserted"];
+           `head [Html5.pcdata "Started"];
+           `head [Html5.pcdata "Completed"];
+           `head [Html5.pcdata "Flowcell"];
            `head [Html5.pcdata "Mismatch"];
            `head [Html5.pcdata "Version"];
            `head [Html5.pcdata "Tiles Option"];
@@ -487,14 +487,14 @@ module Evaluations_service = struct
       ])
     >>= fun rows ->
     return Template.(
-      let tab = 
+      let tab =
         content_table (
           [`head [Html5.pcdata "Id"];
-           `head [Html5.pcdata "Status"]; 
-           `head [Html5.pcdata "Inserted"]; 
-           `head [Html5.pcdata "Started"]; 
-           `head [Html5.pcdata "Completed"]; 
-           `head [Html5.pcdata "Input path"]; 
+           `head [Html5.pcdata "Status"];
+           `head [Html5.pcdata "Inserted"];
+           `head [Html5.pcdata "Started"];
+           `head [Html5.pcdata "Completed"];
+           `head [Html5.pcdata "Input path"];
            `head [Html5.pcdata "Option Q"];
            `head [Html5.pcdata "Filter Names"];
           ] :: rows)
@@ -518,11 +518,11 @@ module Evaluations_service = struct
         (Authentication.authorizes (`view `all_evaluations)
          >>= function
          | true ->
-           Template.make_content ~configuration ~main_title    
+           Template.make_content ~configuration ~main_title
              (evaluations configuration);
          | false ->
            Template.make_authentication_error ~configuration ~main_title
-             (return [Html5.pcdataf 
+             (return [Html5.pcdataf
                          "You may not view the function evaluations."])))
 
 
@@ -532,8 +532,8 @@ module Default_service = struct
   let make hsc =
     (fun () () ->
       let open Html5 in
-      let content = 
-        Template.menu_ul () 
+      let content =
+        Template.menu_ul ()
         >>= fun ul_menu ->
         let header = [h1 [pcdata "Gencore Home"];] in
         let menu =
@@ -604,12 +604,12 @@ module Doc_service = struct
     in
     List.map document structural
 
-    
-    
+
+
   let make ~configuration =
     (fun path () ->
       let open Html5 in
-      let content = 
+      let content =
         begin match Configuration.root_path configuration with
         | Some rootpath ->
           read_file (rootpath ^/ "doc" ^/
@@ -621,7 +621,7 @@ module Doc_service = struct
         begin match Sequme_doc_syntax.parse ~pedantic:false file_content with
         | Ok document ->
           let subdocs = Sequme_doc_syntax.extract_level_one document in
-          let divs = 
+          let divs =
             List.map subdocs (fun (_, title, content) ->
               let sec1 = Sequme_doc_syntax.Section (`one, None, title) in
               let (toc, doc) =
@@ -642,6 +642,54 @@ module Doc_service = struct
       Template.default ~title:"Home" content)
 end
 
+module File_service = struct
+
+  let indentify_and_verify ~configuration vol path =
+    with_database ~configuration (fun ~dbh ->
+      let vol_pointer = Layout.File_system.(unsafe_cast vol) in
+      Common.all_paths_of_volume ~dbh ~configuration vol_pointer
+      >>= fun all_paths ->
+      Access.Volume.get ~dbh vol_pointer
+      >>= fun vol_content ->
+      begin match vol_content.Layout.File_system.g_kind with
+      | `protocol_directory | `bioanalyzer_directory | `agarose_gel_directory ->
+        return ()
+      | k -> error (`forbidden_volume_kind k)
+      end
+      >>= fun () ->
+      let content_type =
+        let mime_assoc = Ocsigen_charset_mime.default_mime_assoc () in
+        Ocsigen_charset_mime.find_mime path mime_assoc in
+      begin match
+          List.mem all_paths path && Eliom_registration.File.check_file path
+      with
+      | true ->
+        return (content_type, path)
+      | false -> error (`path_not_right_volume path)
+      end)
+    
+  let error_content e =
+    let open Template in
+    let open Html5 in
+    return ( [Html5.pcdata "Error: Cannot retrieve that file …"])
+      
+  let make ~configuration =
+    begin fun (vol, path) () ->
+      let open Lwt  in
+      indentify_and_verify ~configuration vol path
+      >>= begin function
+      | Ok (content_type, path) ->
+        Eliom_registration.File.send ~content_type path
+      | Error e ->
+          (* Lwt.fail Eliom_common.Eliom_404 *)
+        Template.default ~title:"File Error" (error_content e)
+        >>= fun html ->
+        Eliom_registration.Html5.send ~content_type:"text/html" html
+      end
+    end
+      
+end
+
 let () =
   let open Lwt in
   Ocsigen_extensions.register_command_function ~prefix:"maintenance"
@@ -658,9 +706,9 @@ let () =
 
 let () =
   Eliom_service.register_eliom_module
-    "hitscoreweb" 
+    "hitscoreweb"
     (fun () ->
-      
+
       Lwt_preemptive.init 1 500 (eprintf "LwtP:%s\n%!");
 
       let _ =
@@ -675,7 +723,7 @@ let () =
            I don't understand why we see Eliom_404 exceptions
            everywhere, and only the `real' ones get redirected to the
            404. anyway, It Works™.
-        *)        
+        *)
         let send ?code e =
           Lwt.bind (Template.default (error e))
             (Eliom_registration.Html5.send ?code) in
@@ -729,7 +777,7 @@ TODO: All exceptions in coservices should be handled in some other way
         let db_configuration =
           match !pghost, !pgport, !pgdb, !pguser, !pgpass with
           | Some host, Some port, Some database, Some username, Some password ->
-            Some (Configuration.db_configuration 
+            Some (Configuration.db_configuration
                     ~host ~port ~database ~username ~password)
           | _ -> None
         in
@@ -748,18 +796,18 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register default) (Default_service.make hitscore_configuration);
 
       Services.(register home) (Default_service.make hitscore_configuration);
-      
+
       Services.(register hiseq_runs)
         Hitscoreweb_hiseq_runs.(make hitscore_configuration);
-      
+
       Hitscoreweb_facility_stats.init_caml_service
         ~configuration:hitscore_configuration ();
       Services.(register facility_statistics)
         Hitscoreweb_facility_stats.(make ~configuration:hitscore_configuration);
-      
+
       Services.(register persons) Persons_service.(make hitscore_configuration);
-      
-      Services.(register libraries) 
+
+      Services.(register libraries)
         Hitscoreweb_libraries.(make
                                  ~timeout:(if !debug_mode then 60. else 610.)
                                  ~configuration:hitscore_configuration);
@@ -767,31 +815,34 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register flowcell)
         Flowcell_service.(make hitscore_configuration);
 
-      Services.(register evaluations) 
+      Services.(register evaluations)
         Evaluations_service.(make ~configuration:hitscore_configuration);
 
       Layout_service.init_caml_service
         ~configuration:hitscore_configuration ();
-      Services.(register layout) 
+      Services.(register layout)
         Layout_service.(make ~configuration:hitscore_configuration);
 
-      Services.(register doc) 
+      Services.(register doc)
         Doc_service.(make ~configuration:hitscore_configuration);
-      
+
       One_person_service.init_caml_service
         ~configuration:hitscore_configuration ();
       One_person_service.init_email_verification_service
         ~configuration:hitscore_configuration;
-      Services.(register self) 
+      Services.(register self)
         One_person_service.(make_self ~configuration:hitscore_configuration);
 
-      Services.(register person) 
+      Services.(register person)
         One_person_service.(make_person ~configuration:hitscore_configuration);
 
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);
 
+      Services.(register_file file)
+        File_service.(make ~configuration:hitscore_configuration);
+
       logf "All services are registered" |! Lwt.ignore_result
-      
+
     )
 
