@@ -509,14 +509,15 @@ let simple_fastq_subtable lib =
   let empty_row = [List.init 5 (fun _ -> `text [pcdata ""])] in
   `subtable (if List.concat subtable = [] then empty_row else subtable)
 
-let make_file_links paths =
+let make_file_links vol_id paths =
   let open Html5 in
-  List.map paths (fun path ->
+  List.map paths begin fun path ->
     match Filename.split_extension path |! snd with
-    | Some "pdf" | Some "PDF" -> b ~a:[ a_title path ] [pcdata "PDF"]
-    | Some "xad" | Some "XAD" -> b ~a:[ a_title path ] [pcdata "XAD"]
-    | Some "pptx" | Some "PPTX" -> b ~a:[ a_title path ] [pcdata "PPTX"]
-    | _ -> b ~a:[ a_title path ] [pcdata "???"])
+    | Some ext ->
+      b [Template.a_link Services.file [pcdata ext] (vol_id, path)]
+    | None ->
+      b [Template.a_link Services.file [pcdata "???"] (vol_id, path)]
+  end 
   |! interleave_list ~sep:(pcdata ", ")
 
 let libraries_table info =
@@ -584,7 +585,8 @@ let libraries_table info =
               cell_fmt_option "%.2f" b#bioanalyzer#mean_fragment_size;
               cell_fmt_option "%.2f" b#bioanalyzer#min_fragment_size;
               cell_fmt_option "%.2f" b#bioanalyzer#max_fragment_size;
-              `text (make_file_links b#paths);
+              `text (Option.value_map b#bioanalyzer#files
+                       ~f:(fun v -> make_file_links v#id b#paths) ~default:[]);
             ]) in
         if lib#bioanalyzers = []
         then `subtable [List.init 5 (fun _ -> cell_text "")]
@@ -596,14 +598,21 @@ let libraries_table info =
               cell_fmt_option "%.2f" a#agarose_gel#mean_fragment_size;
               cell_fmt_option "%.2f" a#agarose_gel#min_fragment_size;
               cell_fmt_option "%.2f" a#agarose_gel#max_fragment_size;
-              `text (make_file_links a#paths);
+              `text (Option.value_map a#agarose_gel#files
+                       ~f:(fun v -> make_file_links v#id a#paths) ~default:[]);
             ]) in
         if lib#agarose_gels = []
         then `subtable [List.init 5 (fun _ -> cell_text "")]
         else `subtable subtable);
       stock (fun () ->
         Option.value_map lib#protocol ~default:(`text [])
-          ~f:(fun p -> cell_text p#name));
+          ~f:(fun p ->
+            match lib#protocol_paths with
+            | None | Some [] -> cell_text (sprintf "%s (no file)" p#name)
+            | Some (one :: _) ->
+              `sortable (p#name,
+                         [a_link Services.file [pcdata p#name] (p#doc#id, one)])
+          ));
       stock (fun () -> cell_option lib#stock#note) ;
               
       fastq (fun () ->
