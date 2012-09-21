@@ -512,11 +512,15 @@ let simple_fastq_subtable lib =
 let make_file_links vol_id paths =
   let open Html5 in
   List.map paths begin fun path ->
-    match Filename.split_extension path |! snd with
+    if Eliom_registration.File.check_file path
+    then begin match Filename.split_extension path |! snd with
     | Some ext ->
       b [Template.a_link Services.file [pcdata ext] (vol_id, path)]
     | None ->
       b [Template.a_link Services.file [pcdata "???"] (vol_id, path)]
+    end
+    else 
+      i ~a:[ a_title path ] [pcdata "missing-file"]
   end 
   |! interleave_list ~sep:(pcdata ", ")
 
@@ -610,8 +614,12 @@ let libraries_table info =
             match lib#protocol_paths with
             | None | Some [] -> cell_text (sprintf "%s (no file)" p#name)
             | Some (one :: _) ->
-              `sortable (p#name,
-                         [a_link Services.file [pcdata p#name] (p#doc#id, one)])
+              if Eliom_registration.File.check_file one
+              then `sortable (p#name, [a_link Services.file
+                                          [pcdata p#name] (p#doc#id, one)])
+              else `sortable (p#name, [pcdata p#name;
+                                       i ~a:[ a_title one ]
+                                         [pcdata " (missing file)"]])
           ));
       stock (fun () -> cell_option lib#stock#note) ;
               
