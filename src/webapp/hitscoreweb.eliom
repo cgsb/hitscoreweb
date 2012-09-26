@@ -542,15 +542,12 @@ module Default_service = struct
         let welcome = [
           h2 [pcdata "Welcome"];
           p [
-            pcdata "This is Gencore's website; for library submission \
+            pcdata "This is Gencore's LIMS web-application; for general \
                     information see ";
-            Template.a_link Services.doc [pcdata "the FAQ"] ["help"; "faq"];
-            pcdata " or ";
-            core_a ~a:[
-              a_hreff "https://docs.google.com/a/nyu.edu/?tab=co#folders/\
-                0B6RMw3n537F2OTc3ZjZlMzktZTY2YS00MmI4LTk0MmQtZmZlYzQ3Nzk3YTRl"]
-              [pcdata "GenCore's Google-Docs"];
-            pcdata ".";
+            core_a
+              ~a:[ a_hreff "http://biology.as.nyu.edu/object/biology.facilities.sequencing" ]
+              [pcdata "Gencore's webpages"];
+            pcdata ". ";
           ];
         ] in
         return (header @ welcome @ menu)

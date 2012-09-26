@@ -349,15 +349,12 @@ let default ?(title) content =
             ~href:(uri_of_string (fun () -> "hitscoreweb.css")) ();
           link ~rel:[`Stylesheet] ~href:(Html5.make_uri
                                            ~service:Services.(stylesheet ()) ()) ();
-        (* js_script () ~uri:(uri_of_string (fun () -> *)
-        (* "https://closure-library.googlecode.com/svn/trunk/closure/goog/base.js")); *)
         ])
         (body [
           in_progress_animation_div ();
           div ~a:[ a_class ["top_banner"] ] [
             div ~a:[ a_class ["top_menu"] ] [
               a_link Services.default [pcdata "Home"] ();
-              a_link Services.doc [pcdata "FAQ"] ["help"; "faq"];
               Option.value ~default:(span []) main_menu];
             div auth_state;
           ];
@@ -365,8 +362,9 @@ let default ?(title) content =
             div html_stuff;
           ];
           div ~a:[ a_class ["footer"] ] [
-            (* hr (); *)
-            core_a ~a:[ a_hreff "http://gencore.bio.nyu.edu" ] [pcdata "Gencore"];
+            core_a
+              ~a:[ a_hreff "http://biology.as.nyu.edu/object/biology.facilities.sequencing" ]
+              [pcdata "Gencore"];
             pcdata " 2011 — 2012.  ";
             core_a ~a:[ a_hreff "http://www.ocaml.org" ] [pcdata "OCaml"];
             pcdata "/";
