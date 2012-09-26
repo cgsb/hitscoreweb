@@ -352,34 +352,34 @@ let login_form ?set_visibility_to () =
       [
         span ~a:[ a_id message_span_id; a_style "visibility: hidden" ] [];
         span ~a:[ a_id form_span_id;]
-          [pcdata "NetID: ";
-          Html5.string_input ~input_type:`Text ~name ();
-          pcdata " Password: ";
-          Html5.string_input ~input_type:`Password ~name:pwd ();
-          Html5.string_input
-            ~a:[
+          [span ~a:[ a_title "NetID or Email address"] [pcdata "Login: "];
+           Html5.string_input ~input_type:`Text ~name ();
+           pcdata " Password: ";
+           Html5.string_input ~input_type:`Password ~name:pwd ();
+           Html5.string_input
+             ~a:[
               (* The onclick seems to work also when the user types <enter>
                  but onsubmit does not seem to to anything (?)
                  a_onsubmit {{debugf %dbgsrv "onsubmit!"}}; *)
-              a_onclick {{
-                let form_span =
-                    Dom_html.document##getElementById (Js.string %form_span_id) in
-                let message_span =
-                    Dom_html.document##getElementById (Js.string %message_span_id) in
-                Js.Opt.iter form_span (fun span ->
-                  span##style##visibility  <- Js.string "hidden";);
-                Js.Opt.iter message_span (fun span ->
-                  span##style##visibility  <- Js.string "visible";
-                  span##innerHTML <- Js.string "<b>Processing …</b>";);
-                begin match %set_visibility_to with
-                | Some s ->
-                  (get_element_exn s)##style##visibility <- Js.string "visible";
-                | None -> ()
-                end
-              }};
-            ]
-            ~input_type:`Submit ~value:"Login" ();
-         ];
+               a_onclick {{
+                 let form_span =
+                   Dom_html.document##getElementById (Js.string %form_span_id) in
+                 let message_span =
+                   Dom_html.document##getElementById (Js.string %message_span_id) in
+                 Js.Opt.iter form_span (fun span ->
+                   span##style##visibility  <- Js.string "hidden";);
+                 Js.Opt.iter message_span (fun span ->
+                   span##style##visibility  <- Js.string "visible";
+                   span##innerHTML <- Js.string "<b>Processing …</b>";);
+                 begin match %set_visibility_to with
+                 | Some s ->
+                   (get_element_exn s)##style##visibility <- Js.string "visible";
+                 | None -> ()
+                 end
+               }};
+             ]
+             ~input_type:`Submit ~value:"Login" ();
+          ];
       ]) () 
 
 let logout_form () =
