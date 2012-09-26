@@ -343,7 +343,7 @@ let stop_impersonation_coservice =
       coserv := Some handler;
       handler
 
-let login_form ?set_visibility_to () =
+let login_form () =
   let open Html5 in
   let form_span_id = "span_login_form" in
   let message_span_id = "span_login_message" in
@@ -371,11 +371,6 @@ let login_form ?set_visibility_to () =
                  Js.Opt.iter message_span (fun span ->
                    span##style##visibility  <- Js.string "visible";
                    span##innerHTML <- Js.string "<b>Processing …</b>";);
-                 begin match %set_visibility_to with
-                 | Some s ->
-                   (get_element_exn s)##style##visibility <- Js.string "visible";
-                 | None -> ()
-                 end
                }};
              ]
              ~input_type:`Submit ~value:"Login" ();
@@ -409,7 +404,7 @@ let stop_impersonating_form () =
         Html5.string_input ~input_type:`Submit ~value:"Stop" ()
       ]])
   
-let display_state ?in_progress_element () =
+let display_state () =
   let open Html5 in
   let module LRP = Layout.Record_person in
   get_state () >>= fun s ->
@@ -471,8 +466,7 @@ let display_state ?in_progress_element () =
             @ maintenance_warning
           | _ -> 
              if Eliom_request_info.get_ssl () then
-               [pcdata ". ";
-                login_form ?set_visibility_to:in_progress_element ()]
+               [pcdata ". "; login_form ()]
                @ maintenance_warning
              else
                [pcdata ": ";

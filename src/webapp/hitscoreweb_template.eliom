@@ -29,19 +29,6 @@ let css_triangle_arrow ~css_class ?(height_px=10) ?(background="#ddd")
     (match direction with `up -> 0 | `down -> - height_px);
   Buffer.contents buf
 
-let in_progress_animation_id = unique_id "in_progress_animation"
-let in_progress_animation_div () =
-  let open Html5 in
-  div ~a:[ a_style "position: fixed; width: 100%; height: 100%; top: 0px; left: 0px;
-                    padding-top: 100px; padding-left: 45%;
-                    visibility: hidden; z-index:200;
-                    background-color: rgba(200, 200, 200, 0.5);";
-           a_id in_progress_animation_id ]
-    [ img 
-        ~src:(uri_of_string (fun () -> "images/violet_loader.gif"))
-        ~alt:"in progress notification" () ]
-
-
 let color_theme =
 object
   method title_violet = "#30053F"
@@ -295,17 +282,9 @@ let a_link ?(a=[]) ?fragment service content args =
   let aa =  a in
   let open Html5 in
   let on_click = {{
-    let open Dom_html in
-    begin match taggedEvent _ev with
-    | MouseEvent me when me##ctrlKey = Js._true || me##metaKey = Js._true
-                      || me##shiftKey = Js._true || me##button = 1 ->
-        (* Dirty way of avoiding the 'open in new tab/window' *)
-      Eliom_lib.debug "Mouse Event! Ctrl: %b, Button: %d"
-        (Js.to_bool me##ctrlKey) me##button
-    | _ ->
-      (get_element_exn %in_progress_animation_id) ##style##visibility <-
-        Js.string "visible"; 
-    end;
+    (* Without the on_click, firefox/chrome do not display the "in progress"
+       turning thing ... *)
+    ()
   }} in
   Html5.a ~a:(a_onclick on_click :: aa) ?fragment
     ~service:(service ()) content args
@@ -354,7 +333,6 @@ let default ?(title) content =
             ~href:(Html5.make_uri ~service:Services.(stylesheet ()) ()) ();
         ])
         (body [
-          in_progress_animation_div ();
           div ~a:[ a_class ["top_banner"] ] [
             div ~a:[ a_class ["top_menu"] ] [
               a_link Services.default [pcdata "Home"] ();
@@ -380,7 +358,7 @@ let default ?(title) content =
     let page_title = 
       Option.value_map title ~default:"Gencore" ~f:(sprintf "Gencore: %s")
     in
-    Authentication.display_state ~in_progress_element:in_progress_animation_id ()
+    Authentication.display_state ()
     >>= fun auth_state ->
     content >>= fun good_content ->
     menu_ul () >>= fun main_menu ->
