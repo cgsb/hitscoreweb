@@ -46,15 +46,13 @@ let color_theme =
 object
   method title_violet = "#30053F"
   method light_violet = "#ECD5F4"
+  method nyu_violet = "#634283"
 end
     
 let css_service_handler ~configuration () () =
   let open Lwt in
   let css = Buffer.create 42 in
   let out fmt = ksprintf (fun s -> (Buffer.add_string css s)) fmt in
-  out "body {font:13px Helvetica,arial,freesans,clean,sans-serif;
-           left: 2px; right: 2px; line-height:1.4;}";
-
   let light_grey = "#eee" in
 
   let () =
@@ -63,35 +61,41 @@ let css_service_handler ~configuration () () =
     out "%s" (css_triangle_arrow ~background ~css_class:"sort_reverse_button" `down);
   in
 
-  let top_baner_max_height, main_margin_top = "6em", "7em" in
+  out "body {font:13px Helvetica,arial,freesans,clean,sans-serif;
+             line-height:1.4;padding:0px; margin:0px;width:100%%;
+             min-height: 100%%}";
 
+  let top_baner_max_height, main_margin_top = "5em", "7em" in
+
+  out ".top_banner,.footer { \
+    right: 0%%; left: 0%%; width: 100%%; color: white; margin: 0px;
+    background-color: %s; background-opacity: 1; padding: 4px;
+    }" color_theme#nyu_violet;
   out ".top_banner {position: fixed; top:0px; \
-                    right: 1%%; left: 1%%; z-index: 100; \
-                    padding: 4px; color: white; font-weight: 900;\
-                    border-radius: 7px; /* box-shadow: 2px 2px 3px #000; */
-                    border:1px solid #421857; \
-                    border-bottom:2px solid #7F1DAF; \
-                    border-top:1px solid #421857; \
-                    background-color: #5C2079; background-opacity: 1;  }";
+                     z-index: 100; \
+                    padding: 4px;   \
+                     }" ;
   out ".top_banner { max-height: %s ; }" top_baner_max_height;
   out ".top_banner .top_menu a {
                     text-decoration: none;
                     padding: 4px; margin-left: 10px;
-                    border-radius: 5px;
+                    /* border-radius: 5px;
                     border:1px solid #421857;
                     border-bottom:2px solid #7F1DAF;
-                    border-top:1px solid #421857;
+                    border-top:1px solid #421857; */
         }\n";
-  out "html, body { height: 100%%; width: 100%%; }";
   out ".top_banner .top_menu { margin-bottom: 10px; }\n";
-  out ".top_banner a:link {color : #FFC800; }\n";
-  out ".top_banner a:hover {background-color : #7F1DAF; }\n";
-  out ".top_banner a:active {background-color : #421857; }\n";
-  out ".top_banner a:visited {color : #FFC800;}\n";
+  out ".top_banner a:link {color : white; }\n";
+  out ".footer a:link {color : white; }\n";
+  out ".top_banner a:hover {background-color : %s; }\n" color_theme#title_violet;
+  out ".footer a:hover {background-color : %s; }\n" color_theme#title_violet;
+  out ".top_banner a:visited {color : white;}\n";
+  out ".footer a:visited {color : white;}\n";
   out ".top_banner form { display: inline; padding: 10px; }";
   out ".top_banner .main_menu { padding: 0px; display: inline; }\n";
-  out ".footer { position: relative; height: 5%%; bottom: 1px; }";
-  out ".main_page { min-height: 80%%; margin-top: %s; width: 100%%}"
+  out ".footer { position: relative; }";
+  out ".main_page { min-height: 15cm; margin-top: %s; width:98%%; \
+                    margin-left: 4px; margin-right: 4px; }"
     main_margin_top;
   out ".main_page a:link {color : #960F00; }\n";
   out ".main_page .like_link {color : #960F00; text-decoration: underline; }\n";
@@ -361,7 +365,7 @@ let default ?(title) content =
             div html_stuff;
           ];
           div ~a:[ a_class ["footer"] ] [
-            hr ();
+            (* hr (); *)
             core_a ~a:[ a_hreff "http://gencore.bio.nyu.edu" ] [pcdata "Gencore"];
             pcdata " 2011 — 2012.  ";
             core_a ~a:[ a_hreff "http://www.ocaml.org" ] [pcdata "OCaml"];
