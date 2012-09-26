@@ -345,10 +345,13 @@ let default ?(title) content =
     Html5.(
       html
         (head (title (pcdata page_title)) [
+          link ~rel:[`Icon] ()
+            ~href:(uri_of_string (fun () ->
+              "http://biology.as.nyu.edu/docs/TEMPLATE/1817/favicon.ico"));
           link ~rel:[`Stylesheet]
             ~href:(uri_of_string (fun () -> "hitscoreweb.css")) ();
-          link ~rel:[`Stylesheet] ~href:(Html5.make_uri
-                                           ~service:Services.(stylesheet ()) ()) ();
+          link ~rel:[`Stylesheet]
+            ~href:(Html5.make_uri ~service:Services.(stylesheet ()) ()) ();
         ])
         (body [
           in_progress_animation_div ();
