@@ -48,19 +48,20 @@ let css_service_handler ~configuration () () =
     out "%s" (css_triangle_arrow ~background ~css_class:"sort_reverse_button" `down);
   in
 
+  out "html, body {  height: 100%% }"; (* this required by the "footer hack" *)
   out "body {font:13px Helvetica,arial,freesans,clean,sans-serif;
              line-height:1.4;padding:0px; margin:0px;width:100%%;
-             min-height: 100%%}";
+             }";
 
   let top_baner_max_height, main_margin_top = "5em", "7em" in
 
   out ".top_banner,.footer { \
-    right: 0%%; left: 0%%; width: 100%%; color: white; margin: 0px;
-    background-color: %s; background-opacity: 1; padding: 4px;
+    right: 0%%; left: 0%%; width: 100%%; color: white; 
+    background-color: %s; background-opacity: 1; 
     }" color_theme#nyu_violet;
   out ".top_banner {position: fixed; top:0px; \
                      z-index: 100; \
-                    padding: 4px;   \
+                    padding: 4px; margin: 0px;  \
                      }" ;
   out ".top_banner { max-height: %s ; }" top_baner_max_height;
   out ".top_banner .top_menu a {
@@ -80,8 +81,10 @@ let css_service_handler ~configuration () () =
   out ".footer a:visited {color : white;}\n";
   out ".top_banner form { display: inline; padding: 10px; }";
   out ".top_banner .main_menu { padding: 0px; display: inline; }\n";
-  out ".footer { position: relative; }";
-  out ".main_page { min-height: 15cm; margin-top: %s; width:98%%; \
+  out ".wrapper { min-height: 100%%; }";
+  out ".footer { position: relative; margin-bottom: 0; \
+                 padding: 0px; margin-top: -1.8em; height: 1.8em; }";
+  out ".main_page { padding-top: %s; width:98%%; padding-bottom: 3em; \
                     margin-left: 4px; margin-right: 4px; }"
     main_margin_top;
   out ".main_page a:link {color : #960F00; }\n";
@@ -333,14 +336,16 @@ let default ?(title) content =
             ~href:(Html5.make_uri ~service:Services.(stylesheet ()) ()) ();
         ])
         (body [
-          div ~a:[ a_class ["top_banner"] ] [
-            div ~a:[ a_class ["top_menu"] ] [
-              a_link Services.default [pcdata "Home"] ();
-              Option.value ~default:(span []) main_menu];
-            div auth_state;
-          ];
-          div ~a:[ a_class ["main_page"]] [
-            div html_stuff;
+          div ~a:[ a_class ["wrapper"] ] [
+            div ~a:[ a_class ["top_banner"] ] [
+              div ~a:[ a_class ["top_menu"] ] [
+                a_link Services.default [pcdata "Home"] ();
+                Option.value ~default:(span []) main_menu];
+              div auth_state;
+            ];
+            div ~a:[ a_class ["main_page"]] [
+              div html_stuff;
+            ];
           ];
           div ~a:[ a_class ["footer"] ] [
             core_a
