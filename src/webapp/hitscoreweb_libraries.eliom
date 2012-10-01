@@ -194,7 +194,7 @@ let make_classy_information ~configuration ~dbh =
   
   layout#sample#all >>= fun samples ->
   layout#organism#all >>= fun organisms ->
-  layout#custom_barcode#all >>= fun custom_barcodes ->
+  layout#barcode#all >>= fun barcodes ->
   layout#invoicing#all >>= fun invoices ->
   layout#stock_library#all
   >>= while_sequential ~f:(fun sl ->
@@ -222,18 +222,9 @@ let make_classy_information ~configuration ~dbh =
       List.find persons (fun p ->
         Some p#g_pointer = Option.map sl#preparator (fun p -> p#pointer)) in
     let barcoding =
-      let barcodes = Array.to_list sl#barcodes in
-      match sl#barcode_type with
-      | `none -> `None
-      | `bioo -> `Bioo barcodes
-      | `bioo_96 -> `Bioo_96 barcodes
-      | `illumina -> `Illumina barcodes
-      | `nugen -> `Nugen barcodes
-      | `custom ->
-        let barcodes =
-          List.filter custom_barcodes (fun cb ->
-            Array.exists sl#custom_barcodes (fun b -> b#id = cb#g_id)) in
-        `Custom barcodes in
+      List.map (Array.to_list sl#barcoding)
+        (fun il -> List.filter_map (Array.to_list il) ~f:(fun i ->
+          List.find barcodes (fun b -> b#g_id = i#id))) in
     let bios =
       List.filter bioanalyzers (fun b -> b#bioanalyzer#library#id = sl#g_id) in
     let agels = 
@@ -559,20 +550,21 @@ let libraries_table info =
       basic (fun () ->
         cell_fmt "%s" (String.concat ~sep:"/" (Array.to_list lib#stock#application)));
       stock (fun () ->
-        let strlist l = String.concat ~sep:"," (List.map l ~f:(sprintf "%d")) in
-        match lib#barcoding with
-        | `None              -> cell_fmt "NONE"
-        | `Bioo barcodes     -> cell_fmt "BIOO[%s]" (strlist barcodes)
-        | `Bioo_96 barcodes  -> cell_fmt "BIOO-96[%s]" (strlist barcodes) 
-        | `Illumina barcodes -> cell_fmt "Illumina[%s]" (strlist barcodes)
-        | `Nugen barcodes    -> cell_fmt "NuGen[%s]" (strlist barcodes)
-        | `Custom barcodes   ->
-          cell_fmt "Custom[%s]" (List.map barcodes (fun b ->
-            sprintf "(%s%s%s%s)" b#sequence
+        let f b =
+          match b#kind with
+          | `custom ->
+            sprintf "Custom[%s%s%s%s]" (Option.value ~default:"None" b#sequence)
               Option.(value_map b#position_in_r1 ~default:"" ~f:(sprintf "-R1:%d"))
               Option.(value_map b#position_in_r2 ~default:"" ~f:(sprintf "-R2:%d"))
               Option.(value_map b#position_in_index ~default:"" ~f:(sprintf "-I:%d"))
-          ) |! String.concat ~sep:","));
+          | `bioo     -> sprintf     "BIOO[%d]" (Option.value ~default:0 b#index)
+          | `bioo_96  -> sprintf  "BIOO-96[%d]" (Option.value ~default:0 b#index) 
+          | `illumina -> sprintf "Illumina[%d]" (Option.value ~default:0 b#index)
+          | `nugen    -> sprintf    "NuGen[%d]" (Option.value ~default:0 b#index)
+        in
+        cell_text (String.concat ~sep:" OR "
+                     (List.map lib#barcoding (fun l ->
+                       String.concat ~sep:" AND " (List.map l ~f)))));
       stock (fun () -> cell_int_option lib#stock#p5_adapter_length);
       stock (fun () -> cell_int_option lib#stock#p7_adapter_length);
       stock (fun () -> cell_text (Bool.to_string lib#stock#stranded));
@@ -822,14 +814,22 @@ let demuxable_barcode_sequences lane lib =
     ["NoIndex"]
   else
     match lib#barcoding with
-    | `Illumina b ->
-      List.filter_map b (fun i ->
-        List.Assoc.find Assemble_sample_sheet.illumina_barcodes i)
-    | `Bioo b ->
-      List.filter_map b (fun i ->
-        List.Assoc.find Assemble_sample_sheet.bioo_barcodes i)
+    | [and_list] ->
+      if List.for_all and_list (fun o ->
+        (o#kind = `illumina || o#kind = `bioo) && o#index <> None)
+      then
+        List.filter_map and_list (fun o ->
+          match o#kind with
+          | `illumina ->
+            List.Assoc.find
+              Assemble_sample_sheet.illumina_barcodes (Option.value_exn o#index)
+          | `bioo ->
+            List.Assoc.find
+              Assemble_sample_sheet.bioo_barcodes (Option.value_exn o#index)
+          | _ -> None)
+      else []
     | _ -> []
-    
+        
 let per_lirbary_details info =
   let open Html5 in
   let open Template in
