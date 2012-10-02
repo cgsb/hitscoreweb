@@ -605,13 +605,13 @@ let libraries_table info =
           ~f:(fun p ->
             match lib#protocol_paths with
             | None | Some [] -> cell_text (sprintf "%s (no file)" p#name)
-            | Some (one :: _) ->
-              if Eliom_registration.File.check_file one
-              then `sortable (p#name, [a_link Services.file
-                                          [pcdata p#name] (p#doc#id, one)])
-              else `sortable (p#name, [pcdata p#name;
-                                       i ~a:[ a_title one ]
-                                         [pcdata " (missing file)"]])
+            | Some paths ->
+              `sortable (p#name,
+                         List.concat [
+                           [pcdataf "%s (" p#name];
+                           make_file_links p#doc#id  paths;
+                           [pcdata ")"]
+                         ])
           ));
       stock (fun () -> cell_option lib#stock#note) ;
               
