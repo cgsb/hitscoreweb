@@ -193,18 +193,14 @@ let pam_auth ?service ~user ~password () =
   in
   Lwt_preemptive.detach auth () 
 
-let hash_password person_id password =
-  let open Cryptokit in
-  let open Layout.Record_person in
-  let to_hash = sprintf "gencore:%d:%s" person_id password in
-  transform_string (Hexa.encode ()) (hash_string (Hash.sha256 ()) to_hash)
   
 let check = function
   | `user_password (identifier, password) ->
     let open Layout.Record_person in
     let checking_m =
       find_user identifier >>= fun person ->
-      if person.g_value.password_hash = Some (hash_password person.g_id password)
+      if person.g_value.password_hash =
+        Some (Communication.Authentication.hash_password person.g_id password)
       then
         set_state (`user_logged (make_user person))
       else

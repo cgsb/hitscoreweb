@@ -214,7 +214,7 @@ let reply ~configuration =
       else 
         let open Layout.Record_person in
         let new_hash =
-          Authentication.hash_password person.g_id pw1 in
+          Communication.Authentication.hash_password person.g_id pw1 in
         let person =
           let g_value = { person.g_value with password_hash = Some new_hash } in
           { person with g_value } in
