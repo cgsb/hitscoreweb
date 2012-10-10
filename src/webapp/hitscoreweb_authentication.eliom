@@ -153,13 +153,13 @@ let set_state s =
   end
   >>= fun () ->
   let on_exn e = `auth_state_exn e in
-  wrap_io ~on_exn Eliom_reference.get authentication_history
+  wrap_io ~on_exn ~f:Eliom_reference.get authentication_history
   >>= fun ah ->
-  wrap_io ~on_exn (Eliom_reference.set authentication_history) (s :: ah)
+  wrap_io ~on_exn ~f:(Eliom_reference.set authentication_history) (s :: ah)
 
 let get_state () =
   let on_exn e = `auth_state_exn e in
-  wrap_io ~on_exn Eliom_reference.get authentication_history
+  wrap_io ~on_exn ~f:Eliom_reference.get authentication_history
   >>= function
   | [] | `nothing :: _ -> return `nothing
   | h :: t -> return h
