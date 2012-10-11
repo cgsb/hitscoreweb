@@ -258,6 +258,8 @@ case \"$1\" in" in
    start|force-start)\
 %s
     mkdir -p %s %s
+    export OCAMLFIND_CONF=/tmp/findlib.conf
+    touch $OCAMLFIND_CONF
     nohup %s --verbose --pidfile %s -c %s \
         > %s 2>&1 &
     ;;
