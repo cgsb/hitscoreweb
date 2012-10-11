@@ -206,10 +206,12 @@ let make_classy_information ~configuration ~dbh =
           Some (object method sample = s method organism = org end))
         else None) in
     let submissions =
-      List.filter_map flowcells (fun fc ->
-        List.findi fc#lanes ~f:(fun idx l ->
-          List.exists l#inputs (fun i -> i#library#id = sl#g_id))
-        |! Option.map ~f:(fun (idx, l) ->
+      List.map flowcells (fun fc ->
+        List.filter_mapi fc#lanes ~f:(fun idx l ->
+          if List.exists l#inputs (fun i -> i#library#id = sl#g_id)
+          then Some (idx, l)
+          else None)
+        |! List.map ~f:(fun (idx, l) ->
           let invoices =
             List.filter invoices (fun i ->
               Array.exists i#lanes (fun ll -> ll#id = l#oo#g_id)) in
@@ -217,7 +219,7 @@ let make_classy_information ~configuration ~dbh =
                   method lane_index = idx + 1
                   method lane = l
                   method invoices = invoices
-           end))) in
+           end))) |! List.concat in
     let preparator =
       List.find persons (fun p ->
         Some p#g_pointer = Option.map sl#preparator (fun p -> p#pointer)) in
