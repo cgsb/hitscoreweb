@@ -2,7 +2,7 @@ open Hitscoreweb_std
 
 module Msg = Hitscoreweb_messages
 
-module Data_access = Hitscoreweb_data_access
+module Web_data_access = Hitscoreweb_data_access
 
 module Queries = Hitscoreweb_queries
 
@@ -821,7 +821,7 @@ TODO: All exceptions in coservices should be handled in some other way
             ?vol_directory:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
             ?root_path:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
-        Data_access.init
+        Web_data_access.init
           ~loop_time:(if !debug_mode then 90. else 600.)
           ~configuration:config ()
         |! Lwt.ignore_result;

@@ -1,7 +1,7 @@
 
 open Hitscoreweb_std
 
-module Data_access = Hitscoreweb_data_access
+module Web_data_access = Hitscoreweb_data_access
 
 module Queries = Hitscoreweb_queries
 
@@ -171,7 +171,7 @@ let person_flowcells ~configuration =
     | Some s -> return s
     | None -> error err in
   
-  Data_access.broker () >>= fun broker ->
+  Web_data_access.broker () >>= fun broker ->
   Authentication.user_logged () >>= fun user_opt ->
   flow_some user_opt (`hiseq_runs (`no_logged_user))
   >>= fun {Authentication.person; _} ->

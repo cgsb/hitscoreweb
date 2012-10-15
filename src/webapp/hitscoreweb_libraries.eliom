@@ -12,7 +12,6 @@ module Template = Hitscoreweb_template
 
 module Persons_service = Hitscoreweb_persons
 
-module Data_access = Hitscoreweb_data_access
 
 let qualified_name po n =
   sprintf "%s%s" Option.(value_map ~default:"" ~f:(sprintf "%s.") po) n
@@ -21,259 +20,12 @@ let qualified_link ~showing po n =
   let qn = qualified_name po n in
   [Template.a_link Services.libraries [Html5.pcdata n] (showing, [qn])]
 
-let filter_map l ~filter ~map =
-  List.filter_map l ~f:(fun x -> if filter x then Some (map x) else None)
-let get_by_id l i = List.find l (fun o -> o#g_id = i)
-let getopt_by_id l i =
-  List.find l (fun o -> Some o#g_id = Option.map i (fun i -> i#id))
-    
-let rec volume_path ~configuration vols v =
-  let open Layout.File_system in
-  let open Option in
-  Configuration.path_of_volume_fun configuration >>= fun path_fun ->
-  begin match v#g_content with
-  | Tree (hr_tag, trees) ->
-    let vol = Common.volume_unix_directory ~id:v#g_id ~kind:v#g_kind ?hr_tag in 
-    return (path_fun vol)
-  | Link p ->
-    (get_by_id vols p.id
-     >>= fun vv ->
-     volume_path ~configuration vols vv)
-  end
-
-let make_classy_information ~configuration ~dbh =
-  let creation_started_on = Time.now () in
-  let layout = Classy.make dbh in
-  layout#hiseq_raw#all >>= fun hiseq_raws ->
-  layout#assemble_sample_sheet#all >>= fun ssassemblies ->
-  layout#sample_sheet#all >>= fun sample_sheets ->
-  layout#bcl_to_fastq#all >>= fun b2fs ->
-  layout#bcl_to_fastq_unaligned#all >>= fun b2fus ->
-  layout#file_system#all >>= fun volumes ->
-  layout#prepare_unaligned_delivery#all >>= fun udeliveries ->
-  layout#client_fastqs_dir#all >>= fun client_dirs ->
-  layout#generic_fastqs#all >>= fun generic_fastqs ->
-  layout#fastx_quality_stats#all >>= fun fxqss ->
-  layout#fastx_quality_stats_result#all >>= fun fxqs_rs ->
-  layout#person#all >>= fun persons ->
-  layout#protocol#all >>= fun protocols ->
-
-  while_sequential b2fs (fun b2f ->
-    let b2fu = getopt_by_id b2fus b2f#g_result in
-    let hiseq_raw = get_by_id hiseq_raws b2f#raw_data#id in
-    let vol =
-      Option.(b2fu >>= fun b2fu ->
-              hiseq_raw >>= fun hiseq_raw ->
-              get_by_id volumes b2fu#directory#id
-              >>= fun vol ->
-              volume_path ~configuration volumes vol
-              >>= fun path ->
-              Some (vol , hiseq_raw, path, b2fu)) in
-    map_option vol (fun (vol, hiseq_raw, path, b2fu) ->
-      let basecall_stats_path =
-        Filename.concat path
-          (sprintf "Unaligned/Basecall_Stats_%s/%s"
-             hiseq_raw#flowcell_name "Flowcell_demux_summary.xml") in
-      let dmux_summary_m =
-        Data_access.File_cache.get_demux_summary basecall_stats_path in
-      double_bind dmux_summary_m
-        ~ok:(fun dmux_summary -> return (Some dmux_summary))
-        ~error:(fun e ->
-          (* eprintf "Error getting: %s\n%!" basecall_stats_path; *)
-          return None)
-      >>= fun dmux_summary ->
-      let generic_vols =
-        List.filter volumes (fun v ->
-          v#g_content = Layout.File_system.Link vol#g_pointer)
-      in
-      let generics = 
-        List.map generic_vols (fun gv ->
-          List.filter generic_fastqs (fun gf ->
-            gf#directory#id = gv#g_id)) |! List.concat in
-      let fastx_qss =
-        List.map generics (fun g ->
-          List.filter fxqss (fun f -> f#input_dir#id = g#g_id)) |! List.concat in
-      let fastx_results =
-        List.filter_map fastx_qss (fun fxqs ->
-          getopt_by_id fxqs_rs fxqs#g_result) in
-      let fastx_paths =
-        List.filter_map fastx_results (fun fr ->
-          let open Option in
-          get_by_id volumes fr#directory#id
-          >>= volume_path ~configuration volumes) in
-          
-      return (object
-        method vol = vol
-        method path = path
-        method dmux_summary = dmux_summary
-        method hiseq_raw = hiseq_raw
-        method b2fu = b2fu
-        method generic_vols = generic_vols
-        method generics = generics
-        method fastx_qss = fastx_qss
-        method fastx_results = fastx_results
-        method fastx_paths = fastx_paths
-      end)))
-  >>| List.filter_opt
-  >>= fun unaligned_volumes ->
-  
-  layout#flowcell#all >>= while_sequential ~f:(fun fc ->
-    while_sequential (Array.to_list fc#lanes) (fun lp ->
-      lp#get >>= fun lane ->
-      while_sequential (Array.to_list lane#contacts) (fun c ->
-        List.find_exn persons ~f:(fun p -> p#g_id = c#id) |! return)
-      >>= fun contacts ->
-      while_sequential (Array.to_list lane#libraries) (fun l -> l#get)
-      >>= fun libs ->
-      return (object method oo = lane
-                     method inputs = libs
-                     method contacts = contacts end))
-    >>= fun lanes ->
-    let hiseq_raws =
-      filter_map hiseq_raws
-        ~filter:(fun h -> h#flowcell_name = fc#serial_name)
-        ~map:(fun h ->
-          let demuxes =
-            filter_map b2fs ~filter:(fun b -> b#raw_data#id = h#g_id)
-              ~map:(fun b2f ->
-                let unaligned =
-                  Option.(getopt_by_id b2fus b2f#g_result
-                          >>= fun u ->
-                          List.find unaligned_volumes (fun uv ->
-                            uv#vol#g_id = u#directory#id)) in
-                let sample_sheet = get_by_id sample_sheets b2f#sample_sheet#id in
-                let assembly =
-                  Option.(sample_sheet >>= fun s ->
-                          List.find_map ssassemblies (fun a ->
-                            a#g_result >>= fun r ->
-                            if r#id = s#g_id then return a else None)) in
-                let deliveries =
-                  Option.map unaligned ~f:(fun unalig ->
-                    filter_map udeliveries
-                      ~filter:(fun u -> u#unaligned#id = unalig#b2fu#g_id)
-                      ~map:(fun u ->
-                        let dir = getopt_by_id client_dirs u#g_result in
-                        (object method oo = u (* delivery *)
-                                method client_fastqs_dir = dir end))) in
-                (object
-                  method b2f = b2f (* demultiplexing *)
-                  method sample_sheet = sample_sheet
-                  method assembly = assembly
-                  method unaligned = unaligned
-                  method deliveries = Option.value ~default:[] deliveries
-                 end)) in
-          (object (* hiseq_raw *)
-            method oo = h method demultiplexings = demuxes end))
-    in
-    return (object method oo = fc (* Flowcell *)
-                   method lanes = lanes
-                   method hiseq_raws = hiseq_raws end))
-  >>= fun flowcells ->
-
-  layout#bioanalyzer#all
-  >>= while_sequential ~f:(fun ba ->
-    map_option Option.(ba#files >>= fun v -> get_by_id volumes v#id) (fun vol ->
-      Common.all_paths_of_volume ~configuration ~dbh vol#g_pointer)
-    >>= fun paths ->
-    return (object
-      method bioanalyzer = ba
-      method paths = Option.value ~default:[] paths
-    end))
-  >>= fun bioanalyzers ->
-
-  layout#agarose_gel#all
-  >>= while_sequential ~f:(fun ag ->
-    map_option Option.(ag#files >>= fun v -> get_by_id volumes v#id) (fun vol ->
-      Common.all_paths_of_volume ~configuration ~dbh vol#g_pointer)
-    >>= fun paths ->
-    return (object
-      method agarose_gel = ag
-      method paths = Option.value ~default:[] paths
-    end))
-  >>= fun agarose_gels ->
-  
-  layout#sample#all >>= fun samples ->
-  layout#organism#all >>= fun organisms ->
-  layout#barcode#all >>= fun barcodes ->
-  layout#invoicing#all >>= fun invoices ->
-  layout#stock_library#all
-  >>= while_sequential ~f:(fun sl ->
-    let optid =  Option.map ~f:(fun o -> o#id) in
-    let sample =
-      List.find_map samples (fun s ->
-        if Some s#g_id = optid sl#sample then (
-          let org = List.find organisms (fun o -> Some o#g_id = optid s#organism) in
-          Some (object method sample = s method organism = org end))
-        else None) in
-    let submissions =
-      List.map flowcells (fun fc ->
-        List.filter_mapi fc#lanes ~f:(fun idx l ->
-          if List.exists l#inputs (fun i -> i#library#id = sl#g_id)
-          then Some (idx, l)
-          else None)
-        |! List.map ~f:(fun (idx, l) ->
-          let invoices =
-            List.filter invoices (fun i ->
-              Array.exists i#lanes (fun ll -> ll#id = l#oo#g_id)) in
-          (object method flowcell = fc (* submission *)
-                  method lane_index = idx + 1
-                  method lane = l
-                  method invoices = invoices
-           end))) |! List.concat in
-    let preparator =
-      List.find persons (fun p ->
-        Some p#g_pointer = Option.map sl#preparator (fun p -> p#pointer)) in
-    let barcoding =
-      List.map (Array.to_list sl#barcoding)
-        (fun il -> List.filter_map (Array.to_list il) ~f:(fun i ->
-          List.find barcodes (fun b -> b#g_id = i#id))) in
-    let bios =
-      List.filter bioanalyzers (fun b -> b#bioanalyzer#library#id = sl#g_id) in
-    let agels = 
-      List.filter agarose_gels (fun b -> b#agarose_gel#library#id = sl#g_id) in
-    let prot =
-      List.find protocols (fun p ->
-        Some p#g_pointer = Option.map sl#protocol (fun x -> x#pointer)) in
-    map_option Option.(prot >>= fun v -> get_by_id volumes v#doc#id) (fun vol ->
-      Common.all_paths_of_volume ~configuration ~dbh vol#g_pointer)
-    >>= fun protocol_paths ->
-    return (object
-      method stock = sl (* library *)
-      method submissions = submissions
-      method sample = sample
-      method barcoding = barcoding
-      method preparator = preparator
-      method bioanalyzers = bios
-      method agarose_gels = agels
-      method protocol = prot
-      method protocol_paths = protocol_paths
-    end))
-  >>= fun libraries ->
-  let created = Time.now () in
-  logf "{libraries} Static info updated" >>= fun () ->
-  return (object (self)
-    method creation_started_on = creation_started_on
-    method created_on = created 
-    method configuration = configuration
-    method libraries = libraries
-  end)
-
 let filter_classy_information  
     ~qualified_names ~configuration ~showing info =
-  while_sequential info#libraries ~f:(fun l ->
-    if qualified_names = []
-    || List.exists qualified_names
-      ~f:(fun qn -> qn = qualified_name l#stock#project l#stock#name) then
-      (let people =
-         List.map l#submissions (fun sub -> sub#lane#contacts)
-         |! List.concat
-         |! List.map ~f:(fun p -> p#g_pointer) in
-       Authentication.authorizes (`view (`libraries_of people))
-       >>= function
-       | true -> return (Some l)
-       | false -> return None)
-    else
-      return None)
+  let people_filter = fun people ->
+    Authentication.authorizes (`view (`libraries_of people)) in
+  Data_access.filter_classy_libraries_information  
+    ~qualified_names ~configuration ~people_filter info
   >>= fun filtered ->
   Authentication.authorizes (`view (`libraries_detailed_fastq_information))
   >>= fun can_view_fastq_details ->
@@ -284,7 +36,7 @@ let filter_classy_information
     method showing = match showing with [] -> [`basic] | l -> l
     method configuration = configuration
     method qualified_names = qualified_names
-    method libraries = List.filter_opt filtered
+    method libraries = filtered
     method can_view_fastq_details = can_view_fastq_details
   end)
     
@@ -293,11 +45,14 @@ let init_classy_information ~timeout ~configuration =
   let condition = Lwt_condition.create () in
   let rec update ~configuration =
     let m =
-      with_database ~configuration (make_classy_information ~configuration)
+      with_database ~configuration
+        (Data_access.make_classy_libraries_information ~configuration)
       >>= fun info ->
       info_mem := Some info;
       Lwt_condition.broadcast condition info;
       return ()
+      >>= fun () ->
+      logf "{libraries} Classy info updated"
     in
     double_bind m
       ~ok:return
@@ -710,8 +465,8 @@ let fastxqs_path fastxqs_path lane_index lib_name barcode read =
 let fastx_table path =
   let open Html5 in
   let open Template in
-  Data_access.File_cache.(
-    get_fastx_quality_stats path
+  Data_access_types.(
+    Data_access.File_cache.get_fastx_quality_stats path
     >>| List.map ~f:(fun {
       bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
       bfxqs_sum; bfxqs_mean; bfxqs_Q1; bfxqs_med;
@@ -764,8 +519,8 @@ let fastx_quality_plots path =
   let open Html5 in
   let open Template in
   let make_chart =
-    let open Data_access.File_cache in
-    get_fastx_quality_stats path
+    let open Data_access_types in
+    Data_access.File_cache.get_fastx_quality_stats path
     >>= fun stats ->
     while_sequential stats ~f:(fun {
       bfxqs_column; bfxqs_count; bfxqs_min; bfxqs_max;
