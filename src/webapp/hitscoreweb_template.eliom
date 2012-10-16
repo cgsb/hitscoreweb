@@ -148,6 +148,8 @@ let string_of_layout_error = function
     sprintf "error while parsing result [%s]: %s"
       (String.concat ~sep:", "
          (List.map sol (Option.value ~default:"NONE"))) (Exn.to_string e)
+  | `parse_timestamp s ->
+    sprintf "error while parsing %S as a timestamp!" s
   | `parse_sexp_error (sexp, e) ->
     sprintf "S-Exp parsing error: %S: %s"
       (Sexp.to_string_hum sexp) (Exn.to_string e)

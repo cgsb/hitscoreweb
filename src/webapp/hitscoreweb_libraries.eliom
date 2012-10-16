@@ -43,10 +43,22 @@ let filter_classy_information
 let init_classy_information ~timeout ~configuration =
   let info_mem = ref None in
   let condition = Lwt_condition.create () in
-  let rec update ~configuration =
+  let should_reconnect = ref false in
+  let rec update ~configuration ~layout_cache =
     let m =
-      with_database ~configuration
-        (Data_access.make_classy_libraries_information ~configuration)
+      if !should_reconnect
+      then begin
+        Backend.reconnect layout_cache#dbh
+        >>= fun _ ->
+        logf "Libraries classy info: reconnected."
+        >>= fun () ->
+        should_reconnect := false;
+        return ()
+      end
+      else return ()
+         >>= fun _ ->
+      
+      Data_access.make_classy_libraries_information ~configuration ~layout_cache
       >>= fun info ->
       info_mem := Some info;
       Lwt_condition.broadcast condition info;
@@ -57,28 +69,44 @@ let init_classy_information ~timeout ~configuration =
     double_bind m
       ~ok:return
       ~error:(fun e ->
-        wrap_io Lwt_io.eprintf "Updating the classy info gave an error.\n"
+        wrap_io Lwt_io.eprintf "Updating the classy info gave an error; \
+                                reconnecting …\n"
+        >>= fun () ->
+        should_reconnect := true;
+        logf "Libraries classy info gave an error: %s"
+          (match e with
+          | `Layout (_, e) -> Template.string_of_layout_error e
+          | `db_backend_error _ as e -> Template.string_of_layout_error e
+          | `io_exn e -> sprintf "I/O: %s" (Exn.to_string e)
+          | `auth_state_exn e -> sprintf "Auth: %s" (Exn.to_string e)
+          | `root_directory_not_configured ->
+            sprintf "root_directory_not_configured"
+          | _ -> "UNKNOWN")
         >>= fun () ->
         return ())
     >>= fun () ->
     wrap_io Lwt_unix.sleep timeout
     >>= fun () ->
-    update ~configuration in
-  Lwt.ignore_result (update ~configuration);
-  fun ~qualified_names ~showing ->
-    begin
-      begin match !info_mem with
-      | None ->
-        wrap_io Lwt_condition.wait condition
-        >>= fun info ->
-        return info
-      | Some info ->
-        return info
-      end
+    update ~configuration ~layout_cache in
+  Lwt.ignore_result (
+    db_connect configuration >>= fun dbh ->
+    let layout_cache =
+      Classy.make_cache ~allowed_age:30. ~maximal_age:timeout ~dbh in
+    update ~configuration ~layout_cache
+  );
+  begin fun ~qualified_names ~showing ->
+    begin match !info_mem with
+    | None ->
+      wrap_io Lwt_condition.wait condition
       >>= fun info ->
-      filter_classy_information
-        ~qualified_names ~configuration ~showing info
+      return info
+    | Some info ->
+      return info
     end
+    >>= fun info ->
+    filter_classy_information
+      ~qualified_names ~configuration ~showing info
+  end
 
       
 let layout_id_link type_name id =
@@ -796,11 +824,10 @@ let make ~timeout ~configuration =
        >>= function
        | true ->
          Template.make_content ~configuration ~main_title (
-           with_database ~configuration (fun ~dbh ->
-             classy_info ~qualified_names ~showing
-             >>= fun info ->
-             let info_got = Time.now () in
-             libraries work_started info_got info))
+           classy_info ~qualified_names ~showing
+           >>= fun info ->
+           let info_got = Time.now () in
+           libraries work_started info_got info)
        | false ->
          Template.make_authentication_error ~configuration ~main_title
            (return [Html5.pcdataf "You may not view the libraries."])))
