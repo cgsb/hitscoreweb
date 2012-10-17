@@ -843,9 +843,11 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register persons) Persons_service.(make hitscore_configuration);
 
       Services.(register libraries)
-        Hitscoreweb_libraries.(make
-                                 ~timeout:(if !debug_mode then 60. else 610.)
-                                 ~configuration:hitscore_configuration);
+        Hitscoreweb_libraries.(
+          make
+            ~information_cache_timming:(
+              if !debug_mode then (20., 60.) else (30., 1200.))
+            ~configuration:hitscore_configuration);
 
       Services.(register flowcell)
         Flowcell_service.(make hitscore_configuration);

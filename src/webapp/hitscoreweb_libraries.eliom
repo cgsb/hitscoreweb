@@ -40,12 +40,13 @@ let filter_classy_information
     method can_view_fastq_details = can_view_fastq_details
   end)
     
-let init_classy_information ~timeout ~configuration =
+let init_classy_information ~allowed_age ~maximal_age ~configuration =
   let info_mem = ref None in
   let condition = Lwt_condition.create () in
   let should_reconnect = ref false in
   let rec update ~configuration ~layout_cache =
     let m =
+      let starting_time = Time.now () in
       if !should_reconnect
       then begin
         Backend.reconnect layout_cache#dbh
@@ -56,15 +57,19 @@ let init_classy_information ~timeout ~configuration =
         return ()
       end
       else return ()
-         >>= fun _ ->
-      
+      >>= fun _ ->
       Data_access.make_classy_libraries_information ~configuration ~layout_cache
       >>= fun info ->
       info_mem := Some info;
       Lwt_condition.broadcast condition info;
       return ()
       >>= fun () ->
-      logf "{libraries} Classy info updated"
+      logf  "{libraries} Classy info updated:\n\
+               \          %s --> %s\n\
+               \          %g secs\n%!"
+        Time.(starting_time |! to_string)
+        Time.(now () |! to_string)
+        Time.(to_float (now ()) -. to_float starting_time);
     in
     double_bind m
       ~ok:return
@@ -85,13 +90,13 @@ let init_classy_information ~timeout ~configuration =
         >>= fun () ->
         return ())
     >>= fun () ->
-    wrap_io Lwt_unix.sleep timeout
+    wrap_io Lwt_unix.sleep 5.
     >>= fun () ->
     update ~configuration ~layout_cache in
   Lwt.ignore_result (
     db_connect configuration >>= fun dbh ->
     let layout_cache =
-      Classy.make_cache ~allowed_age:30. ~maximal_age:timeout ~dbh in
+      Classy.make_cache ~allowed_age ~maximal_age ~dbh in
     update ~configuration ~layout_cache
   );
   begin fun ~qualified_names ~showing ->
@@ -814,8 +819,10 @@ let libraries work_started info_got info =
       ]))
   
 
-let make ~timeout ~configuration =
-  let classy_info = init_classy_information ~timeout ~configuration in
+let make ~information_cache_timming ~configuration =
+  let allowed_age, maximal_age = information_cache_timming in
+  let classy_info =
+    init_classy_information ~allowed_age ~maximal_age ~configuration in
   (fun (showing, qualified_names) () ->
     let work_started = Time.now () in
     let main_title = "Libraries" in
