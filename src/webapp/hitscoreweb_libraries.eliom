@@ -731,8 +731,8 @@ let make ~information_cache_timming ~configuration =
   let people_filter people =
     Authentication.authorizes (`view (`libraries_of people)) in
   let classy_info =
-    Data_access.init_classy_libraries_information_loop ~loop_withing_time:5.
-    ~people_filter ~log ~allowed_age ~maximal_age ~configuration in
+    Data_access.init_classy_libraries_information_loop
+      ~loop_withing_time:5. ~log ~allowed_age ~maximal_age ~configuration in
   (fun (showing, qualified_names) () ->
     let work_started = Time.now () in
     let main_title = "Libraries" in
@@ -741,11 +741,13 @@ let make ~information_cache_timming ~configuration =
        >>= function
        | true ->
          Template.make_content ~configuration ~main_title (
-           classy_info ~qualified_names
-           >>= fun info ->
+           classy_info () >>= fun info ->
+           Data_access.filter_classy_libraries_information
+             ~people_filter ~configuration ~qualified_names info
+           >>= fun filtered_info ->
            let info_got = Time.now () in
            let showing = if showing = [] then [`fastq] else showing in
-           libraries ~showing work_started info_got info)
+           libraries ~showing work_started info_got filtered_info)
        | false ->
          Template.make_authentication_error ~configuration ~main_title
            (return [Html5.pcdataf "You may not view the libraries."])))
