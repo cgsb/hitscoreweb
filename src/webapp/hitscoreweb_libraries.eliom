@@ -19,100 +19,6 @@ let qualified_name po n =
 let qualified_link ~showing po n =
   let qn = qualified_name po n in
   [Template.a_link Services.libraries [Html5.pcdata n] (showing, [qn])]
-
-let filter_classy_information  
-    ~qualified_names ~configuration ~showing info =
-  let people_filter = fun people ->
-    Authentication.authorizes (`view (`libraries_of people)) in
-  Data_access.filter_classy_libraries_information  
-    ~qualified_names ~configuration ~people_filter info
-  >>= fun filtered ->
-  Authentication.authorizes (`view (`libraries_detailed_fastq_information))
-  >>= fun can_view_fastq_details ->
-  let filtered_time = Time.now () in
-  return (object
-    method static_info = info
-    method filtered_on = filtered_time
-    method showing = match showing with [] -> [`basic] | l -> l
-    method configuration = configuration
-    method qualified_names = qualified_names
-    method libraries = filtered
-    method can_view_fastq_details = can_view_fastq_details
-  end)
-    
-let init_classy_information ~allowed_age ~maximal_age ~configuration =
-  let info_mem = ref None in
-  let condition = Lwt_condition.create () in
-  let should_reconnect = ref false in
-  let rec update ~configuration ~layout_cache =
-    let m =
-      let starting_time = Time.now () in
-      if !should_reconnect
-      then begin
-        Backend.reconnect layout_cache#dbh
-        >>= fun _ ->
-        logf "Libraries classy info: reconnected."
-        >>= fun () ->
-        should_reconnect := false;
-        return ()
-      end
-      else return ()
-      >>= fun _ ->
-      Data_access.make_classy_libraries_information ~configuration ~layout_cache
-      >>= fun info ->
-      info_mem := Some info;
-      Lwt_condition.broadcast condition info;
-      return ()
-      >>= fun () ->
-      logf  "{libraries} Classy info updated:\n\
-               \          %s --> %s\n\
-               \          %g secs\n%!"
-        Time.(starting_time |! to_string)
-        Time.(now () |! to_string)
-        Time.(to_float (now ()) -. to_float starting_time);
-    in
-    double_bind m
-      ~ok:return
-      ~error:(fun e ->
-        wrap_io Lwt_io.eprintf "Updating the classy info gave an error; \
-                                reconnecting …\n"
-        >>= fun () ->
-        should_reconnect := true;
-        logf "Libraries classy info gave an error: %s"
-          (match e with
-          | `Layout (_, e) -> Template.string_of_layout_error e
-          | `db_backend_error _ as e -> Template.string_of_layout_error e
-          | `io_exn e -> sprintf "I/O: %s" (Exn.to_string e)
-          | `auth_state_exn e -> sprintf "Auth: %s" (Exn.to_string e)
-          | `root_directory_not_configured ->
-            sprintf "root_directory_not_configured"
-          | _ -> "UNKNOWN")
-        >>= fun () ->
-        return ())
-    >>= fun () ->
-    wrap_io Lwt_unix.sleep 5.
-    >>= fun () ->
-    update ~configuration ~layout_cache in
-  Lwt.ignore_result (
-    db_connect configuration >>= fun dbh ->
-    let layout_cache =
-      Classy.make_cache ~allowed_age ~maximal_age ~dbh in
-    update ~configuration ~layout_cache
-  );
-  begin fun ~qualified_names ~showing ->
-    begin match !info_mem with
-    | None ->
-      wrap_io Lwt_condition.wait condition
-      >>= fun info ->
-      return info
-    | Some info ->
-      return info
-    end
-    >>= fun info ->
-    filter_classy_information
-      ~qualified_names ~configuration ~showing info
-  end
-
       
 let layout_id_link type_name id =
   let open Html5 in
@@ -305,7 +211,7 @@ let make_file_links vol_id paths =
   end 
   |! interleave_list ~sep:(pcdata ", ")
 
-let libraries_table info =
+let libraries_table ~showing ~can_view_fastq_details info =
   let open Template in
   let open Html5 in
   let everywhere f = ([`basic; `stock; `fastq], f) in
@@ -316,8 +222,7 @@ let libraries_table info =
     List.map info#libraries (fun lib -> [
       everywhere (fun () ->
         `sortable (lib#stock#name,
-                   qualified_link ~showing:info#showing
-                     lib#stock#project lib#stock#name));
+                   qualified_link ~showing lib#stock#project lib#stock#name));
       everywhere (fun () -> cell_option lib#stock#project);
       basic (fun () -> cell_option lib#stock#description);
       basic (fun () -> cell_option (Option.map lib#sample (fun s -> s#sample#name)));
@@ -406,14 +311,14 @@ let libraries_table info =
       stock (fun () -> cell_option lib#stock#note) ;
               
       fastq (fun () ->
-        if info#can_view_fastq_details then
+        if can_view_fastq_details then
           detailed_fastq_subtable lib
         else
           simple_fastq_subtable lib)
       ]) in
   let first_row =
     let fastq_part =
-      if info#can_view_fastq_details then
+      if can_view_fastq_details then
         [fastq (fun () -> `head [pcdata "Demultiplexing"]);
          fastq (fun () -> `head [pcdata "Delivery"]);
          fastq (fun () -> `head_cell Msg.number_of_reads);
@@ -459,7 +364,7 @@ let libraries_table info =
   let table =
     List.map (first_row :: rows) ~f:(fun row ->
       List.filter_map row (fun (where, what) ->
-        if List.exists where ~f:(fun w -> List.exists info#showing ((=) w))
+        if List.exists where ~f:(fun w -> List.exists showing ((=) w))
         then Some (what ()) else None)) in
   
   Template.content_table ~style:`alternate_colors table
@@ -792,14 +697,16 @@ let per_lirbary_simple_details info =
   
 
     
-let libraries work_started info_got info =
+let libraries ~showing work_started info_got info =
   let open Html5 in
 
   let libraries_table = libraries_table info in
   let table_generated = Time.now () in
   benchmarks work_started info_got table_generated info >>= fun benchmarks ->
-  (if List.length info#libraries = 1 || List.exists info#showing ((=) `details)
-   then if info#can_view_fastq_details
+  Authentication.authorizes (`view (`libraries_detailed_fastq_information))
+  >>= fun can_view_fastq_details ->
+  (if List.length info#libraries = 1 || List.exists showing ((=) `details)
+   then if can_view_fastq_details
      then per_lirbary_details info
      else per_lirbary_simple_details info
    else return (Template.content_list []))
@@ -813,7 +720,7 @@ let libraries work_started info_got info =
         content_section (pcdataf "Summary Table")
           (content_list [
             content_paragraph (intro_paragraph info);
-            libraries_table;
+            libraries_table ~showing ~can_view_fastq_details;
            ]);
         details;
       ]))
@@ -821,8 +728,11 @@ let libraries work_started info_got info =
 
 let make ~information_cache_timming ~configuration =
   let allowed_age, maximal_age = information_cache_timming in
+  let people_filter people =
+    Authentication.authorizes (`view (`libraries_of people)) in
   let classy_info =
-    init_classy_information ~allowed_age ~maximal_age ~configuration in
+    Data_access.init_classy_libraries_information_loop ~loop_withing_time:5.
+    ~people_filter ~log ~allowed_age ~maximal_age ~configuration in
   (fun (showing, qualified_names) () ->
     let work_started = Time.now () in
     let main_title = "Libraries" in
@@ -831,10 +741,11 @@ let make ~information_cache_timming ~configuration =
        >>= function
        | true ->
          Template.make_content ~configuration ~main_title (
-           classy_info ~qualified_names ~showing
+           classy_info ~qualified_names
            >>= fun info ->
            let info_got = Time.now () in
-           libraries work_started info_got info)
+           let showing = if showing = [] then [`fastq] else showing in
+           libraries ~showing work_started info_got info)
        | false ->
          Template.make_authentication_error ~configuration ~main_title
            (return [Html5.pcdataf "You may not view the libraries."])))
