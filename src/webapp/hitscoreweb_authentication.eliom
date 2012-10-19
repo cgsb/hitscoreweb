@@ -25,6 +25,7 @@ type capability = [
            | `hiseq_raw_info
            | `demux_info
            | `benchmarks
+           | `phix_details
            | `libraries_detailed_fastq_information
            | `facility_statistics
            | `flowcell]

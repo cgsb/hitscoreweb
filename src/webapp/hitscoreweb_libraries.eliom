@@ -725,6 +725,34 @@ let libraries ~showing work_started info_got info =
         details;
       ]))
   
+let filter_classy_libraries_information  
+    ~exclude ~qualified_names ~configuration ~people_filter info =
+  while_sequential info#libraries ~f:(fun l ->
+    let qualified = qualified_name l#stock#project l#stock#name in
+    if not (List.exists exclude ((=) qualified))
+      && (qualified_names = [] ||
+          List.exists qualified_names ~f:(fun qn -> qn = qualified))
+    then begin
+      let people =
+        List.map l#submissions (fun sub -> sub#lane#contacts)
+        |! List.concat
+        |! List.map ~f:(fun p -> p#g_pointer) in
+      people_filter people
+      >>= function
+      | true -> return (Some l)
+      | false -> return None
+    end
+    else return None)
+  >>| List.filter_opt
+  >>= fun filtered ->
+  let filtered_time = Time.now () in
+  return (object
+    method static_info = info
+    method filtered_on = filtered_time
+    method configuration = configuration
+    method qualified_names = qualified_names
+    method libraries = filtered
+  end)
 
 let make ~information_cache_timming ~configuration =
   let allowed_age, maximal_age = information_cache_timming in
@@ -741,9 +769,15 @@ let make ~information_cache_timming ~configuration =
        >>= function
        | true ->
          Template.make_content ~configuration ~main_title (
+           Authentication.authorizes (`view `phix_details)
+           >>= begin function
+           | true -> return []
+           | false -> return ["PhiX_v2"; "PhiX_v3"]
+           end
+           >>= fun exclude ->
            classy_info () >>= fun info ->
-           Data_access.filter_classy_libraries_information
-             ~people_filter ~configuration ~qualified_names info
+           filter_classy_libraries_information
+             ~exclude ~people_filter ~configuration ~qualified_names info
            >>= fun filtered_info ->
            let info_got = Time.now () in
            let showing = if showing = [] then [`fastq] else showing in
