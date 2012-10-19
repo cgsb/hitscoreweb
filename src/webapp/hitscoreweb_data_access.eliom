@@ -32,8 +32,51 @@ let rec update  ~configuration () =
   >>= fun () ->
   update ~configuration ()
   
+let _loop_withing_time = ref 5.
+let _allowed_age = ref 60.
+let _maximal_age = ref 900.
+let _configuration = ref (Configuration.configure ())
+
+type classy_persons_error =
+[ `Layout of
+    Hitscore_layout.Layout.error_location *
+      Hitscore_layout.Layout.error_cause
+| `db_backend_error of [ Hitscore_db_backend.Backend.error ]
+| `io_exn of exn
+| `root_directory_not_configured ]
+
+let classy_persons =
+  let r =
+    ref (None: (unit ->
+                (classy_persons_error Hitscore_data_access_types.classy_persons_information,
+                 [ `io_exn of exn ]) t) option) in
+  begin fun () ->
+    begin match !r with
+    | None ->
+      let classy_info =
+        Data_access.init_classy_persons_information_loop
+          ~loop_withing_time:!_loop_withing_time
+          ~log ~allowed_age:!_allowed_age ~maximal_age:!_allowed_age
+          ~configuration:!_configuration
+      in
+      eprintf "Creation of classy persons\n%!";
+      r := Some classy_info;
+      classy_info ()
+      >>= fun c ->
+      return c
+    | Some f -> f () >>= return
+    end
+    >>< begin function
+    | Ok o -> return o
+    | Error (`io_exn e) -> error (`io_exn e)
+    end
+  end
+
 let init ~loop_time ~configuration () =
   _global_timeout := loop_time;
+  _configuration := configuration;
+  classy_persons ()
+  >>= fun _ ->
   with_database configuration (fun ~dbh ->
     let broker_mutex = Lwt_mutex.create () in
     let mutex =
@@ -51,9 +94,14 @@ let init ~loop_time ~configuration () =
 
 
 let find_person_opt id =
-  broker ()
-  >>= fun broker ->
-  Broker.find_person broker id
+  classy_persons ()
+  >>= fun classy_persons_info ->
+  return (
+    List.find_map classy_persons_info#persons (fun p ->
+      if p#t#email = id || p#t#login = Some id ||
+        Array.exists p#t#secondary_emails ((=) id)
+      then Some p#t#g_t
+      else None))
     
 let find_person id =
   find_person_opt id
