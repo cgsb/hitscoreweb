@@ -32,6 +32,8 @@ let rec update  ~configuration () =
   >>= fun () ->
   update ~configuration ()
   
+
+    
 let _loop_withing_time = ref 5.
 let _allowed_age = ref 60.
 let _maximal_age = ref 900.
@@ -55,7 +57,7 @@ let classy_persons =
     | None ->
       let classy_info =
         Data_access.init_classy_persons_information_loop
-          ~loop_withing_time:!_loop_withing_time
+          ~loop_waiting_time:!_loop_withing_time
           ~log ~allowed_age:!_allowed_age ~maximal_age:!_allowed_age
           ~configuration:!_configuration
       in

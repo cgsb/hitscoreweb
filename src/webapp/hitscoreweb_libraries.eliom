@@ -760,7 +760,7 @@ let make ~information_cache_timming ~configuration =
     Authentication.authorizes (`view (`libraries_of people)) in
   let classy_info =
     Data_access.init_classy_libraries_information_loop
-      ~loop_withing_time:5. ~log ~allowed_age ~maximal_age ~configuration in
+      ~loop_waiting_time:5. ~log ~allowed_age ~maximal_age ~configuration in
   (fun (showing, qualified_names) () ->
     let work_started = Time.now () in
     let main_title = "Libraries" in

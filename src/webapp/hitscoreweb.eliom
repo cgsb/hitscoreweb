@@ -18,6 +18,7 @@ module One_person_service = Hitscoreweb_one_person_service
 
 module Persons_service = Hitscoreweb_persons
 
+
 module Flowcell_service = struct
 
 
@@ -774,7 +775,7 @@ TODO: All exceptions in coservices should be handled in some other way
           | e -> eprintf "EXN: %s\n%!" (Exn.to_string e); Lwt.fail e)
       in
 
-      let hitscore_configuration, debug_mode =
+      let state, hitscore_configuration, debug_mode =
 
         let pghost = ref None in
         let pgport = ref None in
@@ -825,7 +826,9 @@ TODO: All exceptions in coservices should be handled in some other way
           ~loop_time:(if !debug_mode then 90. else 600.)
           ~configuration:config ()
         |! Lwt.ignore_result;
-        (config, debug_mode)
+        let state = 
+          Hitscoreweb_state.init_state ~configuration:config () in
+        (state, config, debug_mode)
       in
 
       Services.(register default) (Default_service.make hitscore_configuration);
