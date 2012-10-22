@@ -17,9 +17,13 @@ module Html5 = struct
   let core_a = Eliom_content_core.Html5.D.a
 
 end
+
 }}
 {client{
 module Html5_to_dom = Eliom_content.Html5.To_dom
+
+(* Redefine the Array module to make _type.mli files happy *)
+module Array = struct type 'a t = 'a array include Array end
 }}
 module Tyxml = Xml
 module Output_app =

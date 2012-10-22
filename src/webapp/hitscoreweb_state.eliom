@@ -1,6 +1,6 @@
 open Hitscoreweb_std
 
-type 'error webapp_state = {
+type 'error global_errorful_state = {
   configuration: Configuration.local_configuration; 
   persons_info:
     unit ->
@@ -26,20 +26,33 @@ let init_state ~configuration
 let configuration t = t.configuration
 let persons_info t = t.persons_info ()
   
-let find_person_opt t id =
-  persons_info t
+let find_person_opt ~state id =
+  persons_info state
   >>= fun classy_persons_info ->
   return (
     List.find_map classy_persons_info#persons (fun p ->
       if p#t#email = id || p#t#login = Some id ||
         Array.exists p#t#secondary_emails ((=) id)
-      then Some p#t#g_t
+      then Some p
       else None))
     
-let find_person t id =
-  find_person_opt t id
+let find_person ~state id =
+  find_person_opt ~state id
   >>= fun op ->
   begin match op with
   | Some s -> return s
   | None -> error (`person_not_found id)
   end
+
+let person_by_pointer ~state p =
+  persons_info state
+  >>= fun classy_persons_info ->
+  return (List.find classy_persons_info#persons (fun pc ->
+    pc#t#g_pointer = p))
+  >>= fun op ->
+  begin match op with
+  | Some s -> return s
+  | None -> error (`person_not_found (sprintf "%d" p.Layout.Record_person.id))
+  end
+
+    

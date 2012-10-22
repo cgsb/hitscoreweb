@@ -866,15 +866,11 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register doc)
         Doc_service.(make ~configuration:hitscore_configuration);
 
-      One_person_service.init_caml_service
-        ~configuration:hitscore_configuration ();
-      One_person_service.init_email_verification_service
-        ~configuration:hitscore_configuration;
-      Services.(register self)
-        One_person_service.(make_self ~configuration:hitscore_configuration);
+      One_person_service.init_caml_service ~state ();
+      One_person_service.init_email_verification_service ~state;
+      Services.(register self) One_person_service.(make_self ~state);
 
-      Services.(register person)
-        One_person_service.(make_person ~configuration:hitscore_configuration);
+      Services.(register person) One_person_service.(make_person ~state);
 
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);

@@ -274,7 +274,10 @@ let html_of_error_sublevel poly_error =
     [pcdata (string_of_layout_error e)]
   | `broker_error _ -> []
   | `Layout_service _ -> []
-
+  | `cannot_find_secondary_email
+  | `email_verification_in_progress _
+  | `sendmail _
+  | `wrong_parameter _ -> [pcdata "some error with email verification"]
 
 let html_of_error  poly_error = 
   let open Html5 in
