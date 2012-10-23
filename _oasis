@@ -7,11 +7,6 @@ License:     PROP
 Plugins:     META (0.2)
 BuildTools:  ocamlbuild
 
-Library hitscorewebpam
-  Path: src/simple_pam
-  Modules: Simple_pam
-  CSources: simple_pam_stubs.c
-  CCLib: -lpam -lresolv
 
 Executable hitscoreweb
   Path:   src/app

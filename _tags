@@ -1,18 +1,23 @@
 # OASIS_START
-# DO NOT EDIT (digest: df4f16880c2956ec6c50a2ef753a7066)
+# DO NOT EDIT (digest: b0ecb9c53708679410f4fa8ebd19df3e)
+# Ignore VCS directories, you can use the same kind of rule outside 
+# OASIS_START/STOP if you want to exclude directories that contains 
+# useless stuff for the build process
+<**/.svn>: -traverse
+<**/.svn>: not_hygienic
+".bzr": -traverse
+".bzr": not_hygienic
+".hg": -traverse
+".hg": not_hygienic
+".git": -traverse
+".git": not_hygienic
+"_darcs": -traverse
+"_darcs": not_hygienic
 # Executable hitscoreweb
 <src/app/hitscoreweb.{native,byte}>: pkg_threads
 <src/app/hitscoreweb.{native,byte}>: pkg_hitscore
 <src/app/*.ml{,i}>: pkg_threads
 <src/app/*.ml{,i}>: pkg_hitscore
-# Library hitscorewebpam
-"src/simple_pam": include
-<src/simple_pam/hitscorewebpam.{cma,cmxa}>: oasis_library_hitscorewebpam_cclib
-"src/simple_pam/libhitscorewebpam.lib": oasis_library_hitscorewebpam_cclib
-"src/simple_pam/dllhitscorewebpam.dll": oasis_library_hitscorewebpam_cclib
-"src/simple_pam/libhitscorewebpam.a": oasis_library_hitscorewebpam_cclib
-"src/simple_pam/dllhitscorewebpam.so": oasis_library_hitscorewebpam_cclib
-<src/simple_pam/hitscorewebpam.{cma,cmxa}>: use_libhitscorewebpam
 # OASIS_STOP
 
 <src/lib/*.ml>: syntax_camlp4o

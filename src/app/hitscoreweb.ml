@@ -98,7 +98,6 @@ let config
     <extension findlib-package=\"core_extended\"/>
     <extension findlib-package=\"pgocaml\"/>
     <extension findlib-package=\"hitscore\"/>
-    <extension module=\"_build/src/simple_pam/hitscorewebpam.cma\"/>
     <extension findlib-package=\"ocsigenserver.ext.ocsipersist-sqlite\">
       <database file=\"%s/ocsidb\"/>
     </extension>
