@@ -188,7 +188,8 @@ let testing ~session_timeout
   let runtime_root = "/tmp/hitscoreweb" in
   let www_dir =
     Option.(bind !global_hitscore_configuration
-              Hitscore_configuration.Configuration.root_path |! value_exn)
+              Hitscore_configuration.Configuration.root_path
+          |! value_exn ?message:None ?error:None ?here:None)
     ^ "/www" in
   let exec =
     match kind with `Ocsigen -> "ocsigenserver" | `Static -> "hitscoreserver" in
@@ -497,7 +498,7 @@ let () =
       match String.split profile ~on:':' with
       | [ one ] ->
         (sprintf "%s/.config/hitscore/config.sexp"
-           (Option.value_exn_message "This environment has no $HOME !"
+           (Option.value_exn ~message:"This environment has no $HOME !"
               (Sys.getenv "HOME")), one)
       | [ one; two ] ->
         (one, two)
