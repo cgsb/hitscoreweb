@@ -4,7 +4,7 @@
 APP_NAME := hitscoreweb
 
 ## Packages required to build the server part of the application
-SERVER_PACKAGES := hitscoregen threads core hitscore core_extended
+SERVER_PACKAGES := hitscoregen threads core hitscore core_extended 
 
 ## Packages to be linked in the client part
 
@@ -37,21 +37,22 @@ HIGHCHARTS_JS=../../src/ext/highcharts/highcharts.js
 HIGHCHARTS_LIB=${JQUERY_MIN_JS} ${HIGHCHARTS_JS}
 
 ## Required binaries
-CAMLP4= 'camlp4o str.cma \
-   -I`ocamlfind query extlib` extLib.cma \
-   -I`ocamlfind query pcre` pcre.cma \
-   -I`ocamlfind query csv` csv.cma \
-   -I`ocamlfind query calendar` calendarLib.cma \
-   -I`ocamlfind query pgocaml.syntax` pgocaml.cma pa_pgsql.cmo'
+#CAMLP4= 'camlp4o str.cma \
+#   -I`ocamlfind query extlib` extLib.cma \
+#   -I`ocamlfind query pcre` pcre.cma \
+#   -I`ocamlfind query csv` csv.cma \
+#   -I`ocamlfind query calendar` calendarLib.cma \
+#   -I`ocamlfind query pgocaml.syntax` pgocaml.cma pa_pgsql.cmo'
 
-ELIOMC      := eliomc -thread -pp $(CAMLP4) -I . 
-#ELIOMC      := eliomc
-ELIOMOPT    := eliomopt -thread -pp $(CAMLP4) -I .
+#ELIOMC      := eliomc -thread -pp $(CAMLP4) -I . 
+ELIOMC      := eliomc 
+ELIOMOPT    := eliomopt
 
-ELIOMDEPSERVER := eliomdep -server -pp $(CAMLP4) -I .
-ELIOMDEPCLIENT := eliomdep -client -pp $(CAMLP4) -I .
+#ELIOMDEPSERVER := eliomdep -server -pp $(CAMLP4) -I .
+ELIOMDEPSERVER := eliomdep -server 
+ELIOMDEPCLIENT := eliomdep -client
 
-JS_OF_ELIOM := js_of_eliom -jsopt -pretty -pp $(CAMLP4) -I _client/ -I .
+JS_OF_ELIOM := js_of_eliom -jsopt -pretty -I _client/ -I .
 
 ## Where to put intermediate object files.
 ## - ELIOM_{SERVER,CLIENT}_DIR must be distinct
@@ -149,8 +150,8 @@ distclean: clean.local
 
 depend: .depend
 .depend:
-	$(ELIOMDEPSERVER) ${SERVER_INC} ${SERVER_FILES} > .depend
-	$(ELIOMDEPCLIENT) ${CLIENT_INC} ${CLIENT_FILES} >> .depend
+	$(ELIOMDEPSERVER) ${SERVER_FILES} > .depend
+	$(ELIOMDEPCLIENT) ${CLIENT_FILES} >> .depend
 	ocaml ../../bin/fake_eliomdep.ml $(patsubst %.eliom,%,${COMMON_FILES}) >> .depend
 ## Warning: Dependencies towards *.eliom are not handled by eliomdep yet.
 
