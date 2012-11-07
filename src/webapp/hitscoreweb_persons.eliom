@@ -49,7 +49,17 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
                      [Template.a_link Services.person
                          [code ~a:[a_id person#t#email; a_style style]
                              [pcdata person#t#email]]
-                         (person#t#email, None)]
+                         (person#t#email, None);
+                      pcdata " — ";
+                      Html5.get_form ~a:[ a_style "display: inline;" ]
+                        ~service:(
+                          Eliom_service.preapply
+                            ~service:(Authentication.start_impersonation_coservice ())
+                            person#t#email)
+                        (fun () ->
+                          [Html5.string_input
+                              ~input_type:`Submit ~value:"Impersonate" ();]) 
+                     ]
           )
       in
       let text s = `sortable (s, [pcdata s]) in
