@@ -44,6 +44,12 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
       in
       let text s = `sortable (s, [pcdata s]) in
       let opttext o = opt text o in
+      let applications =
+        List.map person#libraries (fun l ->
+          String.concat_array ~sep:"/" l#application)
+        |! List.dedup
+        |! List.map ~f:pcdata
+        |! interleave_list ~sep:(br ()) in
       let default = [
         opttext person#t#print_name;
         text person#t#given_name;
@@ -54,6 +60,7 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
         `text (array_to_list_intermap person#t#secondary_emails ~sep:(pcdata ", ")
                  ~f:(codef "%s\n"));
         opttext person#t#login;
+        `text applications;
       ] in
       let supplement = 
         if not full_view then [] else [
@@ -75,7 +82,8 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
       `head [pcdata "Nickname"];
       `head [pcdata "Primary Email"];
       `head [pcdata "Secondary Emails"];
-      `head [pcdata "Login"]] in
+      `head [pcdata "Login"];
+      `head [pcdata "Applications"] ] in
     let supplement = 
       if not full_view then [] else [
 	`head [pcdata "Roles"];
