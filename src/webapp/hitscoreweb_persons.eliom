@@ -39,8 +39,18 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
     else Html5.(
       let email_field =
         let style = if is_vip then "color: green" else "" in
-        `sortable (person#t#email, [code ~a:[a_id person#t#email; a_style style]
-                                       [pcdata person#t#email]])
+        if not full_view
+        then 
+          `sortable (person#t#email,
+                     [code ~a:[a_id person#t#email; a_style style]
+                         [pcdata person#t#email]])
+        else 
+          `sortable (person#t#email,
+                     [Template.a_link Services.person
+                         [code ~a:[a_id person#t#email; a_style style]
+                             [pcdata person#t#email]]
+                         (person#t#email, None)]
+          )
       in
       let text s = `sortable (s, [pcdata s]) in
       let opttext o = opt text o in
