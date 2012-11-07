@@ -36,15 +36,6 @@ let intro_paragraph info =
     |! interleave_list ~sep:(pcdata ", ") in
   [b [pcdata "Choose view: "]] @ links @ [pcdata "."] @ [br ()]
 
-let get_fastq_stats lib sub dmux =
-  let open Option in
-  dmux#unaligned
-  >>= fun u ->
-  u#dmux_summary
-  >>= fun ds ->
-  let module Bui = Hitscore_interfaces.B2F_unaligned_information in
-  List.find ds.(sub#lane_index - 1) (fun x ->
-    x.Bui.name = lib#stock#name)
 
 let html_detailed_dmux dmux =
   let open Template in
@@ -108,7 +99,7 @@ let detailed_fastq_subtable lib =
     List.map lib#submissions (fun sub ->
       List.map sub#flowcell#hiseq_raws (fun hs ->
         List.map hs#demultiplexings (fun dmux ->
-          let fastq_stats = get_fastq_stats lib sub dmux in
+          let fastq_stats = Data_access.get_fastq_stats lib sub dmux in
           let fcid = sub#flowcell#oo#serial_name in
           [ `sortable (sprintf "%s:%d" fcid sub#lane_index,
                        [a_link Services.flowcell [pcdata fcid] fcid;
@@ -134,19 +125,6 @@ let detailed_fastq_subtable lib =
   let empty_row = [List.init 6 (fun _ -> `text [pcdata ""])] in
   `subtable (if List.concat subtable = [] then empty_row else subtable)
 
-let choose_delivery_for_user dmux sub =
-  let open Option in
-  List.filter_map dmux#deliveries (fun del ->
-    if del#oo#g_status <> `Succeeded
-    then None
-    else (
-      List.find sub#invoices (fun i -> i#g_id = del#oo#invoice#id)
-                                       >>= fun inv ->
-      Some (del, inv)))
-  |! List.reduce ~f:(fun (d1, i1) (d2, i2) ->
-    if d1#oo#g_completed < d2#oo#g_completed
-    then (d2, i2)
-    else (d1, i1))
       
 let simple_fastq_subtable lib =
   let open Template in
@@ -157,9 +135,9 @@ let simple_fastq_subtable lib =
       List.map sub#flowcell#hiseq_raws (fun hs ->
         List.filter_map hs#demultiplexings (fun dmux ->
           let open Option in
-          let fastq_stats = get_fastq_stats lib sub dmux in
+          let fastq_stats = Data_access.get_fastq_stats lib sub dmux in
           let fcid = sub#flowcell#oo#serial_name in
-          choose_delivery_for_user dmux sub
+          Data_access.choose_delivery_for_user dmux sub
           >>= fun (del, inv) ->
           return [
             `sortable (sprintf "%s:%d" fcid sub#lane_index,
@@ -645,7 +623,7 @@ let per_lirbary_simple_details info =
                   a_link Services.flowcell [pcdata fcid] fcid;
                   pcdataf " (Lane %d)"  sub#lane_index;] in
           while_sequential hr#demultiplexings (fun dmux ->
-            map_option (choose_delivery_for_user dmux sub) (fun (del, inv) ->
+            map_option (Data_access.choose_delivery_for_user dmux sub) (fun (del, inv) ->
               map_option dmux#unaligned (fun un ->
                 while_sequential un#fastx_paths (fun path ->
                   let barcodes = demuxable_barcode_sequences sub#lane lib in
