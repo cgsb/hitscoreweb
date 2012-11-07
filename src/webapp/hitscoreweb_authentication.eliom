@@ -302,10 +302,10 @@ let start_impersonation_coservice =
           else return ())
       in
       let handler =
-        Eliom_registration.Action.register_post_coservice'
+        Eliom_registration.Action.register_coservice'
           ~https:true
-          ~post_params:Eliom_parameter.(string "user")
-          (fun () (user) ->
+          ~get_params:Eliom_parameter.(string "user")
+          (fun (user) () ->
             Lwt.bind
               (if Eliom_request_info.get_ssl ()
                then check_and_set (String.strip user)
@@ -384,14 +384,14 @@ let logout_form () =
 
 let start_impersonating_form () =
   let open Html5 in
-  Html5.post_form ~service:(start_impersonation_coservice ())
+  Html5.get_form ~service:(start_impersonation_coservice ())
     (fun (name) ->
       [
         pcdata "Impersonate someone else: ";
         Html5.string_input ~input_type:`Text ~name ();
         Html5.string_input
           ~input_type:`Submit ~value:"Start" ();
-      ]) () 
+      ])  
   
 let stop_impersonating_form () =
   let open Html5 in
