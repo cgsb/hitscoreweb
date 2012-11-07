@@ -843,7 +843,7 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register facility_statistics)
         Hitscoreweb_facility_stats.(make ~configuration:hitscore_configuration);
 
-      Services.(register persons) Persons_service.(make hitscore_configuration);
+      Services.(register persons) Persons_service.(make ~state);
 
       Services.(register libraries)
         Hitscoreweb_libraries.(
