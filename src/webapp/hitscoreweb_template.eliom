@@ -470,7 +470,7 @@ let td_on_click_to_sort do_something order cell_id idx id =
           Dom_html.CoerceTo.table (fun _ -> assert false) in
       let rows = tab##rows in
       let get_cell_title r c = 
-        Js.Optdef.(
+        Js.Opt.(
           let (>>=) = bind in
           let opt =
             rows##item(r)
@@ -483,7 +483,8 @@ let td_on_click_to_sort do_something order cell_id idx id =
         ) in
       let array = Array.create (rows##length - 1) ("", Js.undefined) in
       for i = 1 to rows##length - 1 do
-        array.(i - 1) <- (get_cell_title i %idx, rows##item(i));
+        array.(i - 1) <- (get_cell_title i %idx,
+                          Js.Optdef.option (Js.Opt.to_option rows##item(i)));
       done;
       Array.stable_sort (fun (x,_) (y,_) ->
         %order_multiplier *
