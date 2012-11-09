@@ -369,15 +369,6 @@ let benchmarks work_started info_got table_generated info =
   ) else
     return Template.(content_list [])
       
-let fastq_path unaligned_path lane_index lib_name barcode read =
-  sprintf "%s/Unaligned/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.fastq.gz"
-    unaligned_path lane_index lib_name lib_name barcode
-    lane_index read
-let fastxqs_path fastxqs_path lane_index lib_name barcode read =
-  sprintf "%s/Unaligned/Project_Lane%d/Sample_%s/%s_%s_L00%d_R%d_001.fxqs"
-    fastxqs_path lane_index lib_name lib_name barcode
-    lane_index read
-    
 let fastx_table path =
   let open Html5 in
   let open Template in
@@ -482,27 +473,6 @@ let fastx_quality_plots path =
       return chart)
     ~error:(fun _ -> return (errf "ERROR while getting the fastx plot"))
 
-let demuxable_barcode_sequences lane lib =
-  if List.length lane#inputs = 1 then
-    ["NoIndex"]
-  else
-    match lib#barcoding with
-    | [and_list] ->
-      if List.for_all and_list (fun o ->
-        (o#kind = `illumina || o#kind = `bioo) && o#index <> None)
-      then
-        List.filter_map and_list (fun o ->
-          match o#kind with
-          | `illumina ->
-            List.Assoc.find
-              Assemble_sample_sheet.illumina_barcodes (Option.value_exn o#index)
-          | `bioo ->
-            List.Assoc.find
-              Assemble_sample_sheet.bioo_barcodes (Option.value_exn o#index)
-          | _ -> None)
-      else []
-    | _ -> []
-        
 let per_lirbary_details info =
   let open Html5 in
   let open Template in
@@ -524,18 +494,10 @@ let per_lirbary_details info =
             ];
           ] in
           map_option dmux#unaligned (fun un ->
-            let barcodes = demuxable_barcode_sequences sub#lane lib in
-            let fastq_r1s =
-              List.map barcodes (fun seq ->
-                fastq_path un#path sub#lane_index lib#stock#name seq 1) in
-            let fastq_r2s =
-              Option.value_map ~default:[]
-                sub#lane#oo#requested_read_length_2 ~f:(fun _ ->
-                  List.map barcodes (fun seq ->
-                    fastq_path un#path sub#lane_index lib#stock#name seq 2))
-            in
-            while_sequential un#fastx_paths (fun path ->
-              
+            let files =
+              Data_access.user_file_paths ~unaligned:un ~submission:sub lib in
+            let fastq_r1s, fastq_r2s = files#fastq_r1s, files#fastq_r2s in
+            while_sequential files#fastx (fun (r1, r2) ->
               let origins =
                 interleave_map ~sep:[br ()] un#fastx_qss ~f:(fun fxqs ->
                   [pcdata "Function ";
@@ -548,22 +510,13 @@ let per_lirbary_details info =
                    layout_id_link "fastx_quality_stats_result" fxqsr#g_id; ])
                 |! List.concat
               in
-              let fastxqs_r1s =
-                List.map barcodes (fun seq ->
-                  ("R1", fastxqs_path path sub#lane_index lib#stock#name seq 1)) in
-              let fastxqs_r2s =
-                Option.value_map ~default:[]
-                  sub#lane#oo#requested_read_length_2 ~f:(fun _ ->
-                    List.map barcodes (fun seq ->
-                      ("R2", fastxqs_path path sub#lane_index lib#stock#name seq 2)))
-              in
-              while_sequential (fastxqs_r1s @ fastxqs_r2s) (fun (kind, path) ->
-                rendered_fastx_table path >>= fun fastx_table ->
-                fastx_quality_plots path >>= fun fastx_qplot ->
+              while_sequential (r1 @ r2) (fun fastx_read ->
+                rendered_fastx_table fastx_read#path >>= fun fastx_table ->
+                fastx_quality_plots fastx_read#path >>= fun fastx_qplot ->
 
                 return [
-                  strongf "%s: " kind;
-                  codef "%s" path;
+                  strongf "%s: " fastx_read#kind;
+                  codef "%s" fastx_read#path;
                   div fastx_table;
                   div fastx_qplot;
                 ])
@@ -625,24 +578,15 @@ let per_lirbary_simple_details info =
           while_sequential hr#demultiplexings (fun dmux ->
             map_option (Data_access.choose_delivery_for_user dmux sub) (fun (del, inv) ->
               map_option dmux#unaligned (fun un ->
-                while_sequential un#fastx_paths (fun path ->
-                  let barcodes = demuxable_barcode_sequences sub#lane lib in
-                  let fastxqs_r1s =
-                    List.map barcodes (fun seq ->
-                      ("Read 1",
-                       fastxqs_path path sub#lane_index lib#stock#name seq 1)) in
-                  let fastxqs_r2s =
-                    Option.value_map ~default:[]
-                      sub#lane#oo#requested_read_length_2 ~f:(fun _ ->
-                        List.map barcodes (fun seq ->
-                          ("Read 2",
-                           fastxqs_path path sub#lane_index lib#stock#name seq 2)))
-                  in
-                  while_sequential (fastxqs_r1s @ fastxqs_r2s) (fun (kind, path) ->
-                    rendered_fastx_table path >>= fun fastx_table ->
-                    fastx_quality_plots path >>= fun fastx_qplot ->
+                let files =
+                  Data_access.user_file_paths ~unaligned:un ~submission:sub lib in
+                while_sequential files#fastx (fun (r1, r2) ->
+                  while_sequential (r1 @ r2) (fun fastx_read ->
+                    rendered_fastx_table fastx_read#path >>= fun fastx_table ->
+                    fastx_quality_plots fastx_read#path >>= fun fastx_qplot ->
+
                     return [
-                      strongf "%s: " kind;
+                      strongf "%s: " fastx_read#kind;
                       div fastx_table;
                       div fastx_qplot;
                     ]))
