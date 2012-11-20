@@ -18,7 +18,6 @@ type form =
 | Integer of int form_item
 | List of form list
 | Section of string * form
-| With_save_button of string * form
 deriving (Json)
 
 module String_type = struct
@@ -43,9 +42,6 @@ module Form = struct
   let section s = function
     | [one] -> Section (s, one)
     | more_or_less -> Section (s, List more_or_less)
-  let with_save_button s = function
-    | [one] -> With_save_button (s, one)
-    | more_or_less -> With_save_button (s, List more_or_less)
 end
     
 type up_message =
@@ -171,61 +167,44 @@ let create ~state ~path  form_content =
             let d =
               div [ div [pcdataf "Section %S" title]; the_div] in
             return (d, fun () -> Section (title, the_fun ()))
-          | With_save_button (text, content) as the_form ->
-            make_form content
-            >>= fun (the_div, the_fun) ->
-            let bdiv = div [ pcdataf "[[%s]]" text ] in
-            let elt = Html5_to_dom.of_div bdiv in
-            let current_form = ref the_form in
-            let with_save_div =
-              div ~a:[ a_style "border: 1px; border-color: black"] [ the_div ; bdiv ] in
-            let div_container = div [with_save_div] in
-            elt##onclick <- Dom_html.handler(fun _ ->
-              let new_form = the_fun () in
-              Lwt.ignore_result begin
-                call_caml (Form_changed new_form)
-                >>= begin function
-                | Make_form f ->
-                  dbg "Make form again?!";
-                  current_form := f;
-                  make_form content
-                  >>= fun (the_div, the_fun) ->
-                  Eliom_content.Html5.Manip.replaceChild div_container with_save_div the_div;
-                  
-                  (*
-                  make_form f
-                  >>= fun whole_form ->
-                  let elt = Html5_to_dom.of_div whole_form in
-                  Dom.appendChild hook elt;
-                  *)
-                  return ()
-                | Server_error s -> dbg "Server Error: %s" s; return ()
-                | Form_saved -> dbg "Form_saved"; return ()
-                end
-              end;
-              Js._true
-            ); 
-            return (div_container, fun () -> !current_form)
           end
         in
 
-        let hook = get_element_exn %hook_id in
-        hook##innerHTML <- Js.string "Please fill these fields: ";
-        (* List.iter (fun x -> dbg "class: %s" x.name) Kind.list; *)
-        Lwt.ignore_result begin
-          call_caml Ready
-          >>= begin function
-          | Make_form f ->
-            dbg "Make form?!";
-            make_form f
-            >>= fun (whole_form, whole_function) ->
-            let elt = Html5_to_dom.of_div whole_form in
-            Dom.appendChild hook elt;
-            return ()
-          | Server_error s -> dbg "Server Error: %s" s; return ()
-          | Form_saved -> dbg "Form_saved"; return ()
+        let rec make_with_save_button send_to_server =
+          let hook = get_element_exn %hook_id in
+          hook##innerHTML <- Js.string "Contacting the server … ";
+          (* List.iter (fun x -> dbg "class: %s" x.name) Kind.list; *)
+          Lwt.ignore_result begin
+            call_caml send_to_server
+            >>= begin function
+            | Make_form f ->
+              dbg "Make form?!";
+              make_form f
+              >>= fun (the_div, whole_function) ->
+              let whole_form =
+                let bdiv = div [ pcdataf "[[SAVE]]" ] in
+                let belt = Html5_to_dom.of_div bdiv in
+                belt##onclick <- Dom_html.handler(fun _ ->
+                  let new_form = whole_function () in
+                  make_with_save_button (Form_changed new_form);
+                  Js._true
+                ); 
+                div [the_div; bdiv]
+              in
+              let elt = Html5_to_dom.of_div whole_form in
+              hook##innerHTML <- Js.string "Please fill the form: ";
+              Dom.appendChild hook elt;
+              return ()
+            | Server_error s ->
+              hook##innerHTML <- ksprintf Js.string "Server Error: %s" s;
+              return ()
+            | Form_saved ->
+              hook##innerHTML <- ksprintf Js.string "Form saved, thank you.";
+              return ()
+            end
           end
-        end
+        in
+        make_with_save_button Ready
       end
     with e -> 
       dbg "Exception in onload for %S: %s" %hook_id (Printexc.to_string e);

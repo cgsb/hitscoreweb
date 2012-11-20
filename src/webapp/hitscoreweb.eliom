@@ -545,17 +545,14 @@ module Default_service = struct
             return (section "First Section" [
               integer ~question:"Pick an integer" ~value:42 ();
               string ~question:"Pick a string" ();
-              with_save_button "Save" [
+              section "Subsection" [
                 string ~question:"Pick a string" ~value:"sldk jskd" ();
-                integer ~question:"Pick an integer" ();
               ];
             ])          
           | Some modified_form ->
             dbg "Modified form : %s"
               Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form> modified_form) ;
-            return (with_save_button "Save again" [
-              string ~question:"pick another string" ()
-            ])
+            return (string ~question:"pick another string" ())
           )
       in
       let content =
