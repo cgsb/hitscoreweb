@@ -547,6 +547,7 @@ module Default_service = struct
               string ~question:"Pick a string" ();
               section "Subsection" [
                 string ~question:"Pick a string" ~value:"sldk jskd" ();
+                float ~question:"Now a float:" ~value:(atan (-1.)) ();
               ];
             ])          
           | Some modified_form ->

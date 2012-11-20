@@ -16,6 +16,7 @@ deriving (Json)
 type form =
 | String of string form_item
 | Integer of int form_item
+| Float of float form_item
 | List of form list
 | Section of string * form
 deriving (Json)
@@ -30,14 +31,19 @@ module Integer_type = struct
     try `ok (int_of_string s)
     with _ -> `error "This is not an integer"
 end
-
+module Float_type = struct
+  let to_string = string_of_float
+  let of_string s =
+    try `ok (float_of_string s)
+    with _ -> `error "This is not a floating point number"
+end
+  
 module Form = struct
   (* let item ?value question kind = Item {question; kind; value} *)
-  let item ?question ?value () = {question; value}
-  let integer ?question ?value () =
-    Integer (item ?question ?value ())
-  let string ?question ?value () =
-    String (item ?question ?value ())
+  let make_item ~f ?question ?value () = f {question; value}
+  let integer = make_item ~f:(fun x -> Integer x)
+  let string = make_item ~f:(fun x -> String x)
+  let float = make_item ~f:(fun x -> Float x)
   let list l = List l
   let section s = function
     | [one] -> Section (s, one)
@@ -161,6 +167,10 @@ let create ~state ~path  form_content =
             form_item Integer_type.(of_string, to_string) it
             >>= fun (the_div, the_fun) ->
             return (the_div, fun () -> Integer (the_fun ()))
+          | Float it ->
+            form_item Float_type.(of_string, to_string) it
+            >>= fun (the_div, the_fun) ->
+            return (the_div, fun () -> Float (the_fun ()))
           | Section (title, content) ->
             make_form content
             >>= fun (the_div, the_fun) ->
