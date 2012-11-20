@@ -540,11 +540,23 @@ module Default_service = struct
       let test_form =
         let open Hitscoreweb_meta_form in
         create ~state ~path:["form_test_in_main"]
-          Form.(section "First Section"
-                  (list [
-                    integer ~question:"Pick an integer" ~value:42 ();
-                    string ~question:"Pick a string" ();
-                   ]))
+          Form.(function
+          | None ->
+            return (section "First Section" [
+              integer ~question:"Pick an integer" ~value:42 ();
+              string ~question:"Pick a string" ();
+              with_save_button "Save" [
+                string ~question:"Pick a string" ~value:"sldk jskd" ();
+                integer ~question:"Pick an integer" ();
+              ];
+            ])          
+          | Some modified_form ->
+            dbg "Modified form : %s"
+              Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form> modified_form) ;
+            return (with_save_button "Save again" [
+              string ~question:"pick another string" ()
+            ])
+          )
       in
       let content =
         Template.menu_ul ()
