@@ -529,10 +529,22 @@ module Evaluations_service = struct
 
 end
 
+
 module Default_service = struct
-  let make hsc =
+
+    
+    
+  let make ~state =
     (fun () () ->
       let open Html5 in
+      let test_form =
+        let open Hitscoreweb_meta_form in
+        create ~state ~path:["form_test_in_main"]
+          Form.(section "First Section"
+                  (list [
+                    item "Pick a number" Kind.number;
+                   ]))
+      in
       let content =
         Template.menu_ul ()
         >>= fun ul_menu ->
@@ -550,6 +562,7 @@ module Default_service = struct
               [pcdata "Gencore's webpages"];
             pcdata ". ";
           ];
+          p [test_form]
         ] in
         return (header @ welcome @ menu)
       in
@@ -831,9 +844,9 @@ TODO: All exceptions in coservices should be handled in some other way
         (state, config, debug_mode)
       in
 
-      Services.(register default) (Default_service.make hitscore_configuration);
+      Services.(register default) (Default_service.make ~state);
 
-      Services.(register home) (Default_service.make hitscore_configuration);
+      Services.(register home) (Default_service.make ~state);
 
       Services.(register hiseq_runs)
         Hitscoreweb_hiseq_runs.(make hitscore_configuration);

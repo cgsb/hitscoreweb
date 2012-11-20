@@ -16,6 +16,7 @@ COMMON_FILES := \
   hitscoreweb_messages.eliom	    \
   hitscoreweb_data_access.eliom	    \
   hitscoreweb_state.eliom	    \
+  hitscoreweb_meta_form.eliom	    \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_services.eliom	    \
   hitscoreweb_authentication.eliom \

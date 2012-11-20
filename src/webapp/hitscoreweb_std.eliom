@@ -173,9 +173,10 @@ module String = struct
 end
 
 let dbg fmt =
-  Printf.ksprintf (fun s -> Firebug.console##debug(Js.string s)) fmt
+  Printf.ksprintf (fun s -> Firebug.console##debug(Js.string ("DBG: " ^ s))) fmt
   
 }}
+let dbg fmt = ksprintf (fun s -> eprintf "DBG: %s\n%!" s) fmt
 
 let pretty_string_of_float ?(sof=sprintf "%.3f") f = 
   let s = sof f in
