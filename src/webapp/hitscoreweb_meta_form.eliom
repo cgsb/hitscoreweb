@@ -3,33 +3,41 @@
 open Hitscoreweb_std
 open Printf
 
-(*
-type _ form_type =
-| Int: int -> int form_type
-| String: string -> string form_type
-| Enum: string list -> string list form_type
-deriving (Json)
-*)
-
 type kind_key = string deriving (Json)
 
 type phrase = string deriving (Json)
   
-type form_item = {
-  question: phrase;
-  kind: kind_key;
-  value: string option;
+type 'a form_item = {
+  question: phrase option;
+  value: 'a option;
 }
 deriving (Json)
 
 type form =
-| Item of form_item
+| String of string form_item
+| Integer of int form_item
 | List of form list
 | Section of string * form
 deriving (Json)
 
+module String_type = struct
+  let to_string s = s
+  let of_string s = `ok s
+end
+module Integer_type = struct
+  let to_string i = sprintf "%d" i
+  let of_string s =
+    try `ok (int_of_string s)
+    with _ -> `error "This is not an integer"
+end
+
 module Form = struct
-  let item ?value question kind = Item {question; kind; value}
+  (* let item ?value question kind = Item {question; kind; value} *)
+  let item ?question ?value () = {question; value}
+  let integer ?question ?value () =
+    Integer (item ?question ?value ())
+  let string ?question ?value () =
+    String (item ?question ?value ())
   let list l = List l
   let section s f = Section (s, f)
 end
@@ -38,39 +46,13 @@ type up_message =
 | Form_changed of form
 | Ready
 deriving (Json)
-
 type down_message =
 | Make_form of form
 | Form_saved
 | Server_error of string
 
-type form_kind = {
-  name: kind_key;
-  display:
-    [ `string_input
-    | `enum of string list
-    | `enum_and_new of string list * string * string
-    (* `enum_and_new (["one"; "two"], "New …", "news_kind") *)
-    ];
-  verify: string -> [ `ok | `error of string ];
-}
-    
-module Kind = struct
-  let number = "number"
-  let list = [
-    { name = number;
-      display = `string_input;
-      verify = (fun x ->
-        try dbg "x = %d\n" (int_of_string x); `ok
-        with _ -> `error "This is not an integer");};
-
-  ]
-end
-
 }}
 
-(* let number_range name (min, max) = *)
-  (* { number name with validate = fun x -> min <= x && max <= x } *)
 
 let reply ~state form_content param =
   match param with
@@ -117,51 +99,48 @@ let create ~state ~path  form_content =
           Eliom_client.call_caml_service ~service: %caml msg () in
 
         let rec make_form f =
-          let form_item it =
+          let form_item (of_string, to_string) it =
             dbg "form_item";
-            let item_class =
-              List.find (fun c -> c.name = it.kind) Kind.list in
-            let form_item =
-              let value =
-                match it.value with Some s -> s | None -> "" in
-              let potential_msg = span [] in
-              let verify ev =
-                let msg_box = Html5_to_dom.of_span potential_msg in
-                Js.Optdef.iter (ev##target) (fun src_elt ->
-                  match Dom_html.tagged src_elt with
-                  | Dom_html.Input ielt ->
-                    dbg "Input ELT %s" (Js.to_string ielt##value);
-                    begin match item_class.verify (Js.to_string ielt##value) with
-                    | `ok -> 
-                      msg_box##innerHTML <-
-                        ksprintf Js.string "OK: %s" (Js.to_string ielt##value)
-                    | `error s ->
-                      msg_box##innerHTML <- ksprintf Js.string "KO : %s" s
-                    end
-                  | _ ->
-                    dbg "WRONG ELEMENT"
-                );
-                dbg "verification"
-              in
-              div [
-                pcdata it.question;
-                pcdata "  :  ";
-                string_input ~a:[
-                  a_onchange (fun _ -> dbg "change!");
-                  a_onmouseup (fun _ -> dbg "change!");
-                  a_onkeyup verify;
-                ] ~input_type:`Text ~value ();
-                potential_msg;
-              ]
+            let value = match it.value with Some s -> to_string s | None -> "" in
+            let potential_msg = span [] in
+            let verify ev =
+              let msg_box = Html5_to_dom.of_span potential_msg in
+              Js.Optdef.iter (ev##target) (fun src_elt ->
+                match Dom_html.tagged src_elt with
+                | Dom_html.Input ielt ->
+                  dbg "Input ELT %s" (Js.to_string ielt##value);
+                  begin match of_string (Js.to_string ielt##value) with
+                  | `ok _ -> 
+                    msg_box##innerHTML <-
+                      ksprintf Js.string "OK: %s" (Js.to_string ielt##value)
+                  | `error s ->
+                    msg_box##innerHTML <- ksprintf Js.string "KO : %s" s
+                  end
+                | _ ->
+                  dbg "WRONG ELEMENT"
+              );
+              dbg "verification"
             in
-            return form_item
+            let question_h5 =
+              match it.question with
+              | Some q -> [div [ pcdata q; pcdata "  :  "; ]]
+              | None -> [] in
+            return (div (question_h5 @ [
+              string_input ~a:[
+                a_onchange (fun _ -> dbg "change!");
+                a_onmouseup (fun _ -> dbg "change!");
+                a_onkeyup verify;
+              ] ~input_type:`Text ~value ();
+              potential_msg;
+            ]))
           in
           begin match f with
           | List l ->
             Lwt_list.map_s make_form l
             >>= fun l ->
             return (div l)
-          | Item i -> form_item i
+          | String it -> form_item String_type.(of_string, to_string) it
+          | Integer it -> form_item Integer_type.(of_string, to_string) it
           | Section (title, content) ->
             make_form content
             >>= fun c ->
@@ -173,7 +152,7 @@ let create ~state ~path  form_content =
 
         let hook = get_element_exn %hook_id in
         hook##innerHTML <- Js.string "Please fill these fields: ";
-        List.iter (fun x -> dbg "class: %s" x.name) Kind.list;
+        (* List.iter (fun x -> dbg "class: %s" x.name) Kind.list; *)
         Lwt.ignore_result begin
           call_caml Ready
           >>= begin function

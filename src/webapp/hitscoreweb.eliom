@@ -542,7 +542,8 @@ module Default_service = struct
         create ~state ~path:["form_test_in_main"]
           Form.(section "First Section"
                   (list [
-                    item "Pick a number" Kind.number;
+                    integer ~question:"Pick an integer" ~value:42 ();
+                    string ~question:"Pick a string" ();
                    ]))
       in
       let content =
