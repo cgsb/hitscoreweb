@@ -8,7 +8,7 @@ type 'error global_errorful_state = {
 }
 
 let init_state ~configuration
-    ?(loop_waiting_time=25.)
+    ?(loop_waiting_time=45.)
     ?(allowed_age=60.)
     ?(maximal_age=900.)
     ()

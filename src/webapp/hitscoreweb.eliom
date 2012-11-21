@@ -873,7 +873,7 @@ TODO: All exceptions in coservices should be handled in some other way
         Hitscoreweb_libraries.(
           make
             ~information_cache_timming:(
-              if !debug_mode then (20., 60.) else (30., 1200.))
+              if !debug_mode then (40., 60.) else (60., 1200.))
             ~configuration:hitscore_configuration);
 
       Services.(register flowcell)
