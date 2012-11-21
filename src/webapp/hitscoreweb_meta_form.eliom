@@ -17,6 +17,7 @@ type form =
 | String of string form_item
 | Integer of int form_item
 | Float of float form_item
+| Enumeration of string list * string form_item
 | List of form list
 | Section of string * form
 deriving (Json)
@@ -48,6 +49,8 @@ module Form = struct
   let section s = function
     | [one] -> Section (s, one)
     | more_or_less -> Section (s, List more_or_less)
+  let enumeration l =
+    make_item ~f:(fun i -> Enumeration (l, i))
 end
     
 type up_message =
@@ -149,6 +152,63 @@ let create ~state ~path  form_content =
               potential_msg;
             ]), fun () -> !current_value)
           in
+          let make_enumeration choices item =
+            let current_value = ref item in
+            let potential_msg = span [] in
+            let update ev =
+              let msg_box = Html5_to_dom.of_span potential_msg in
+              Js.Optdef.iter (ev##target) (fun src_elt ->
+                match Dom_html.tagged src_elt with
+                | Dom_html.Select ielt ->
+                  let new_val = Js.to_string ielt##value in
+                  dbg "Select ELT %s" new_val;
+                  if List.mem new_val choices
+                  then (
+                    msg_box##innerHTML <-
+                      ksprintf Js.string "OK: %s" new_val;
+                    current_value := { !current_value with value = Some new_val }
+                  ) else (
+                    msg_box##innerHTML <-
+                      ksprintf Js.string "KO : %s not in [%s]" new_val
+                        String.(concat "; " choices)
+                  )
+                | _ ->
+                  dbg "WRONG ELEMENT"
+              );
+              dbg "verification"
+            in
+            let the_div = div [] in
+            let elt = Html5_to_dom.of_div the_div in
+            let select = Dom_html.createSelect Dom_html.document in
+            dbg "make_enumeration [%s]" String.(concat "; " choices);
+            List.iter (fun choice ->
+              let label = Dom_html.createOption Dom_html.document in
+              label##value <- Js.string choice;
+              label##label <- Js.string choice;
+              label##disabled <- Js._false;
+              label##innerHTML <- Js.string choice;
+              if Some choice = item.value then (
+                label##defaultSelected <- Js._true;
+              ) else (
+                label##defaultSelected <- Js._false;
+              );
+              select##add(label, Js.null);
+              (* select##value <- Js.string choice; *)
+            ) choices;
+
+            select##onchange <- Dom_html.handler (fun ev ->
+              dbg "select changes: %S" (Js.to_string select##value);
+              update ev;
+              Js._true
+            );
+            Dom.appendChild  elt select;
+            let question_h5 =
+              match item.question with
+              | Some q -> [div [ pcdata q; pcdata "  :  "; ]]
+              | None -> [] in
+            return (div (question_h5 @ [the_div; potential_msg]),
+                    fun () -> !current_value)
+          in
           begin match f with
           | List l ->
             let get_value_funs = ref [] in
@@ -171,6 +231,10 @@ let create ~state ~path  form_content =
             form_item Float_type.(of_string, to_string) it
             >>= fun (the_div, the_fun) ->
             return (the_div, fun () -> Float (the_fun ()))
+          | Enumeration (choices, it) ->
+            make_enumeration choices it
+            >>= fun (the_div, the_fun) ->
+            return (the_div, fun () -> Enumeration (choices, the_fun ()))
           | Section (title, content) ->
             make_form content
             >>= fun (the_div, the_fun) ->
