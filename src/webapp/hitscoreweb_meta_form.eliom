@@ -20,6 +20,7 @@ type form_content =
 | Enumeration of string list * string form_item
 | List of form_content list
 | Section of string * form_content
+| Empty
 deriving (Json)
 
 type form = {
@@ -57,6 +58,8 @@ module Form = struct
     | more_or_less -> Section (s, List more_or_less)
   let enumeration l =
     make_item ~f:(fun i -> Enumeration (l, i))
+
+  let empty = Empty
 
   let make ?(save="[[Save]]") form_content =
     { form_content; form_button = save }
@@ -251,6 +254,8 @@ let create ~state ~path  form_content =
             let d =
               div [ div [pcdataf "Section %S" title]; the_div] in
             return (d, fun () -> Section (title, the_fun ()))
+          | Empty ->
+            return (div [], fun () -> Empty)
           end
         in
 
