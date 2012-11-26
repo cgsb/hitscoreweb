@@ -554,6 +554,9 @@ module Default_service = struct
                     float ~question:"Now a float:" ~value:(atan (-1.)) ();
                     enumeration ~question:"Many strings?" ~value:"one"
                       ["zero"; "one"; "two"; "three"] ();
+                    open_enumeration ~question:"Many strings?" ~value:"one"
+                      ~other:"Make up another one …"
+                      ["zero"; "one"; "two"; "three"] ();
                   ];
                 ]))
           | Some {form_content = (Section ("First Section", modified_form))} ->
