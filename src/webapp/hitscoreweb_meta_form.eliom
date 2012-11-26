@@ -7,17 +7,20 @@ type kind_key = string deriving (Json)
 
 type phrase = string deriving (Json)
   
-type 'a form_item = {
+type ('a, 'b) item_value = V_some of 'a | V_none | V_wrong of 'b
+deriving (Json)
+
+type ('a, 'b) form_item = {
   question: phrase option;
-  value: 'a option;
+  value: ('a, 'b) item_value;
 }
 deriving (Json)
 
 type form_content =
-| String of string form_item
-| Integer of int form_item
-| Float of float form_item
-| Enumeration of string list * string form_item
+| String of (string, string) form_item
+| Integer of (int, string) form_item
+| Float of (float, string) form_item
+| Enumeration of string list * (string, string) form_item
 | List of form_content list
 | Section of string * form_content
 | Empty
@@ -28,6 +31,7 @@ type form = {
   form_button: string;
 }
 deriving (Json)
+
 
 module String_type = struct
   let to_string s = s
@@ -48,7 +52,10 @@ end
   
 module Form = struct
   (* let item ?value question kind = Item {question; kind; value} *)
-  let make_item ~f ?question ?value () = f {question; value}
+  let make_item ~f ?question ?value () =
+    match value with
+    | Some s -> f {question; value = V_some s}
+    | None ->  f {question; value = V_none}
   let integer = make_item ~f:(fun x -> Integer x)
   let string = make_item ~f:(fun x -> String x)
   let float = make_item ~f:(fun x -> Float x)
@@ -130,7 +137,11 @@ let create ~state ~path  form_content =
         let rec make_form f =
           let form_item (of_string, to_string) it =
             dbg "form_item";
-            let value = match it.value with Some s -> to_string s | None -> "" in
+            let value =
+              match it.value with
+              | V_some s -> to_string s
+              | V_wrong s -> s
+              | V_none -> "" in
             let potential_msg = span [] in
             let current_value = ref it in
             let update ev =
@@ -143,9 +154,10 @@ let create ~state ~path  form_content =
                   | `ok v -> 
                     msg_box##innerHTML <-
                       ksprintf Js.string "OK: %s" (Js.to_string ielt##value);
-                    current_value := { !current_value with value = Some v }
+                    current_value := { !current_value with value = V_some v }
                   | `error s ->
-                    msg_box##innerHTML <- ksprintf Js.string "KO : %s" s
+                    msg_box##innerHTML <- ksprintf Js.string "KO : %s" s;
+                    current_value := { !current_value with value = V_wrong s }
                   end
                 | _ ->
                   dbg "WRONG ELEMENT"
@@ -179,8 +191,9 @@ let create ~state ~path  form_content =
                   then (
                     msg_box##innerHTML <-
                       ksprintf Js.string "OK: %s" new_val;
-                    current_value := { !current_value with value = Some new_val }
+                    current_value := { !current_value with value = V_some new_val }
                   ) else (
+                    current_value := { !current_value with value = V_none };
                     msg_box##innerHTML <-
                       ksprintf Js.string "KO : %s not in [%s]" new_val
                         String.(concat "; " choices)
@@ -200,7 +213,7 @@ let create ~state ~path  form_content =
               label##label <- Js.string choice;
               label##disabled <- Js._false;
               label##innerHTML <- Js.string choice;
-              if Some choice = item.value then (
+              if V_some choice = item.value then (
                 label##defaultSelected <- Js._true;
               ) else (
                 label##defaultSelected <- Js._false;
