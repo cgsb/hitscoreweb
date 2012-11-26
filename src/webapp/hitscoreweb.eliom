@@ -542,20 +542,22 @@ module Default_service = struct
         create ~state ~path:["form_test_in_main"]
           Form.(function
           | None ->
-            return (section "First Section" [
-              integer ~question:"Pick an integer" ~value:42 ();
-              string ~question:"Pick a string" ();
-              section "Subsection" [
-                string ~question:"Pick a string" ~value:"sldk jskd" ();
-                float ~question:"Now a float:" ~value:(atan (-1.)) ();
-                enumeration ~question:"Many strings?" ~value:"one"
-                  ["zero"; "one"; "two"; "three"] ();
-              ];
-            ])          
+            return (
+              make ~save:"Submit …"
+                (section "First Section" [
+                  integer ~question:"Pick an integer" ~value:42 ();
+                  string ~question:"Pick a string" ();
+                  section "Subsection" [
+                    string ~question:"Pick a string" ~value:"sldk jskd" ();
+                    float ~question:"Now a float:" ~value:(atan (-1.)) ();
+                    enumeration ~question:"Many strings?" ~value:"one"
+                      ["zero"; "one"; "two"; "three"] ();
+                  ];
+                ]))
           | Some modified_form ->
             dbg "Modified form : %s"
               Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form> modified_form) ;
-            return (string ~question:"pick another string" ())
+            return (make ~save:"Send" (string ~question:"pick another string" ()))
           )
       in
       let content =

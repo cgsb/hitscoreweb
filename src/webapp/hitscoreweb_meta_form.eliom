@@ -13,13 +13,19 @@ type 'a form_item = {
 }
 deriving (Json)
 
-type form =
+type form_content =
 | String of string form_item
 | Integer of int form_item
 | Float of float form_item
 | Enumeration of string list * string form_item
-| List of form list
-| Section of string * form
+| List of form_content list
+| Section of string * form_content
+deriving (Json)
+
+type form = {
+  form_content: form_content;
+  form_button: string;
+}
 deriving (Json)
 
 module String_type = struct
@@ -51,6 +57,10 @@ module Form = struct
     | more_or_less -> Section (s, List more_or_less)
   let enumeration l =
     make_item ~f:(fun i -> Enumeration (l, i))
+
+  let make ?(save="[[Save]]") form_content =
+    { form_content; form_button = save }
+
 end
     
 type up_message =
@@ -253,13 +263,13 @@ let create ~state ~path  form_content =
             >>= begin function
             | Make_form f ->
               dbg "Make form?!";
-              make_form f
+              make_form f.form_content
               >>= fun (the_div, whole_function) ->
               let whole_form =
-                let bdiv = div [ pcdataf "[[SAVE]]" ] in
+                let bdiv = div [ pcdata f.form_button ] in
                 let belt = Html5_to_dom.of_div bdiv in
                 belt##onclick <- Dom_html.handler(fun _ ->
-                  let new_form = whole_function () in
+                  let new_form = { f with form_content = whole_function () } in
                   make_with_save_button (Form_changed new_form);
                   Js._true
                 ); 
