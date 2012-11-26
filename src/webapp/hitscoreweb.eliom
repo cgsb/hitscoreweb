@@ -542,6 +542,8 @@ module Default_service = struct
         create ~state ~path:["form_test_in_main"]
           Form.(function
           | None ->
+            return (make ~save:"Start the form" empty)
+          | Some {form_content = Empty; _} ->
             return (
               make ~save:"Submit …"
                 (section "First Section" [
@@ -554,10 +556,12 @@ module Default_service = struct
                       ["zero"; "one"; "two"; "three"] ();
                   ];
                 ]))
-          | Some modified_form ->
+          | Some {form_content = (Section ("First Section", modified_form))} ->
             dbg "Modified form : %s"
-              Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form> modified_form) ;
+              Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form) ;
             return (make ~save:"Send" (string ~question:"pick another string" ()))
+          | Some _ ->
+            return (make ~save:"Nothing to save?" empty)
           )
       in
       let content =
