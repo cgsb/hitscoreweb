@@ -27,8 +27,6 @@ form_content =
 | String of (string, string) form_item
 | Integer of (int, string) form_item
 | Float of (float, string) form_item
-| Enumeration of string list * (string, string) form_item
-| Open_enumeration of string list * string * (string, string) form_item
 | Meta_enumeration of meta_enumeration
 | List of form_content list
 | Section of string * form_content
@@ -72,11 +70,6 @@ module Form = struct
   let section s = function
     | [one] -> Section (s, one)
     | more_or_less -> Section (s, List more_or_less)
-  let enumeration l =
-    make_item ~f:(fun i -> Enumeration (l, i))
-  let open_enumeration ?(other="New") l =
-    make_item ~f:(fun i -> Open_enumeration (l, other, i))
-
   let meta_enumeration ?overall_question ?creation_case ?choice default_cases =
     Meta_enumeration {
       overall_question;
@@ -84,6 +77,15 @@ module Form = struct
       creation_case;
       choice;
     }
+  let string_enumeration ?question ?value l =
+    meta_enumeration ?overall_question:question ?choice:value
+      (List.map l ~f:(fun s -> (s, string ~value:s ())))
+
+  let open_string_enumeration ?question ?value ?(other="New") l =
+    meta_enumeration ?overall_question:question ?choice:value
+      ~creation_case:(other, string ())
+      (List.map l ~f:(fun s -> (s, string ~value:s ())))
+
 
   let empty = Empty
 
@@ -185,96 +187,6 @@ let form_item (of_string, to_string) it =
     potential_msg;
   ]), fun () -> !current_value)
 
-let make_enumeration ?with_other choices item =
-  let current_value = ref item in
-  let potential_msg = span [] in
-  let potential_box =
-    let update ev = 
-      Js.Optdef.iter (ev##target) (fun src_elt ->
-        match Dom_html.tagged src_elt with
-        | Dom_html.Input ielt ->
-          dbg "Input ELT %s" (Js.to_string ielt##value);
-          let v = Js.to_string ielt##value  in
-          current_value := { !current_value with value = V_some v }
-        | _ ->
-          dbg "WRONG ELEMENT"
-      );
-      dbg "verification"
-    in
-    span [
-      string_input ~a:[
-        a_onchange update;
-        a_onmouseup update;
-        a_onkeyup update;
-      ] ~input_type:`Text ();
-    ]
-  in
-  let potential_box_elt = Html5_to_dom.of_span potential_box in
-  potential_box_elt##style##display <- Js.string "none";
-  let update ev =
-    let msg_box = Html5_to_dom.of_span potential_msg in
-    Js.Optdef.iter (ev##target) (fun src_elt ->
-      match Dom_html.tagged src_elt with
-      | Dom_html.Select ielt ->
-        let new_val = Js.to_string ielt##value in
-        dbg "Select ELT %s" new_val;
-        if List.mem new_val choices
-        then (
-          potential_box_elt##style##display <- Js.string "none";
-          msg_box##innerHTML <-
-            ksprintf Js.string "OK: %s" new_val;
-          current_value := { !current_value with value = V_some new_val }
-        ) else if Some new_val = with_other then (
-          potential_box_elt##style##display <- Js.string "inline";
-        ) else (
-          current_value := { !current_value with value = V_none };
-          msg_box##innerHTML <-
-            ksprintf Js.string "KO : %s not in [%s]" new_val
-            String.(concat "; " choices)
-        )
-      | _ ->
-        dbg "WRONG ELEMENT"
-    );
-    dbg "verification"
-  in
-  let the_div = div [] in
-  let elt = Html5_to_dom.of_div the_div in
-  let select = Dom_html.createSelect Dom_html.document in
-  dbg "make_enumeration [%s]" String.(concat "; " choices);
-  let make_option ?(italic=false) choice =
-    let label = Dom_html.createOption Dom_html.document in
-    label##value <- Js.string choice;
-    label##label <- Js.string choice;
-    label##disabled <- Js._false;
-    label##innerHTML <-
-      if italic then ksprintf Js.string "<i>%s</i>" choice
-      else Js.string choice;
-    if V_some choice = item.value then (
-      label##defaultSelected <- Js._true;
-    ) else (
-      label##defaultSelected <- Js._false;
-    );
-    select##add(label, Js.null);
-  in
-  List.iter (fun choice -> make_option choice) choices;
-  begin match with_other with
-  | Some choice ->
-    make_option ~italic:true choice
-  | None -> ()
-  end;
-
-  select##onchange <- Dom_html.handler (fun ev ->
-    dbg "select changes: %S" (Js.to_string select##value);
-    update ev;
-    Js._true
-  );
-  Dom.appendChild  elt select;
-  let question_h5 =
-    match item.question with
-    | Some q -> [div [ pcdata q; pcdata "  :  "; ]]
-    | None -> [] in
-  return (div (question_h5 @ [the_div; potential_box; potential_msg]),
-          fun () -> !current_value)
 
 let rec make_meta_enumeration me =
   let current_value = ref me in
@@ -363,14 +275,6 @@ and make_form f =
     form_item Float_type.(of_string, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Float (the_fun ()))
-  | Enumeration (choices, it) ->
-    make_enumeration choices it
-    >>= fun (the_div, the_fun) ->
-    return (the_div, fun () -> Enumeration (choices, the_fun ()))
-  | Open_enumeration (choices, with_other, it) ->
-    make_enumeration ~with_other choices it
-    >>= fun (the_div, the_fun) ->
-    return (the_div, fun () -> Open_enumeration (choices, with_other, the_fun ()))
   | Meta_enumeration me ->
     make_meta_enumeration me
     >>= fun (the_div, the_fun) ->

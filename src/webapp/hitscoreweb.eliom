@@ -552,11 +552,11 @@ module Default_service = struct
                   section "Subsection" [
                     string ~question:"Pick a string" ~value:"sldk jskd" ();
                     float ~question:"Now a float:" ~value:(atan (-1.)) ();
-                    enumeration ~question:"Many strings?" ~value:"one"
-                      ["zero"; "one"; "two"; "three"] ();
-                    open_enumeration ~question:"Many strings?" ~value:"one"
+                    string_enumeration ~question:"Many strings?" ~value:"one"
+                      ["zero"; "one"; "two"; "three"];
+                    open_string_enumeration ~question:"Many strings?" ~value:"one"
                       ~other:"Make up another one …"
-                      ["zero"; "one"; "two"; "three"] ();
+                      ["zero"; "one"; "two"; "three"];
                     begin
                       let make_sub ?name ?age () =
                         section "Create a new person" [
