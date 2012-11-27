@@ -30,8 +30,14 @@ let gencore_users_stats layout =
   >>= fun informed_pis ->
   let table filter =
     let concerned =
-      List.filter informed_pis (fun p ->
-        List.exists p#affiliations (fun a -> filter a#path)) in
+      match filter with
+      | `only f ->
+        List.filter informed_pis (fun p ->
+          List.exists p#affiliations (fun a -> f a#path))
+      | `all_but f ->
+        List.filter informed_pis (fun p ->
+          not (List.exists p#affiliations (fun a -> f a#path)))
+    in
     let rows =
       List.map concerned (fun pi ->
         [ `text [pcdataf "%s" pi#pi#family_name];
@@ -42,16 +48,16 @@ let gencore_users_stats layout =
       :: rows
     )
   in
+  let cgsb = [| "NYU"; "Biology"; "CGSB" |] in
+  let bio_dept = [| "NYU"; "Biology" |] in
   return (content_section (pcdata "Gencore User Scores")
             (content_list [
               content_section (pcdata "CGSB")
-                (table ((=) [| "NYU"; "Biology"; "CGSB" |]));
+                (table (`only ((=) cgsb)));
               content_section (pcdata "Bio. Dept.")
-                (table ((=) [| "NYU"; "Biology" |]));
+                (table (`only ((=) bio_dept)));
               content_section (pcdata "The Others")
-                (table (fun a ->
-                  a <> [| "NYU"; "Biology" |]
-                  && a <> [| "NYU"; "Biology"; "CGSB" |]));
+                (table (`all_but (fun a -> a = bio_dept || a = cgsb)));
             ]))
 
 
