@@ -169,8 +169,9 @@ let get_element s =
   Js.Opt.to_option (Dom_html.document##getElementById (Js.string s))
 
 module String = struct
-  include String
+  include StringLabels
 end
+module List = ListLabels
 
 let dbg fmt =
   Printf.ksprintf (fun s -> Firebug.console##debug(Js.string ("DBG: " ^ s))) fmt
