@@ -557,6 +557,20 @@ module Default_service = struct
                     open_enumeration ~question:"Many strings?" ~value:"one"
                       ~other:"Make up another one …"
                       ["zero"; "one"; "two"; "three"] ();
+                    begin
+                      let make_sub ?name ?age () =
+                        section "Create a new person" [
+                          string ~question:"person's name" ?value:name ();
+                          integer ~question:"person's age" ?value:age ();
+                        ] in
+                      meta_enumeration
+                        ~overall_question:"Please choose or create a person"
+                        ~creation_case: ("Create …", make_sub ())
+                        ~choice:"the first"
+                        [("the first", make_sub ~name:"The First" ~age:42 ());
+                         ("anotherone", make_sub ~name:"Another One" ~age:45 ());
+                         ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
+                    end;
                   ];
                 ]))
           | Some {form_content = (Section ("First Section", modified_form))} ->
