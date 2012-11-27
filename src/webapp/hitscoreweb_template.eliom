@@ -36,6 +36,27 @@ object
   method nyu_violet = "#634283"
 end
     
+let _local_styles = ref []
+
+module Local_style = struct
+  type element_of_style = [
+  | `css_class of string * string list
+  ]
+  type t = element_of_style list ref
+  let create () : t = ref []
+  let add_class (t: t) name style =
+    t := `css_class (name, style) :: !t;
+    name
+  let use (t: t) = _local_styles := !t :: !_local_styles
+end
+{client{ 
+module Local_style = struct
+  let create () = ()
+  let add_class _ name _ = name
+  let use _ = ()
+end
+}}
+  
 let css_service_handler ~configuration () () =
   let open Lwt in
   let css = Buffer.create 42 in
@@ -109,6 +130,13 @@ let css_service_handler ~configuration () () =
   out ".big_warning { background-color: #E03007; color: #D7E007; \
                       font-weight: bold; padding: 3px; font-size: 110%% }";
 
+  List.iter !_local_styles (fun ls ->
+    let open Local_style in
+    List.iter ls (function
+    | `css_class (name, style) ->
+      out ".%s { %s }" name (String.concat ~sep:";" style)
+    );
+  );
   out "
     @media (max-width: 63em) {
       .doc_toc {
