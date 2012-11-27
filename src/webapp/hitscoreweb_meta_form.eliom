@@ -103,6 +103,32 @@ type down_message =
 | Form_saved
 | Server_error of string
 
+module Style = struct
+
+  open Hitscoreweb_template
+  open Html5
+
+  let _my_style = Local_style.create ()
+    
+  let make_class name style =
+    a_class [ Local_style.add_class _my_style ("meta_form" ^ name) style ]
+
+  let section_block =
+    make_class "section_block" [
+      "border: #f00 solid 2px";
+      "padding: 1em";
+    ]
+  let submit_button =
+    make_class "subbutton" [
+      "border: #00d solid 2px";
+      "padding: 3px";
+      "background-color: #ddd";
+    ]
+      
+  let () = Local_style.use _my_style
+
+end
+
 }}
 
 
@@ -186,7 +212,6 @@ let form_item (of_string, to_string) it =
     ] ~input_type:`Text ~value ();
     potential_msg;
   ]), fun () -> !current_value)
-
 
 let rec make_meta_enumeration me =
   let current_value = ref me in
@@ -283,7 +308,8 @@ and make_form f =
     make_form content
     >>= fun (the_div, the_fun) ->
     let d =
-      div [ div [pcdataf "Section %S" title]; the_div] in
+      div ~a:[ Style.section_block ]
+        [ div [pcdataf "Section %S" title]; the_div] in
     return (d, fun () -> Section (title, the_fun ()))
   | Empty ->
     return (div [], fun () -> Empty)
@@ -321,7 +347,8 @@ let create ~state ~path  form_content =
               make_form f.form_content
               >>= fun (the_div, whole_function) ->
               let whole_form =
-                let bdiv = div [ pcdata f.form_button ] in
+                let bdiv =
+                  div ~a:[ Style.submit_button ] [ pcdata f.form_button ] in
                 let belt = Html5_to_dom.of_div bdiv in
                 belt##onclick <- Dom_html.handler(fun _ ->
                   let new_form = { f with form_content = whole_function () } in
