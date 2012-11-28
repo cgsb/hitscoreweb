@@ -571,6 +571,18 @@ module Default_service = struct
                          ("anotherone", make_sub ~name:"Another One" ~age:45 ());
                          ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
                     end;
+                    section "Extensible List:" [begin
+                      let make_model sec =
+                        section sec [
+                          string ~question:"Pick a name" ();
+                          string_enumeration ~question:"Pick a type:" ["int"; "float"];
+                        ] in
+                      extensible_list ~question:"Add a thing"
+                        ~model:(make_model "New thing") [
+                          make_model "First one";
+                          make_model "Second one";
+                        ];
+                    end];
                   ];
                 ]))
           | Some {form_content = (Section ("First Section", modified_form))} ->
