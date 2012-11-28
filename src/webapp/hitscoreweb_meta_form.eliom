@@ -22,12 +22,17 @@ type meta_enumeration = {
   creation_case: (string * form_content) option;
   choice: string option;
 }
-and
-form_content =
+and extensible_list = {
+  el_question: phrase;
+  el_model: form_content;
+  el_list: form_content list;
+}
+and form_content =
 | String of (string, string) form_item
 | Integer of (int, string) form_item
 | Float of (float, string) form_item
 | Meta_enumeration of meta_enumeration
+| Extensible_list of extensible_list
 | List of form_content list
 | Section of string * form_content
 | Empty
@@ -86,6 +91,10 @@ module Form = struct
       ~creation_case:(other, string ())
       (List.map l ~f:(fun s -> (s, string ~value:s ())))
 
+  let extensible_list ~question ~model l =
+    Extensible_list {el_question = question;
+                     el_model = model;
+                     el_list = l}
 
   let empty = Empty
 
@@ -123,6 +132,11 @@ module Style = struct
       "border: #00d solid 2px";
       "padding: 3px";
       "background-color: #ddd";
+    ]
+  let extensible_list_button =
+    make_class "extensible_list_button" [
+      "color: #050;";
+      "background-color: #ecc";
     ]
       
   let () = Local_style.use _my_style
@@ -276,8 +290,37 @@ let rec make_meta_enumeration me =
     | None -> [] in
   return (div (question_h5 @ [the_hook_div; creation_case_div]),
           fun () -> { !current_value with creation_case = creation_case_fun () })
-and make_form f =
 
+and make_extensible_list el =
+  Lwt_list.map_s make_form el.el_list
+  >>= fun div_funs ->
+  let make_new_button =
+    div ~a:[ Style.extensible_list_button ] [pcdata el.el_question] in
+  let make_new_button_elt = Html5_to_dom.of_div make_new_button in
+  let additional_elements_div = div [] in
+  let additional_elements_funs = ref [] in
+  let additional_elements_elt = Html5_to_dom.of_div additional_elements_div in
+  make_new_button_elt##onclick <- Dom_html.handler (fun ev ->
+    dbg "make_new_button_elt clicked";
+    Lwt.ignore_result begin
+      make_form el.el_model
+      >>= fun (new_div, new_fun) ->
+      Dom.appendChild additional_elements_elt (Html5_to_dom.of_div new_div);
+      additional_elements_funs := new_fun :: !additional_elements_funs;
+      return ()
+    end;
+    Js._true);
+  let the_div =
+    div (List.map div_funs ~f:fst
+         @ [additional_elements_div; make_new_button]) in
+  let the_fun () =
+    let l =
+      List.map div_funs ~f:(fun (_, f) -> f ()) 
+      @ List.rev_map !additional_elements_funs ~f:(fun f -> f ()) in
+    { el with el_list = l } in
+  return (the_div, the_fun)
+
+and make_form f =
   begin match f with
   | List l ->
     let get_value_funs = ref [] in
@@ -311,6 +354,10 @@ and make_form f =
       div ~a:[ Style.section_block ]
         [ div [pcdataf "Section %S" title]; the_div] in
     return (d, fun () -> Section (title, the_fun ()))
+  | Extensible_list el ->
+    make_extensible_list el
+    >>= fun (the_div, the_fun) ->
+    return (the_div, fun () -> Extensible_list (the_fun ()))
   | Empty ->
     return (div [], fun () -> Empty)
   end
