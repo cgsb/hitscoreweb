@@ -25,8 +25,7 @@ static: build_opt install
 	ocamlfind ocamlopt -linkall \
 	    -package ocsigenserver,ocsigenserver.ext.ocsipersist-sqlite  \
 	    -package eliom.server,ocsigenserver.ext.staticmod  \
-	    -package hitscore,core_extended \
-	     _build/hitscoreweb/hitscoreweb.cmxa \
+	     _build/hitscoreweb/_server/hitscoreweb.cmx \
 	     server_main.cmx -o hitscoreserver -linkpkg -thread
 
 install: build

@@ -206,7 +206,7 @@ let testing ~session_timeout
   syscmdf "cp _build/hitscoreweb/hitscoreweb.js %s/static/" 
     runtime_root |! ok_exn;
   syscmdf "cp _build/hitscoreweb/hitscoreweb.css %s/static/" runtime_root |! ok_exn;
-  syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> ok_exn
+  syscmd (sprintf "OCAMLRUNPARAM=b %s -c %s/hitscoreweb.conf" exec runtime_root) |> ok_exn
 
 
 let sysv_init_file

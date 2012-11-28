@@ -12,21 +12,6 @@ CLIENT_PACKAGES := oclosure
 
 ## Source files for the server part
 COMMON_FILES := \
-  hitscoreweb_std.eliom	    \
-  hitscoreweb_messages.eliom	    \
-  hitscoreweb_data_access.eliom	    \
-  hitscoreweb_state.eliom	    \
-  hitscoreweb_queries.eliom	    \
-  hitscoreweb_services.eliom	    \
-  hitscoreweb_authentication.eliom \
-  hitscoreweb_template.eliom	   \
-  hitscoreweb_meta_form.eliom	    \
-  hitscoreweb_persons.eliom	   \
-  hitscoreweb_hiseq_runs.eliom	   \
-  hitscoreweb_layout_service.eliom \
-  hitscoreweb_one_person_service.eliom \
-  hitscoreweb_libraries.eliom \
-  hitscoreweb_facility_stats.eliom \
   hitscoreweb.eliom
 SERVER_FILES := $(COMMON_FILES)
 CLIENT_FILES := $(COMMON_FILES)

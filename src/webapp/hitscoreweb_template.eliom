@@ -2,9 +2,9 @@
 open Hitscoreweb_std
 module Services = Hitscoreweb_services
 }}
-module Authentication = Hitscoreweb_authentication
+(* module Authentication = Hitscoreweb_authentication *)
 
-module Msg = Hitscoreweb_messages
+(* module Msg = Hitscoreweb_messages *)
 
 let make_unsafe_eval_string_onload to_run =
   Eliom_service.onload {{
@@ -327,6 +327,8 @@ let a_link ?(a=[]) ?fragment service content args =
 
 let menu_ul () =
   let open Html5 in
+  return None
+    (*
   let real_li s = return (Some (li ~a:[ a_class ["main_menu"]] s)) in
   let potential_li (cap, s) = 
     Authentication.authorizes cap
@@ -352,7 +354,7 @@ let menu_ul () =
   match List.filter_opt ul_opt with
   | [] -> return None
   | items -> return (Some (ul ~a:[ a_class ["main_menu"] ] items))
-
+    *)
 
     
 let default ?(title) content =
@@ -416,6 +418,7 @@ let default ?(title) content =
   in
   Lwt.bind html_result (function
   | Ok html -> 
+    dbg "Return the html";
     Lwt.return html
   | Error e -> error_page (html_of_error e))
 

@@ -314,6 +314,7 @@ and make_extensible_list el =
     div (List.map div_funs ~f:fst
          @ [additional_elements_div; make_new_button]) in
   let the_fun () =
+    dbg "make_extensible_list: the_fun ()";
     let l =
       List.map div_funs ~f:(fun (_, f) -> f ()) 
       @ List.rev_map !additional_elements_funs ~f:(fun f -> f ()) in
@@ -387,6 +388,7 @@ let create ~state ~path  form_content =
           hook##innerHTML <- Js.string "Contacting the server … ";
           (* List.iter (fun x -> dbg "class: %s" x.name) Kind.list; *)
           Lwt.ignore_result begin
+            dbg "calling caml service";
             call_caml send_to_server
             >>= begin function
             | Make_form f ->
