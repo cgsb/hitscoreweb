@@ -111,6 +111,11 @@ type down_message =
 | Make_form of form
 | Form_saved
 | Server_error of string
+deriving (Json)
+
+type message = Up of up_message | Down of down_message
+deriving (Json)
+  
 
 module Style = struct
 
@@ -157,27 +162,34 @@ let reply ~state form_content param =
     >>= fun f ->
     return (Make_form f)
 
-let caml_service ~state ~path ~form_content =
-  let caml_service =
-    make_delayed
-      (Eliom_service.service ~path
-         ~get_params:Eliom_parameter.(caml "param" Json.t<up_message>)) in
-  let already = ref false in
-  fun () ->
-    if !already then caml_service () else (
-      already := true;
-      let fail fmt =
-        ksprintf
-          (fun s -> Lwt.fail (Failure ("wrong reply from server: " ^ s)))
-          fmt
-      in
-      Eliom_registration.Ocaml.register ~service:(caml_service ())
-        (fun param () ->
-          Lwt.bind (reply ~state form_content param) (function
-          | Ok o -> Lwt.return (o : down_message)
-          | Error e -> fail "unknown error"));
-      caml_service ()
-    )
+let start_server ~state ~path ~form_content =
+  let bus =
+    Eliom_bus.create ~scope:Eliom_common.client_process Json.t<message> in
+  let stream = Eliom_bus.stream bus in
+  Lwt.ignore_result begin
+    let rec loop () =
+      wrap_io Lwt_stream.get stream
+      >>= begin function
+      | Some (Up up) ->
+        (reply ~state form_content up)
+        >>= fun answer ->
+        Eliom_bus.write bus (Down answer);
+        loop ()
+      | Some (Down d) -> loop ()
+      | None -> return ()
+      end
+    in
+    Lwt.bind (loop ()) (function
+    | Ok o ->
+      logf "Meta_form: Server-side end of loop" |! Lwt.ignore_result;
+      dbg "Meta_form: Server-side end of loop";
+      Lwt.return ()
+    | Error e ->
+      logf "Meta_form: Server-side dies with error" |! Lwt.ignore_result;
+      dbg "Meta_form: Server-side dies with error";
+      Lwt.fail (Failure "Meta_form: unknown error"));
+  end;
+  bus
 
 
 {client{
@@ -372,22 +384,39 @@ let create ~state ~path  form_content =
     let open Html5 in
     span ~a:[a_id hook_id; a_class ["like_link"]]
       [pcdata "Meta-form Hook … Loading …"] in
-  let caml = caml_service ~state ~path ~form_content () in
+  let bus = start_server ~state ~path ~form_content  in
   Eliom_service.onload {{
     let open Html5 in
     let open Lwt in
     try
       begin
-        
-        let call_caml msg =
-          Eliom_client.call_caml_service ~service: %caml msg () in
+        Lwt.async_exception_hook := (fun e ->
+          dbg "Async-exn: %s" (Printexc.to_string e);
+          Firebug.console##log(e));
+
+        let server_stream = Eliom_bus.stream %bus in
+        let call_server msg =
+          (* Eliom_client.call_caml_service ~service: %caml msg () in *)
+          Eliom_bus.write %bus (Up msg) >>= fun () ->
+          let rec next_down () =
+            Lwt_stream.get server_stream
+            >>= begin function
+            | Some (Down msg) -> return msg
+            | Some (Up up) -> next_down ()
+            | None ->
+              fail (Failure "server_stream ended")
+            end in
+          next_down ()
+        in
+
+
 
         let rec make_with_save_button send_to_server =
           let hook = get_element_exn %hook_id in
           hook##innerHTML <- Js.string "Contacting the server … ";
           (* List.iter (fun x -> dbg "class: %s" x.name) Kind.list; *)
           Lwt.ignore_result begin
-            call_caml send_to_server
+            call_server send_to_server
             >>= begin function
             | Make_form f ->
               dbg "Make form?!";
