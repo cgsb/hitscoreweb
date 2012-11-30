@@ -560,6 +560,7 @@ module Default_service = struct
                     float ~question:"Now a float:" ~value:(atan (-1.)) ();
                     float ~question:"percent float" ~range:percentage ();
                     float ~question:"float > 0." ~range:strictly_positive ();
+                    integer ~question:"int > 0" ~range:percentage (); 
                     string_enumeration ~question:"Many strings?" ~value:"one"
                       ["zero"; "one"; "two"; "three"];
                     open_string_enumeration ~question:"Many strings?" ~value:"one"
