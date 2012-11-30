@@ -4,11 +4,11 @@
 APP_NAME := hitscoreweb
 
 ## Packages required to build the server part of the application
-SERVER_PACKAGES := hitscoregen threads core hitscore core_extended 
+SERVER_PACKAGES := hitscoregen threads core hitscore core_extended re.posix
 
 ## Packages to be linked in the client part
 
-CLIENT_PACKAGES := oclosure
+CLIENT_PACKAGES := oclosure re.posix
 
 ## Source files for the server part
 COMMON_FILES := \

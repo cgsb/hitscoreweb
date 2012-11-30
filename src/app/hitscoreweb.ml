@@ -98,6 +98,7 @@ let config
     <extension findlib-package=\"core_extended\"/>
     <extension findlib-package=\"pgocaml\"/>
     <extension findlib-package=\"hitscore\"/>
+    <extension findlib-package=\"re.posix\"/>
     <extension findlib-package=\"ocsigenserver.ext.ocsipersist-sqlite\">
       <database file=\"%s/ocsidb\"/>
     </extension>
