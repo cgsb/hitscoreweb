@@ -539,7 +539,7 @@ module Default_service = struct
       let open Html5 in
       let test_form =
         let open Hitscoreweb_meta_form in
-        create ~state ~path:["form_test_in_main"]
+        create ~state
           Form.(function
           | None ->
             return (make ~save:"Start the form" empty)
@@ -578,10 +578,8 @@ module Default_service = struct
                           string_enumeration ~question:"Pick a type:" ["int"; "float"];
                         ] in
                       extensible_list ~question:"Add a thing"
-                        ~model:(make_model "New thing") [
-                          make_model "First one";
-                          make_model "Second one";
-                        ];
+                        ~model:(make_model "New thing")
+                      (List.init 2 (ksprintf make_model "%d one"))
                     end];
                   ];
                 ]))
@@ -882,11 +880,13 @@ TODO: All exceptions in coservices should be handled in some other way
           Configuration.configure
             ?vol_directory:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
             ?root_path:!rodi ?db_configuration () in
+        (*
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
         Web_data_access.init
           ~loop_time:(if !debug_mode then 90. else 600.)
           ~configuration:config ()
         |! Lwt.ignore_result;
+        *)
         let state = 
           Hitscoreweb_state.init_state ~configuration:config () in
         (state, config, debug_mode)
@@ -898,7 +898,7 @@ TODO: All exceptions in coservices should be handled in some other way
 
       Services.(register hiseq_runs)
         Hitscoreweb_hiseq_runs.(make hitscore_configuration);
-
+(*
       Hitscoreweb_facility_stats.init_caml_service
         ~configuration:hitscore_configuration ();
       Services.(register facility_statistics)
@@ -912,7 +912,7 @@ TODO: All exceptions in coservices should be handled in some other way
             ~information_cache_timming:(
               if !debug_mode then (40., 60.) else (60., 1200.))
             ~configuration:hitscore_configuration);
-
+*)
       Services.(register flowcell)
         Flowcell_service.(make hitscore_configuration);
 
