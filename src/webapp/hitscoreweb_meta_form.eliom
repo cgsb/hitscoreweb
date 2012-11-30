@@ -326,10 +326,15 @@ and make_extensible_list el =
     div (List.map div_funs ~f:fst
          @ [additional_elements_div; make_new_button]) in
   let the_fun () =
-    let l =
-      List.map div_funs ~f:(fun (_, f) -> f ()) 
-      @ List.rev_map !additional_elements_funs ~f:(fun f -> f ()) in
-    { el with el_list = l } in
+    let tmp_array =
+      Array.create
+        (List.length div_funs + List.length !additional_elements_funs)
+        el.el_model in
+    let idx = ref 0 in
+    let f = (fun g -> tmp_array.(!idx) <- g (); incr idx) in
+    List.iter div_funs ~f:(fun (_, g) -> f g);
+    List.iter !additional_elements_funs ~f;
+    { el with el_list = Array.to_list tmp_array } in
   return (the_div, the_fun)
 
 and make_form f =
