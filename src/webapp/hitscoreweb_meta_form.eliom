@@ -65,6 +65,7 @@ and extensible_list = {
 and form_content =
 | String of (string, string) form_item
 | Integer of (int, string) form_item
+| Integer_range of Range.t * (int, string) form_item
 | Float of (float, string) form_item
 | Float_range of Range.t * (float, string) form_item
 | String_regexp of string * string * (string, string) form_item
@@ -119,6 +120,15 @@ module Float_range_type = struct
       else `error (sprintf "This is out of range: %s" (Range.to_string r))
     with _ -> `error "This is not a floating point number"
 end
+module Integer_range_type = struct
+  let to_string = string_of_int
+  let of_string r s =
+    try
+      let f = int_of_string s in
+      if Range.check_float r (float f) then `ok f
+      else `error (sprintf "This is out of range: %s" (Range.to_string r))
+    with _ -> `error "This is not a integer"
+end
   
 module Form = struct
   (* let item ?value question kind = Item {question; kind; value} *)
@@ -126,7 +136,6 @@ module Form = struct
     match value with
     | Some s -> f {question; value = V_some s}
     | None ->  f {question; value = V_none}
-  let integer = make_item ~f:(fun x -> Integer x)
   let string ?regexp =
     match regexp with
     | Some (m, r) -> 
@@ -134,6 +143,10 @@ module Form = struct
     | None -> 
       make_item ~f:(fun x -> String x)
 
+  let integer ?range =
+    match range with
+    | None -> make_item ~f:(fun x -> Integer x)
+    | Some r -> make_item ~f:(fun x -> Integer_range (r, x))
   let float ?range =
     match range with
     | None -> make_item ~f:(fun x -> Float x)
@@ -484,6 +497,10 @@ and make_form f =
     form_item Float_range_type.(of_string r, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Float_range (r, the_fun ()))
+  | Integer_range (r, it) ->
+    form_item Integer_range_type.(of_string r, to_string) it
+    >>= fun (the_div, the_fun) ->
+    return (the_div, fun () -> Integer_range (r, the_fun ()))
   | Meta_enumeration me ->
     make_meta_enumeration me
     >>= fun (the_div, the_fun) ->
