@@ -113,7 +113,11 @@ type down_message =
 | Server_error of string
 deriving (Json)
 
-type message = Up of up_message | Down of down_message
+type chunk =
+  { index: int; total_number: int; content: string; }
+deriving (Json)
+    
+type message = Up of chunk | Down of string
 deriving (Json)
   
 
@@ -162,19 +166,53 @@ let reply ~state form_content param =
     >>= fun f ->
     return (Make_form f)
 
-let start_server ~state ~path ~form_content =
+let start_server ~state ~form_content =
   let bus =
-    Eliom_bus.create ~scope:Eliom_common.client_process Json.t<message> in
+    Eliom_bus.create ~scope:Eliom_common.site Json.t<message> in
   let stream = Eliom_bus.stream bus in
+  let current_packet = ref None in
+  let check_up up =
+    if up.index < 0 then error (`wrong_message up)
+    else if up.index >= up.total_number
+    then error (`wrong_message up) 
+    else
+      (match !current_packet with
+      | None -> return ()
+      | Some a ->
+        if up.total_number <> Array.length a then error (`wrong_message up)
+        else return ()) in
   Lwt.ignore_result begin
     let rec loop () =
       wrap_io Lwt_stream.get stream
       >>= begin function
       | Some (Up up) ->
-        (reply ~state form_content up)
-        >>= fun answer ->
-        Eliom_bus.write bus (Down answer);
-        loop ()
+        dbg "up: %d %d %d" up.index up.total_number (String.length up.content);
+        check_up up >>= fun () ->
+        begin match !current_packet with
+        | None ->
+          let a = Array.create up.total_number None in 
+          current_packet := Some a;
+          return a
+        | Some a -> return a
+        end
+        >>= fun packet ->
+        packet.(up.index) <- Some up.content;
+        (if Array.for_all packet ((<>) None)
+         then
+            (let up_msg =
+               String.concat_array ~sep:""
+               (Array.map packet ~f:(Option.value_exn ?here:None ?error:None ?message:None))
+                 in
+             wrap ~on_exn:(fun e -> `json_parsing e)
+               ~f:Deriving_Json.(from_string Json.t<up_message>) up_msg
+             >>= fun msg ->
+             (reply ~state form_content msg)
+             >>= fun answer ->
+             current_packet := None;
+             let msg = Deriving_Json.(to_string Json.t<down_message> answer) in
+             Eliom_bus.write bus (Down msg);
+             loop ())
+         else loop ())
       | Some (Down d) -> loop ()
       | None -> return ()
       end
@@ -185,9 +223,17 @@ let start_server ~state ~path ~form_content =
       dbg "Meta_form: Server-side end of loop";
       Lwt.return ()
     | Error e ->
-      logf "Meta_form: Server-side dies with error" |! Lwt.ignore_result;
-      dbg "Meta_form: Server-side dies with error";
-      Lwt.fail (Failure "Meta_form: unknown error"));
+      let s =
+          match e with
+          | `json_parsing e -> sprintf "json_parsing: %s" (Exn.to_string e)
+          | `wrong_message e ->
+            sprintf "wrong_message: %s"
+              Deriving_Json.(to_string Json.t<chunk> e)
+          | other -> "OTHER"
+      in
+      logf "Meta_form: Server-side dies with error: %s" s |! Lwt.ignore_result;
+      dbg "Meta_form: Server-side dies with error: %s" s;
+      Lwt.return ())
   end;
   bus
 
@@ -318,7 +364,9 @@ and make_extensible_list el =
       make_form el.el_model
       >>= fun (new_div, new_fun) ->
       Dom.appendChild additional_elements_elt (Html5_to_dom.of_div new_div);
+      (* for i = 0 to 40 do *)
       additional_elements_funs := new_fun :: !additional_elements_funs;
+      (* done; *)
       return ()
     end;
     Js._true);
@@ -383,35 +431,91 @@ and make_form f =
 
 }}
 
-let create ~state ~path  form_content =
+let create ~state  form_content =
   let hook_id = unique_id "meta_form_hook" in
   let the_link_like =
     let open Html5 in
     span ~a:[a_id hook_id; a_class ["like_link"]]
       [pcdata "Meta-form Hook … Loading …"] in
-  let bus = start_server ~state ~path ~form_content  in
+  let bus = start_server ~state ~form_content  in
   Eliom_service.onload {{
     let open Html5 in
     let open Lwt in
     try
       begin
+
+        (* dbg "Meta_form: onload (websockets: %b)" (WebSockets.is_supported ()); *)
+
+        
         Lwt.async_exception_hook := (fun e ->
           dbg "Async-exn: %s" (Printexc.to_string e);
           Firebug.console##log(e));
 
         let server_stream = Eliom_bus.stream %bus in
-        let call_server msg =
+        (* Eliom_bus.set_time_before_flush %bus 0.5; *)
+        let bus = %bus in
+        
+        let call_server up =
           (* Eliom_client.call_caml_service ~service: %caml msg () in *)
-          Eliom_bus.write %bus (Up msg) >>= fun () ->
+          dbg "call_server: writing";
+          let msg = Deriving_Json.(to_string Json.t<up_message> up) in
+          dbg "up msg: (%d) %s" (String.length msg) msg;
+          (* (if String.length msg > 5000 then *)
+          (* Eliom_bus.write %bus (Up "") *)
+          (* else *)
+          let msg_length = String.length msg in
+          begin if msg_length < 2000 then (
+            Eliom_bus.write bus (Up {index = 0; total_number = 1; content = msg})
+            >>= fun () ->
+            return ()
+          ) else (
+            let total_number =
+              msg_length / 1000 + (if msg_length / 1000 = 0 then 0 else 1) in
+            dbg "lgth: %d, total_number: %d" msg_length total_number;
+            Eliom_bus.set_queue_size bus (total_number + 1);
+            let rec loopi index =
+              if index = total_number - 1
+              then (
+                let ofset = index * 1000 in
+                let size = msg_length - ofset in
+                let content = String.sub msg ofset size in
+                Eliom_bus.write bus (Up {index; total_number; content})
+                >>= fun () ->
+                return ()
+              ) else (
+                let ofset = index * 1000 in
+                let size = 1000 in
+                let content = String.sub msg ofset size in
+                Eliom_bus.write bus (Up {index; total_number; content})
+                >>= fun () ->
+                (loopi (index + 1) : unit Lwt.t)
+              ) in
+            (loopi 0 : unit Lwt.t)
+          )
+          end
+          >>= fun () ->
+          dbg "call_server: wrote";
           let rec next_down () =
             Lwt_stream.get server_stream
             >>= begin function
-            | Some (Down msg) -> return msg
-            | Some (Up up) -> next_down ()
+            | Some (Down msg) ->
+              dbg "call_server: down-msg";
+              begin try
+                      return Deriving_Json.(from_string Json.t<down_message> msg)
+                with
+                  e -> dbg "Exn: %s" Printexc.(to_string e);
+                    return (Server_error "boooooojjjjhhhhjjj")
+              end
+            | Some (Up up) ->
+              dbg "call_server: up-msg";
+              next_down ()
             | None ->
               fail (Failure "server_stream ended")
             end in
-          next_down ()
+          if (String.length msg) > 5000 then
+            return (Make_form { form_content = Empty; form_button = "DUMMMY"})
+          else
+            next_down ()
         in
 
 
@@ -451,7 +555,7 @@ let create ~state ~path  form_content =
             end
           end
         in
-        make_with_save_button Ready
+        make_with_save_button Ready;
       end
     with e -> 
       dbg "Exception in onload for %S: %s" %hook_id (Printexc.to_string e);
