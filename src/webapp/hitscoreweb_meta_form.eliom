@@ -1,6 +1,6 @@
 
 {shared{
-open Hitscoreweb_std
+module LL = ListLabels
 open Printf
 
 type kind_key = string deriving (Json)
@@ -66,6 +66,7 @@ and form_content =
 | String of (string, string) form_item
 | Integer of (int, string) form_item
 | Float of (float, string) form_item
+| Float_range of Range.t * (float, string) form_item
 | String_regexp of string * string * (string, string) form_item
 | Meta_enumeration of meta_enumeration
 | Extensible_list of extensible_list
@@ -109,6 +110,15 @@ module Float_type = struct
     try `ok (float_of_string s)
     with _ -> `error "This is not a floating point number"
 end
+module Float_range_type = struct
+  let to_string = string_of_float
+  let of_string r s =
+    try
+      let f = float_of_string s in
+      if Range.check_float r f then `ok f
+      else `error (sprintf "This is out of range: %s" (Range.to_string r))
+    with _ -> `error "This is not a floating point number"
+end
   
 module Form = struct
   (* let item ?value question kind = Item {question; kind; value} *)
@@ -124,7 +134,10 @@ module Form = struct
     | None -> 
       make_item ~f:(fun x -> String x)
 
-  let float = make_item ~f:(fun x -> Float x)
+  let float ?range =
+    match range with
+    | None -> make_item ~f:(fun x -> Float x)
+    | Some r -> make_item ~f:(fun x -> Float_range (r, x))
   let list l = List l
   let section s = function
     | [one] -> Section (s, one)
@@ -138,12 +151,12 @@ module Form = struct
     }
   let string_enumeration ?question ?value l =
     meta_enumeration ?overall_question:question ?choice:value
-      (List.map l ~f:(fun s -> (s, string ~value:s ())))
+      (LL.map l ~f:(fun s -> (s, string ~value:s ())))
 
   let open_string_enumeration ?question ?value ?(other="New") l =
     meta_enumeration ?overall_question:question ?choice:value
       ~creation_case:(other, string ())
-      (List.map l ~f:(fun s -> (s, string ~value:s ())))
+      (LL.map l ~f:(fun s -> (s, string ~value:s ())))
 
   let extensible_list ~question ~model l =
     Extensible_list {el_question = question;
@@ -174,6 +187,7 @@ deriving (Json)
 type message = Up of chunk | Down of string
 deriving (Json)
   
+open Hitscoreweb_std
 
 module Style = struct
 
@@ -466,6 +480,10 @@ and make_form f =
     form_item Float_type.(of_string, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Float (the_fun ()))
+  | Float_range (r, it) ->
+    form_item Float_range_type.(of_string r, to_string) it
+    >>= fun (the_div, the_fun) ->
+    return (the_div, fun () -> Float_range (r, the_fun ()))
   | Meta_enumeration me ->
     make_meta_enumeration me
     >>= fun (the_div, the_fun) ->
