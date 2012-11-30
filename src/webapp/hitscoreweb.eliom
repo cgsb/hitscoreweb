@@ -545,10 +545,14 @@ module Default_service = struct
             return (make ~save:"Start the form" empty)
           | Some {form_content = Empty; _} ->
             return (
+              let identifier_friendly =
+                ("non-empty string of letters, numbers, underscores, and dashes",
+                 "[a-zA-Z0-9_-]+") in
               make ~save:"Submit …"
                 (section "First Section" [
                   integer ~question:"Pick an integer" ~value:42 ();
-                  string ~question:"Pick a string" ();
+                  string ~regexp:identifier_friendly
+                    ~question:"Pick a string (reg-exp)" ();
                   section "Subsection" [
                     string ~question:"Pick a string" ~value:"sldk jskd" ();
                     float ~question:"Now a float:" ~value:(atan (-1.)) ();
