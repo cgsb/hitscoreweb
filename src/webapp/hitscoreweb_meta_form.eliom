@@ -16,6 +16,41 @@ type ('a, 'b) form_item = {
 }
 deriving (Json)
 
+module Range = struct
+  type boundary = Inclusive of float | Exclusive of float | Infinity
+    deriving (Json)
+
+  let inclusive f = Inclusive f
+  let exclusive f = Exclusive f
+  let infinity = Infinity
+
+  type t = { min: boundary; max: boundary }
+    deriving (Json)
+
+  let make min max = {min; max}
+  let to_string r =
+    sprintf "%s, %s"
+      (match r.min with
+      | Inclusive f -> sprintf "[ %g" f
+      | Exclusive f -> sprintf "] %g" f
+      | Infinity -> sprintf "] -∞")
+      (match r.max with
+      | Inclusive f -> sprintf "%g ]" f
+      | Exclusive f -> sprintf "%g [" f
+      | Infinity -> sprintf "∞ [")
+  let check_float r f =
+    (match r.min with
+    | Inclusive m -> f >= m
+    | Exclusive m -> f > m
+    | Infinity -> true)
+    && (match r.max with
+    | Inclusive m -> f <= m
+    | Exclusive m -> f < m
+    | Infinity -> true)
+end
+
+    
+
 type meta_enumeration = {
   overall_question: phrase option;
   default_cases: (string * form_content) list;
