@@ -31,6 +31,7 @@ and form_content =
 | String of (string, string) form_item
 | Integer of (int, string) form_item
 | Float of (float, string) form_item
+| String_regexp of string * string * (string, string) form_item
 | Meta_enumeration of meta_enumeration
 | Extensible_list of extensible_list
 | List of form_content list
@@ -48,6 +49,18 @@ deriving (Json)
 module String_type = struct
   let to_string s = s
   let of_string s = `ok s
+end
+module String_regexp_type = struct
+  let regexp_matches rex s =
+    let t = Re_posix.re (sprintf "^%s$" rex) in
+    let re = Re.compile t in
+    Re.execp re s
+    
+  include String_type
+  let of_string rex msg s =
+    if regexp_matches rex s
+    then `ok s
+    else `error (sprintf "wrong format, expecting: %s" msg)
 end
 module Integer_type = struct
   let to_string i = sprintf "%d" i
@@ -69,7 +82,13 @@ module Form = struct
     | Some s -> f {question; value = V_some s}
     | None ->  f {question; value = V_none}
   let integer = make_item ~f:(fun x -> Integer x)
-  let string = make_item ~f:(fun x -> String x)
+  let string ?regexp =
+    match regexp with
+    | Some (m, r) -> 
+      make_item ~f:(fun x -> String_regexp (r, m, x))
+    | None -> 
+      make_item ~f:(fun x -> String x)
+
   let float = make_item ~f:(fun x -> Float x)
   let list l = List l
   let section s = function
@@ -400,6 +419,10 @@ and make_form f =
     form_item String_type.(of_string, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> String (the_fun ()))
+  | String_regexp (rex, msg, s) ->
+    form_item String_regexp_type.(of_string rex msg, to_string) s
+    >>= fun (the_div, the_fun) ->
+    return (the_div, fun () -> String_regexp (rex, msg, the_fun ()))
   | Integer it ->
     form_item Integer_type.(of_string, to_string) it
     >>= fun (the_div, the_fun) ->
