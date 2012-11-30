@@ -558,11 +558,13 @@ let create ~state  form_content =
             >>= begin function
             | Some (Down msg) ->
               dbg "call_server: down-msg";
-              begin try
-                      return Deriving_Json.(from_string Json.t<down_message> msg)
+              begin
+                try
+                  return Deriving_Json.(from_string Json.t<down_message> msg)
                 with
-                  e -> dbg "Exn: %s" Printexc.(to_string e);
-                    return (Server_error "boooooojjjjhhhhjjj")
+                  e ->
+                    dbg "Exn: %s\n\n%s\n" Printexc.(to_string e) msg;
+                    return (Server_error "WRONG MESSAGE FROM SERVER")
               end
             | Some (Up up) ->
               dbg "call_server: up-msg";
