@@ -548,6 +548,8 @@ module Default_service = struct
               let identifier_friendly =
                 ("non-empty string of letters, numbers, underscores, and dashes",
                  "[a-zA-Z0-9_-]+") in
+              let strictly_positive = Range.(make (exclusive 0.) infinity) in
+              let percentage = Range.(make (inclusive 1.) (inclusive 100.)) in
               make ~save:"Submit …"
                 (section "First Section" [
                   integer ~question:"Pick an integer" ~value:42 ();
@@ -556,6 +558,8 @@ module Default_service = struct
                   section "Subsection" [
                     string ~question:"Pick a string" ~value:"sldk jskd" ();
                     float ~question:"Now a float:" ~value:(atan (-1.)) ();
+                    float ~question:"percent float" ~range:percentage ();
+                    float ~question:"float > 0." ~range:strictly_positive ();
                     string_enumeration ~question:"Many strings?" ~value:"one"
                       ["zero"; "one"; "two"; "three"];
                     open_string_enumeration ~question:"Many strings?" ~value:"one"
