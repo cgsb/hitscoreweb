@@ -258,8 +258,77 @@ type chunk =
   { index: int; total_number: int; content: string; }
 deriving (Json)
 
-    
-type message = Up of chunk | Down of string
+let packetize msg ~packet_size = 
+  let msg_length = String.length msg in
+  begin if msg_length < packet_size
+    then ([| {index = 0; total_number = 1; content = msg} |])
+    else begin
+      let total_number =
+        msg_length / packet_size + (if msg_length / packet_size = 0 then 0 else 1) in
+      let result =
+        let fake_one = {index = -1; total_number; content = ""} in
+        Array.create total_number fake_one in
+      (* dbg "lgth: %d, total_number: %d" msg_length total_number; *)
+      for index = 0 to total_number - 2 do
+        (* dbg "index: %d" index; *)
+        let ofset = index * packet_size in
+        let size = packet_size in
+        let content = String.sub msg ofset size in
+        result.(index) <- {index; total_number; content};
+      done;
+      let index = total_number - 1 in
+      let ofset = index * packet_size in
+      let size = msg_length - ofset in
+      let content = String.sub msg ofset size in
+      result.(index) <- {index; total_number; content};
+      result
+    end
+  end
+
+let unpacketizer () = ref None
+     
+let digest_chunk unpacketizer chunk =
+  let check_chunk chunk =
+    if chunk.index < 0 then (`wrong_chunk chunk)
+    else if chunk.index >= chunk.total_number
+    then (`wrong_chunk chunk) 
+    else
+      (match !unpacketizer with
+      | None -> `ok
+      | Some a ->
+        if chunk.total_number <> Array.length a then (`wrong_chunk chunk)
+        else `ok) in
+  match check_chunk chunk with
+  | `ok ->
+    let unpack_array =
+      match !unpacketizer with
+      | None ->
+        let a = Array.create chunk.total_number None in 
+        unpacketizer := Some a;
+        a
+      | Some a -> a in
+    unpack_array.(chunk.index) <- Some chunk.content;
+    if Array.fold_left (fun b a -> b && (a <> None)) true unpack_array
+    then begin
+      let total_size =
+        Array.fold_left (fun b -> function
+        | Some a -> b + String.length a
+        | None -> failwith  "Digest_chunk: should not be here") 0 unpack_array in 
+      let packet = String.make total_size 'B' in
+      let ofset = ref 0 in
+      Array.iter (function
+      | Some chunk_content ->
+        String.blit chunk_content 0 packet !ofset (String.length chunk_content);
+        ofset := !ofset + String.length chunk_content;
+      | None -> failwith "Digest_chunk: should not be here") unpack_array;
+      unpacketizer := None;
+      `ready packet
+    end else begin
+      `not_ready
+    end
+  | `wrong_chunk _ as any -> any
+
+type message = Up of chunk | Down of chunk
 deriving (Json)
   
 open Hitscoreweb_std
@@ -321,49 +390,29 @@ let start_server ~state ~form_content =
     (* Eliom_bus.create ~scope:Eliom_common.site Json.t<message> in *)
     Eliom_bus.create ~scope:Eliom_common.client_process Json.t<message> in
   let stream = Eliom_bus.stream bus in
-  let current_packet = ref None in
-  let check_up up =
-    if up.index < 0 then error (`wrong_message up)
-    else if up.index >= up.total_number
-    then error (`wrong_message up) 
-    else
-      (match !current_packet with
-      | None -> return ()
-      | Some a ->
-        if up.total_number <> Array.length a then error (`wrong_message up)
-        else return ()) in
+  let unpacketizer = unpacketizer () in
   Lwt.ignore_result begin
     let rec loop () =
       wrap_io Lwt_stream.get stream
       >>= begin function
       | Some (Up up) ->
         dbg "up: %d %d %d" up.index up.total_number (String.length up.content);
-        check_up up >>= fun () ->
-        begin match !current_packet with
-        | None ->
-          let a = Array.create up.total_number None in 
-          current_packet := Some a;
-          return a
-        | Some a -> return a
+        begin match digest_chunk unpacketizer up with
+        | `not_ready -> loop ()
+        | `ready up_msg ->
+          wrap ~on_exn:(fun e -> `json_parsing e)
+            ~f:Deriving_Json.(from_string Json.t<up_message>) up_msg
+          >>= fun msg ->
+          (reply ~state form_content msg)
+          >>= fun answer ->
+          let msg = Deriving_Json.(to_string Json.t<down_message> answer) in
+          let chunks = packetize msg ~packet_size:500 in
+          Array.iter chunks ~f:(fun chunk ->
+            Eliom_bus.write bus (Down chunk);
+          );
+          loop ()
+        | `wrong_chunk c -> error (`wrong_chunk c)
         end
-        >>= fun packet ->
-        packet.(up.index) <- Some up.content;
-        (if Array.for_all packet ((<>) None)
-         then
-            (let up_msg =
-               String.concat_array ~sep:""
-               (Array.map packet ~f:(Option.value_exn ?here:None ?error:None ?message:None))
-                 in
-             wrap ~on_exn:(fun e -> `json_parsing e)
-               ~f:Deriving_Json.(from_string Json.t<up_message>) up_msg
-             >>= fun msg ->
-             (reply ~state form_content msg)
-             >>= fun answer ->
-             current_packet := None;
-             let msg = Deriving_Json.(to_string Json.t<down_message> answer) in
-             Eliom_bus.write bus (Down msg);
-             loop ())
-         else loop ())
       | Some (Down d) -> loop ()
       | None -> return ()
       end
@@ -377,7 +426,7 @@ let start_server ~state ~form_content =
       let s =
           match e with
           | `json_parsing e -> sprintf "json_parsing: %s" (Exn.to_string e)
-          | `wrong_message e ->
+          | `wrong_chunk e ->
             sprintf "wrong_message: %s"
               Deriving_Json.(to_string Json.t<chunk> e)
           | other -> "OTHER"
@@ -623,8 +672,6 @@ let create ~state  form_content =
     try
       begin
 
-        (* dbg "Meta_form: onload (websockets: %b)" (WebSockets.is_supported ()); *)
-
         
         Lwt.async_exception_hook := (fun e ->
           dbg "Async-exn: %s" (Printexc.to_string e);
@@ -634,60 +681,37 @@ let create ~state  form_content =
         (* Eliom_bus.set_time_before_flush %bus 0.5; *)
         let bus = %bus in
         
+        let unpacketizer = unpacketizer () in
         let call_server up =
-          (* Eliom_client.call_caml_service ~service: %caml msg () in *)
-          dbg "call_server: writing";
           let msg = Deriving_Json.(to_string Json.t<up_message> up) in
           dbg "up msg: (%d) %s" (String.length msg) msg;
-          (* (if String.length msg > 5000 then *)
-          (* Eliom_bus.write %bus (Up "") *)
-          (* else *)
-          let msg_length = String.length msg in
-          let packet_size = 100 in
-          begin if msg_length < packet_size * 2 then (
-            Eliom_bus.write bus (Up {index = 0; total_number = 1; content = msg})
-            >>= fun () ->
-            return ()
-          ) else (
-            let total_number =
-              msg_length / packet_size + (if msg_length / packet_size = 0 then 0 else 1) in
-            dbg "lgth: %d, total_number: %d" msg_length total_number;
-            Eliom_bus.set_queue_size bus (total_number + 1);
-            let rec loopi index =
-              dbg "loopi index: %d" index;
-              if index = total_number - 1
-              then (
-                let ofset = index * packet_size in
-                let size = msg_length - ofset in
-                let content = String.sub msg ofset size in
-                Eliom_bus.write bus (Up {index; total_number; content})
-                >>= fun () ->
-                return ()
-              ) else (
-                let ofset = index * packet_size in
-                let size = packet_size in
-                let content = String.sub msg ofset size in
-                Eliom_bus.write bus (Up {index; total_number; content})
-                >>= fun () ->
-                (loopi (index + 1) : unit Lwt.t)
-              ) in
-            (loopi 0 : unit Lwt.t)
-          )
-          end
+          let packets = packetize msg ~packet_size:500 in
+          Eliom_bus.set_queue_size bus (Array.length packets + 1);
+          Array.fold_left (fun m c -> m >>= fun () -> Eliom_bus.write bus (Up c))
+            (return ()) packets
           >>= fun () ->
-          dbg "call_server: wrote";
           let rec next_down () =
             Lwt_stream.get server_stream
             >>= begin function
-            | Some (Down msg) ->
-              dbg "call_server: down-msg";
-              begin
-                try
-                  return Deriving_Json.(from_string Json.t<down_message> msg)
-                with
-                  e ->
-                    dbg "Exn: %s\n\n%s\n" Printexc.(to_string e) msg;
-                    return (Server_error "WRONG MESSAGE FROM SERVER")
+            | Some (Down chunk) ->
+              (* dbg "call_server: down-msg"; *)
+              begin match digest_chunk unpacketizer chunk with
+              | `ready msg ->
+                begin
+                  try
+                    return Deriving_Json.(from_string Json.t<down_message> msg)
+                  with
+                    e ->
+                      dbg "Exn: %s\n\n%s\n" Printexc.(to_string e) msg;
+                      return (Server_error "WRONG MESSAGE FROM SERVER")
+                end
+              | `not_ready ->
+                (* dbg "call_server: `not_ready"; *)
+                next_down ()
+              | `wrong_chunk c ->
+                dbg "call_server: `wrong_chunk: %d %d %s"
+                  c.index c.total_number c.content;
+                return (Server_error "WRONG MESSAGE CHUNK FROM SERVER")
               end
             | Some (Up up) ->
               dbg "call_server: up-msg";
