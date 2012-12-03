@@ -1,11 +1,55 @@
 
 {shared{
 module LL = ListLabels
+module Html5 = struct
+  include Eliom_content.Html5.D
+  open Printf 
+  let pcdataf fmt = ksprintf pcdata fmt
+
+  let codef fmt = ksprintf (fun s -> code [pcdata s]) fmt
+
+  let strongf fmt = ksprintf (fun s -> strong [pcdata s]) fmt
+
+  let a_hreff fmt = ksprintf (fun s -> a_href (Xml.uri_of_string s)) fmt
+
+  let core_a = Eliom_content_core.Html5.D.a
+
+end
+
 open Printf
 
 type kind_key = string deriving (Json)
 
-type phrase = string deriving (Json)
+module Markup = struct
+  type phrase =
+  | Text of string
+  | Italic of phrase
+      deriving (Json)
+  type structure =
+  | Paragraph of phrase list
+  | List of structure list
+      deriving (Json)
+
+  let text s = Text s
+  let italic s = Italic (Text s)
+  let par l = Paragraph l
+  let list l = List l
+
+  let to_html t =
+    let open Eliom_content.Html5.D in
+    let rec simple =
+      function
+      | Text s -> span [pcdata s]
+      | Italic t -> span [i [simple t]]
+    in
+    let rec not_simple = function
+      | Paragraph p -> div (LL.map simple p)
+      | List tl -> div [ul (LL.map tl ~f:(fun t -> li [(not_simple t)]))]
+    in
+    not_simple t
+      
+end
+type phrase = Markup.phrase list deriving (Json)
   
 type ('a, 'b) item_value = V_some of 'a | V_none | V_wrong of 'b
 deriving (Json)
@@ -72,7 +116,7 @@ and form_content =
 | Meta_enumeration of meta_enumeration
 | Extensible_list of extensible_list
 | List of form_content list
-| Section of string * form_content
+| Section of phrase * form_content
 | Empty
 deriving (Json)
 
@@ -132,7 +176,12 @@ end
   
 module Form = struct
   (* let item ?value question kind = Item {question; kind; value} *)
-  let make_item ~f ?question ?value () =
+  let make_item ~f ?question ?text_question ?value () =
+    let question =
+      match question, text_question with
+      | Some q, _ -> Some q
+      | None, Some t -> Some Markup.([text t])
+      | None, None -> None in
     match value with
     | Some s -> f {question; value = V_some s}
     | None ->  f {question; value = V_none}
@@ -249,7 +298,8 @@ let reply ~state form_content param =
 
 let start_server ~state ~form_content =
   let bus =
-    Eliom_bus.create ~scope:Eliom_common.site Json.t<message> in
+    (* Eliom_bus.create ~scope:Eliom_common.site Json.t<message> in *)
+    Eliom_bus.create ~scope:Eliom_common.client_process Json.t<message> in
   let stream = Eliom_bus.stream bus in
   let current_packet = ref None in
   let check_up up =
@@ -355,7 +405,7 @@ let form_item (of_string, to_string) it =
   in
   let question_h5 =
     match it.question with
-    | Some q -> [div [ pcdata q; pcdata "  :  "; ]]
+    | Some q -> [div [ Markup.(to_html (par q)) ]]
     | None -> [] in
   return (div (question_h5 @ [
     string_input ~a:[
@@ -425,7 +475,7 @@ let rec make_meta_enumeration me =
   Dom.appendChild hook_elt select;
   let question_h5 =
     match me.overall_question with
-    | Some q -> [div [ pcdata q; pcdata "  :  "; ]]
+    | Some q -> [div [ Markup.(to_html (par q)) ]]
     | None -> [] in
   return (div (question_h5 @ [the_hook_div; creation_case_div]),
           fun () -> { !current_value with creation_case = creation_case_fun () })
@@ -434,7 +484,8 @@ and make_extensible_list el =
   Lwt_list.map_s make_form el.el_list
   >>= fun div_funs ->
   let make_new_button =
-    div ~a:[ Style.extensible_list_button ] [pcdata el.el_question] in
+    div ~a:[ Style.extensible_list_button ]
+      [Markup.(to_html (par el.el_question))] in
   let make_new_button_elt = Html5_to_dom.of_div make_new_button in
   let additional_elements_div = div [] in
   let additional_elements_funs = ref [] in
@@ -510,7 +561,7 @@ and make_form f =
     >>= fun (the_div, the_fun) ->
     let d =
       div ~a:[ Style.section_block ]
-        [ div [pcdataf "Section %S" title]; the_div] in
+        [ div [Markup.(to_html (par title))]; the_div] in
     return (d, fun () -> Section (title, the_fun ()))
   | Extensible_list el ->
     make_extensible_list el
