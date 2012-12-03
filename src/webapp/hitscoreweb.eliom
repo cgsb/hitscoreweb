@@ -551,51 +551,55 @@ module Default_service = struct
               let strictly_positive = Range.(make (exclusive 0.) infinity) in
               let percentage = Range.(make (inclusive 1.) (inclusive 100.)) in
               make ~save:"Submit …"
-                (section "First Section" [
-                  integer ~question:"Pick an integer" ~value:42 ();
-                  string ~regexp:identifier_friendly
-                    ~question:"Pick a string (reg-exp)" ();
-                  section "Subsection" [
-                    string ~question:"Pick a string" ~value:"sldk jskd" ();
-                    float ~question:"Now a float:" ~value:(atan (-1.)) ();
-                    float ~question:"percent float" ~range:percentage ();
-                    float ~question:"float > 0." ~range:strictly_positive ();
-                    integer ~question:"int > 0" ~range:percentage (); 
-                    string_enumeration ~question:"Many strings?" ~value:"one"
-                      ["zero"; "one"; "two"; "three"];
-                    open_string_enumeration ~question:"Many strings?" ~value:"one"
-                      ~other:"Make up another one …"
+                (section Markup.([text "First Section"]) [
+                  integer ~question:[Markup.text "Pick an integer"] ~value:42 ();
+                  (let question =
+                     Markup.([text "Pick a string "; italic "(regular expression)"]) in
+                   string ~regexp:identifier_friendly ~question ());
+                  section Markup.([text "Subsection"]) [
+                    string ~text_question:"Pick a string" ~value:"sldk jskd" ();
+                    float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
+                    float  ~text_question:"percent float" ~range:percentage ();
+                    float  ~text_question:"float > 0." ~range:strictly_positive ();
+                    integer ~text_question:"int > 0" ~range:percentage (); 
+                    string_enumeration ~question:Markup.([text "Many strings?"])
+                      ~value:"one" ["zero"; "one"; "two"; "three"];
+                    open_string_enumeration ~question:Markup.([text "Many strings?"])
+                      ~value:"one" ~other:"Make up another one …"
                       ["zero"; "one"; "two"; "three"];
                     begin
                       let make_sub ?name ?age () =
-                        section "Create a new person" [
-                          string ~question:"person's name" ?value:name ();
-                          integer ~question:"person's age" ?value:age ();
+                        section Markup.([text "Create a new person"]) [
+                          string  ~text_question:"person's name" ?value:name ();
+                          integer ~text_question:"person's age" ?value:age ();
                         ] in
                       meta_enumeration
-                        ~overall_question:"Please choose or create a person"
+                        ~overall_question:Markup.([text "Please choose or create a person"])
                         ~creation_case: ("Create …", make_sub ())
                         ~choice:"the first"
                         [("the first", make_sub ~name:"The First" ~age:42 ());
                          ("anotherone", make_sub ~name:"Another One" ~age:45 ());
                          ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
                     end;
-                    section "Extensible List:" [begin
+                    section Markup.([text "Extensible List:"]) [begin
                       let make_model sec =
-                        section sec [
-                          string ~question:"Pick a name" ();
-                          string_enumeration ~question:"Pick a type:" ["int"; "float"];
+                        section Markup.([ text sec ]) [
+                          string ~text_question:"Pick a name" ();
+                          string_enumeration ~question:Markup.([text "Pick a ";
+                                                                italic "type:"])
+                            ["int"; "float"];
                         ] in
-                      extensible_list ~question:"Add a thing"
+                      extensible_list ~question:Markup.([italic "Add a thing"])
                         ~model:(make_model "New thing")
-                      (List.init 2 (ksprintf make_model "%d one"))
+                        (List.init 2 (ksprintf make_model "%d one"))
                     end];
                   ];
                 ]))
-          | Some {form_content = (Section ("First Section", modified_form))} ->
+          | Some {form_content = (Section (title, modified_form))}
+            when title = [Markup.text "First Section"]->
             dbg "Modified form : %s"
               Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form) ;
-            return (make ~save:"Send" (string ~question:"pick another string" ()))
+            return (make ~save:"Send" (string ~text_question:"pick another string" ()))
           | Some _ ->
             return (make ~save:"Nothing to save?" empty)
           )
