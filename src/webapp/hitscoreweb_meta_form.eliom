@@ -50,6 +50,7 @@ module Markup = struct
       
 end
 type phrase = Markup.phrase list deriving (Json)
+type content = Markup.structure deriving (Json)
   
 type ('a, 'b) item_value = V_some of 'a | V_none | V_wrong of 'b
 deriving (Json)
@@ -117,6 +118,7 @@ and form_content =
 | Extensible_list of extensible_list
 | List of form_content list
 | Section of phrase * form_content
+| Help of content * form_content
 | Empty
 deriving (Json)
 
@@ -176,15 +178,24 @@ end
   
 module Form = struct
   (* let item ?value question kind = Item {question; kind; value} *)
-  let make_item ~f ?question ?text_question ?value () =
+  let with_help help content = Help (help,content)
+  let optional_help ?help content =
+    match help with None -> content | Some c -> Help (c, content)
+
+  let make_item ~f ?help ?question ?text_question ?value () =
     let question =
       match question, text_question with
       | Some q, _ -> Some q
       | None, Some t -> Some Markup.([text t])
       | None, None -> None in
+    let m i =
+      match help with
+      | Some s -> Help (s, f i)
+      | None -> f i in
     match value with
-    | Some s -> f {question; value = V_some s}
-    | None ->  f {question; value = V_none}
+    | Some s -> m {question; value = V_some s}
+    | None   -> m {question; value = V_none}
+
   let string ?regexp =
     match regexp with
     | Some (m, r) -> 
@@ -204,13 +215,14 @@ module Form = struct
   let section s = function
     | [one] -> Section (s, one)
     | more_or_less -> Section (s, List more_or_less)
-  let meta_enumeration ?overall_question ?creation_case ?choice default_cases =
-    Meta_enumeration {
-      overall_question;
-      default_cases;
-      creation_case;
-      choice;
-    }
+
+  let meta_enumeration
+      ?help ?overall_question ?creation_case ?choice default_cases =
+    let me = 
+      Meta_enumeration {overall_question; default_cases; creation_case;
+                        choice;} in
+    optional_help ?help  me
+
   let string_enumeration ?question ?value l =
     meta_enumeration ?overall_question:question ?choice:value
       (LL.map l ~f:(fun s -> (s, string ~value:s ())))
@@ -245,6 +257,7 @@ deriving (Json)
 type chunk =
   { index: int; total_number: int; content: string; }
 deriving (Json)
+
     
 type message = Up of chunk | Down of string
 deriving (Json)
@@ -276,6 +289,13 @@ module Style = struct
     make_class "extensible_list_button" [
       "color: #050;";
       "background-color: #ecc";
+    ]
+  let help_block =
+    make_class "help_block" [
+      "border: #000 solid 1px";
+      "padding: 1em";
+      "float: right;";
+      "background-color: #ddd";
     ]
       
   let () = Local_style.use _my_style
@@ -563,6 +583,21 @@ and make_form f =
       div ~a:[ Style.section_block ]
         [ div [Markup.(to_html (par title))]; the_div] in
     return (d, fun () -> Section (title, the_fun ()))
+  | Help (help, content) ->
+    make_form content
+    >>= fun (the_div, the_fun) ->
+    let help_div = div ~a:[ Style.help_block ] [Markup.(to_html help)] in
+    let d = div [ the_div; help_div ] in
+    let elt = Html5_to_dom.of_div d in
+    let helt = Html5_to_dom.of_div help_div in
+    helt##style##display <- Js.string "none";
+    elt##onmouseover <- Dom_html.handler (fun ev ->
+      helt##style##display <- Js.string "block";
+      Js._true);
+    elt##onmouseout <- Dom_html.handler (fun ev ->
+      helt##style##display <- Js.string "none";
+      Js._true);
+    return (d, fun () -> Help (help, the_fun ()))
   | Extensible_list el ->
     make_extensible_list el
     >>= fun (the_div, the_fun) ->
@@ -608,27 +643,29 @@ let create ~state  form_content =
           (* Eliom_bus.write %bus (Up "") *)
           (* else *)
           let msg_length = String.length msg in
-          begin if msg_length < 2000 then (
+          let packet_size = 100 in
+          begin if msg_length < packet_size * 2 then (
             Eliom_bus.write bus (Up {index = 0; total_number = 1; content = msg})
             >>= fun () ->
             return ()
           ) else (
             let total_number =
-              msg_length / 1000 + (if msg_length / 1000 = 0 then 0 else 1) in
+              msg_length / packet_size + (if msg_length / packet_size = 0 then 0 else 1) in
             dbg "lgth: %d, total_number: %d" msg_length total_number;
             Eliom_bus.set_queue_size bus (total_number + 1);
             let rec loopi index =
+              dbg "loopi index: %d" index;
               if index = total_number - 1
               then (
-                let ofset = index * 1000 in
+                let ofset = index * packet_size in
                 let size = msg_length - ofset in
                 let content = String.sub msg ofset size in
                 Eliom_bus.write bus (Up {index; total_number; content})
                 >>= fun () ->
                 return ()
               ) else (
-                let ofset = index * 1000 in
-                let size = 1000 in
+                let ofset = index * packet_size in
+                let size = packet_size in
                 let content = String.sub msg ofset size in
                 Eliom_bus.write bus (Up {index; total_number; content})
                 >>= fun () ->
