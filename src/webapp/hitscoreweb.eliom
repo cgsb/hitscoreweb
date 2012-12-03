@@ -557,7 +557,9 @@ module Default_service = struct
                      Markup.([text "Pick a string "; italic "(regular expression)"]) in
                    string ~regexp:identifier_friendly ~question ());
                   section Markup.([text "Subsection"]) [
-                    string ~text_question:"Pick a string" ~value:"sldk jskd" ();
+                    string
+                      ~help:Markup.(par [text "HHEEEELLLPPP"])
+                      ~text_question:"Pick a string" ~value:"sldk jskd" ();
                     float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
                     float  ~text_question:"percent float" ~range:percentage ();
                     float  ~text_question:"float > 0." ~range:strictly_positive ();
@@ -574,6 +576,7 @@ module Default_service = struct
                           integer ~text_question:"person's age" ?value:age ();
                         ] in
                       meta_enumeration
+                        ~help:Markup.(list [par [text "some help"]; par [italic "more help"]])
                         ~overall_question:Markup.([text "Please choose or create a person"])
                         ~creation_case: ("Create …", make_sub ())
                         ~choice:"the first"
