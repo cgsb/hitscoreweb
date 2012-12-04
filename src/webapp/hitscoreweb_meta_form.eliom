@@ -16,6 +16,80 @@ module Html5 = struct
 
 end
 
+
+module Upload_shared = struct
+  type t = int deriving (Json)
+  let path = ["meta_form_upload"]
+end
+ }}
+{client{
+module Upload = Upload_shared
+}}
+
+module Upload = struct
+  include Upload_shared
+  open Hitscoreweb_std
+
+  type file = {
+    id: int;
+    original_name: string;
+    path: string;
+  }
+  let _table : (int, file) Hashtbl.t = Int.Table.create ()
+
+
+  let upload_fallback =
+    make_delayed
+      (Eliom_service.service ~path 
+         ~get_params:Eliom_parameter.unit)
+
+  let get_file id =
+    Option.map (Hashtbl.find _table id) (fun s -> (s.path, s.original_name))
+      
+  let init =
+    let is_done = ref false in
+    begin fun () ->
+      if not !is_done then (
+        dbg "registering meta_form_upload";
+        let open Lwt in
+        let () =
+          Eliom_registration.Html5.register
+            ~service:(upload_fallback ()) (fun () () ->
+              dbg "fall back service";
+              return Html5.(html
+                              (head (title (pcdata "Upload Fallback")) [])
+                              (body [h1 [pcdata "Upload Fallback"]]))) in
+
+        let (_: _) = 
+          Eliom_registration.Html5.register_post_service ~fallback:(upload_fallback ())
+            ~post_params:Eliom_parameter.(int "id" ** file "file")
+            (fun () (id, file) ->
+              dbg "coservice !";
+              let newname = sprintf "/tmp/mfupload_%d" id in
+              (try Unix.unlink newname; with _ -> ());
+              dbg "file %d tmp filename: %s, orig %s" id
+                (Eliom_request_info.get_tmp_filename file)
+                (Eliom_request_info.get_original_filename file);
+              Lwt_unix.link (Eliom_request_info.get_tmp_filename file) newname
+              >>= fun () ->
+              let local_file =
+                {id; path = newname;
+                 original_name = Eliom_request_info.get_original_filename file}
+              in
+              Hashtbl.set _table id local_file;
+              return Html5.(html
+                              (head (title (pcdata "Upload")) [])
+                              (body [h1 [pcdata "Upload"]])))
+        in
+        is_done := true)
+    end
+
+end
+
+{client{
+  open Hitscoreweb_std
+}}
+{shared{
 open Printf
 
 type kind_key = string deriving (Json)
@@ -54,6 +128,7 @@ type content = Markup.structure deriving (Json)
   
 type ('a, 'b) item_value = V_some of 'a | V_none | V_wrong of 'b
 deriving (Json)
+
 
 type ('a, 'b) form_item = {
   question: phrase option;
@@ -114,6 +189,7 @@ and form_content =
 | Float of (float, string) form_item
 | Float_range of Range.t * (float, string) form_item
 | String_regexp of string * string * (string, string) form_item
+| Upload of phrase * Upload.t
 | Meta_enumeration of meta_enumeration
 | Extensible_list of extensible_list
 | List of form_content list
@@ -175,13 +251,20 @@ module Integer_range_type = struct
       else `error (sprintf "This is out of range: %s" (Range.to_string r))
     with _ -> `error "This is not a integer"
 end
+}}
   
+(* Form construction module, on server side. *)
 module Form = struct
   (* let item ?value question kind = Item {question; kind; value} *)
   let with_help help content = Help (help,content)
   let optional_help ?help content =
     match help with None -> content | Some c -> Help (c, content)
 
+  let uploads = ref 0
+  let upload q =
+    incr uploads;
+    Upload (q, !uploads)
+    
   let make_item ~f ?help ?question ?text_question ?value () =
     let question =
       match question, text_question with
@@ -244,6 +327,7 @@ module Form = struct
 
 end
     
+{shared{
 type up_message =
 | Form_changed of form
 | Ready
@@ -621,6 +705,62 @@ and make_form f =
     form_item Integer_range_type.(of_string r, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Integer_range (r, the_fun ()))
+
+  | Upload (question, id) ->
+    let the_div = div [ Markup.(to_html (par question))] in
+    let input =
+      Dom_html.createInput ~_type:(Js.string "file") Dom_html.document in
+    let the_elt = Html5_to_dom.of_div the_div in
+    input##onchange <- Dom_html.handler (fun ev ->
+      begin match Js.Optdef.to_option input##files with
+      | Some s ->
+        for i = 0 to s##length - 1 do
+          let file = Js.Opt.get s##item(i) (fun () -> failwith "aaaahh") in
+          dbg "input-file onchange: %d files, %dth: %s, %d" s##length
+            i (Js.to_string file##name) (file##size);
+          let form_contents =
+            let zero = Form.empty_form_contents () in
+            Form.append zero ("id", `String (ksprintf Js.string "%d" id));
+            Form.append zero ("file", `File file);
+            zero
+          in
+          let open Url in
+          begin match Current.get () with
+          | Some (Https { hu_host; hu_port })
+          | Some (Http { hu_host; hu_port }) ->
+            let url =
+              Https { hu_host; hu_port; hu_fragment = "";
+                      hu_path = Upload.path;
+                      hu_path_string = String.concat "/" Upload.path;
+                      hu_arguments = []} in
+            dbg "NEW URL: %s" (Url.string_of_url url);
+            Lwt.ignore_result XmlHttpRequest.(
+              perform_raw_url ~form_arg:form_contents (Url.string_of_url url)
+              >>= fun http_frame ->
+              dbg "http_frame: %s %d\ncontent: %S" http_frame.url
+                http_frame.code http_frame.content;
+              return ())
+
+          | Some u ->
+            dbg "URL: %s" (Url.string_of_url u)
+          | None -> dbg "NO URL"
+          end;
+          ignore form_contents
+          (*
+            - create /upload post coservice (+ auth)
+            - make form_contents
+            http://ocsigen.org/js_of_ocaml/dev/api/Form#TYPEform_contents
+            - XHR to /upload post service
+            http://ocsigen.org/js_of_ocaml/dev/api/XmlHttpRequest
+          *)
+        done
+      | None ->
+        dbg "input-file onchange: no files";
+      end;
+      Js._true);
+    Dom.appendChild the_elt input;
+    return (the_div, fun () -> Upload (question, id))
+
   | Meta_enumeration me ->
     make_meta_enumeration me
     >>= fun (the_div, the_fun) ->
@@ -665,6 +805,7 @@ let create ~state  form_content =
     let open Html5 in
     span ~a:[a_id hook_id; a_class ["like_link"]]
       [pcdata "Meta-form Hook … Loading …"] in
+  Upload.init ();
   let bus = start_server ~state ~form_content  in
   Eliom_service.onload {{
     let open Html5 in
