@@ -134,6 +134,7 @@ let config
   sprintf "    <logdir>%s</logdir>\n" log_dir |> output_string;
   sprintf "    <commandpipe>%s/ocsigen_command</commandpipe>\n"
     runtime_root |> output_string;
+  ksprintf output_string  "   <uploaddir>%s/upload/</uploaddir>" runtime_root;
 
   sprintf "    <mimefile>%s/mime.types</mimefile>\n" 
     conf_dir |> output_string;
@@ -197,6 +198,7 @@ let testing ~session_timeout
   let open Result in
   syscmd (sprintf "rm -fr %s/static/ && mkdir -p %s/static/"
             runtime_root runtime_root) |> ok_exn;
+  syscmdf "mkdir -p %s/upload/" runtime_root |! ok_exn;
   let open Out_channel in
   with_file (sprintf "%s/mime.types" runtime_root)
     ~f:(fun o -> output_string o (mime_types));
@@ -215,8 +217,8 @@ let sysv_init_file
     ?(config_file="/etc/hitscoreweb/hitscoreweb.conf")
     ?(pid_file="/tmp/hitscoreweb/pidfile")
     ?(stdout_stderr_file="/tmp/hitscoreweb/stdout_stderr")
-    ?(log_dir="/tmp/hitscoreweb/log/")
     ?(command_pipe="/tmp/hitscoreweb/ocsigen_command")
+    ?(make_dirs=[])
     output_string =
   let centos_friendly_header =
     sprintf  "#! /bin/sh
@@ -267,7 +269,8 @@ case \"$1\" in" in
 "
       (check_running () ~do_then:"   echo \"Hitscoreweb is already running\"\n\
                               \   exit 0")
-      (Filename.dirname stdout_stderr_file) log_dir
+      (Filename.dirname stdout_stderr_file) 
+      (String.concat ~sep:" " make_dirs)
       path_to_binary pid_file config_file
       stdout_stderr_file
   in
@@ -410,7 +413,7 @@ let rpm_build ~session_timeout ?authentication ?(release=1) ?ssl ?ssl_dir () =
       ~pid_file:(sprintf "%s/pidfile" runtime_root)
       ~stdout_stderr_file:(sprintf "%s/stdout_and_stderr" runtime_root)
       ~command_pipe:(sprintf "%s/ocsigen_command" runtime_root)
-      ~log_dir
+      ~make_dirs:[ log_dir; sprintf "%s/upload" runtime_root ]
       (output_string o)
   );
 
