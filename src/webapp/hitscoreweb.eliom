@@ -560,6 +560,7 @@ module Default_service = struct
                     string
                       ~help:Markup.(par [text "HHEEEELLLPPP"])
                       ~text_question:"Pick a string" ~value:"sldk jskd" ();
+                    upload Markup.([text "Upload a FILE ! "; italic "pleaaase"]);
                     float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
                     float  ~text_question:"percent float" ~range:percentage ();
                     float  ~text_question:"float > 0." ~range:strictly_positive ();
