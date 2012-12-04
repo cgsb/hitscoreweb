@@ -18,7 +18,7 @@ end
 
 
 module Upload_shared = struct
-  type t = int deriving (Json)
+  type t = {key : int} deriving (Json)
   let path = ["meta_form_upload"]
 end
  }}
@@ -36,14 +36,17 @@ module Upload = struct
     path: string;
   }
   let _table : (int, file list) Hashtbl.t = Int.Table.create ()
+  let _id = ref 0
+
+  let fresh_key () = incr _id; {key = !_id}
 
 
   let upload_fallback =
     make_delayed
       (Eliom_service.service ~path ~get_params:Eliom_parameter.unit)
 
-  let get_file id =
-    Option.value_map ~default:[] (Hashtbl.find _table id)
+  let get_files id =
+    Option.value_map ~default:[] (Hashtbl.find _table id.key)
       ~f:(List.map ~f:(fun s -> (s.path, s.original_name)))
       
   let init =
@@ -262,10 +265,8 @@ module Form = struct
   let optional_help ?help content =
     match help with None -> content | Some c -> Help (c, content)
 
-  let uploads = ref 0
-  let upload ?(multiple=true) q =
-    incr uploads;
-    Upload (q, !uploads, multiple)
+  let upload ?(multiple=true) ~key q =
+    Upload (q, key, multiple)
     
   let make_item ~f ?help ?question ?text_question ?value () =
     let question =
@@ -725,7 +726,8 @@ and make_form f =
           let form_contents =
             (* http://ocsigen.org/js_of_ocaml/dev/api/Form *)
             let zero = Form.empty_form_contents () in
-            Form.append zero ("id", `String (ksprintf Js.string "%d" id));
+            Form.append zero ("id",
+                              `String (ksprintf Js.string "%d" id.Upload.key));
             Form.append zero ("file", `File file);
             zero
           in
