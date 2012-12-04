@@ -35,16 +35,16 @@ module Upload = struct
     original_name: string;
     path: string;
   }
-  let _table : (int, file) Hashtbl.t = Int.Table.create ()
+  let _table : (int, file list) Hashtbl.t = Int.Table.create ()
 
 
   let upload_fallback =
     make_delayed
-      (Eliom_service.service ~path 
-         ~get_params:Eliom_parameter.unit)
+      (Eliom_service.service ~path ~get_params:Eliom_parameter.unit)
 
   let get_file id =
-    Option.map (Hashtbl.find _table id) (fun s -> (s.path, s.original_name))
+    Option.value_map ~default:[] (Hashtbl.find _table id)
+      ~f:(List.map ~f:(fun s -> (s.path, s.original_name)))
       
   let init =
     let is_done = ref false in
@@ -65,18 +65,20 @@ module Upload = struct
             ~post_params:Eliom_parameter.(int "id" ** file "file")
             (fun () (id, file) ->
               dbg "coservice !";
-              let newname = sprintf "/tmp/mfupload_%d" id in
+              let newname =
+                Filename.temp_file ~in_dir:"/tmp" ~perm:0o600
+                  (sprintf "hsw_mfupload_%d_" id) "" in
               (try Unix.unlink newname; with _ -> ());
-              dbg "file %d tmp filename: %s, orig %s" id
+              dbg "file %d tmp filename: %s, orig %s, new: %s" id
                 (Eliom_request_info.get_tmp_filename file)
-                (Eliom_request_info.get_original_filename file);
+                (Eliom_request_info.get_original_filename file) newname;
               Lwt_unix.link (Eliom_request_info.get_tmp_filename file) newname
               >>= fun () ->
               let local_file =
                 {id; path = newname;
                  original_name = Eliom_request_info.get_original_filename file}
               in
-              Hashtbl.set _table id local_file;
+              Hashtbl.add_multi _table id local_file;
               return Html5.(html
                               (head (title (pcdata "Upload")) [])
                               (body [h1 [pcdata "Upload"]])))
@@ -189,7 +191,7 @@ and form_content =
 | Float of (float, string) form_item
 | Float_range of Range.t * (float, string) form_item
 | String_regexp of string * string * (string, string) form_item
-| Upload of phrase * Upload.t
+| Upload of phrase * Upload.t * bool
 | Meta_enumeration of meta_enumeration
 | Extensible_list of extensible_list
 | List of form_content list
@@ -261,9 +263,9 @@ module Form = struct
     match help with None -> content | Some c -> Help (c, content)
 
   let uploads = ref 0
-  let upload q =
+  let upload ?(multiple=true) q =
     incr uploads;
-    Upload (q, !uploads)
+    Upload (q, !uploads, multiple)
     
   let make_item ~f ?help ?question ?text_question ?value () =
     let question =
@@ -706,11 +708,13 @@ and make_form f =
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Integer_range (r, the_fun ()))
 
-  | Upload (question, id) ->
+  | Upload (question, id, multiple) ->
     let the_div = div [ Markup.(to_html (par question))] in
     let input =
       Dom_html.createInput ~_type:(Js.string "file") Dom_html.document in
     let the_elt = Html5_to_dom.of_div the_div in
+    if multiple
+    then input##setAttribute(Js.string "multiple", Js.string "multiple");
     input##onchange <- Dom_html.handler (fun ev ->
       begin match Js.Optdef.to_option input##files with
       | Some s ->
@@ -719,6 +723,7 @@ and make_form f =
           dbg "input-file onchange: %d files, %dth: %s, %d" s##length
             i (Js.to_string file##name) (file##size);
           let form_contents =
+            (* http://ocsigen.org/js_of_ocaml/dev/api/Form *)
             let zero = Form.empty_form_contents () in
             Form.append zero ("id", `String (ksprintf Js.string "%d" id));
             Form.append zero ("file", `File file);
@@ -735,6 +740,7 @@ and make_form f =
                       hu_arguments = []} in
             dbg "NEW URL: %s" (Url.string_of_url url);
             Lwt.ignore_result XmlHttpRequest.(
+              (* http://ocsigen.org/js_of_ocaml/dev/api/XmlHttpRequest *)
               perform_raw_url ~form_arg:form_contents (Url.string_of_url url)
               >>= fun http_frame ->
               dbg "http_frame: %s %d\ncontent: %S" http_frame.url
@@ -745,21 +751,13 @@ and make_form f =
             dbg "URL: %s" (Url.string_of_url u)
           | None -> dbg "NO URL"
           end;
-          ignore form_contents
-          (*
-            - create /upload post coservice (+ auth)
-            - make form_contents
-            http://ocsigen.org/js_of_ocaml/dev/api/Form#TYPEform_contents
-            - XHR to /upload post service
-            http://ocsigen.org/js_of_ocaml/dev/api/XmlHttpRequest
-          *)
         done
       | None ->
         dbg "input-file onchange: no files";
       end;
       Js._true);
     Dom.appendChild the_elt input;
-    return (the_div, fun () -> Upload (question, id))
+    return (the_div, fun () -> Upload (question, id, multiple))
 
   | Meta_enumeration me ->
     make_meta_enumeration me
