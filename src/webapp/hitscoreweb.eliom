@@ -539,6 +539,7 @@ module Default_service = struct
       let open Html5 in
       let test_form =
         let open Hitscoreweb_meta_form in
+        let upload_file_key = Upload.fresh_key () in
         create ~state
           Form.(function
           | None ->
@@ -560,7 +561,8 @@ module Default_service = struct
                     string
                       ~help:Markup.(par [text "HHEEEELLLPPP"])
                       ~text_question:"Pick a string" ~value:"sldk jskd" ();
-                    upload Markup.([text "Upload a FILE ! "; italic "pleaaase"]);
+                    upload ~key:upload_file_key
+                      Markup.([text "Upload a FILE ! "; italic "pleaaase"]);
                     float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
                     float  ~text_question:"percent float" ~range:percentage ();
                     float  ~text_question:"float > 0." ~range:strictly_positive ();
@@ -602,7 +604,11 @@ module Default_service = struct
           | Some {form_content = (Section (title, modified_form))}
             when title = [Markup.text "First Section"]->
             dbg "Modified form : %s"
-              Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form) ;
+              Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
+            dbg "Files:[\n%s\n]"
+              (Upload.get_files upload_file_key
+               |! List.map ~f:(fun (path, orig) -> sprintf "%s (%s)" path orig)
+               |! String.concat ~sep:"\n");
             return (make ~save:"Send" (string ~text_question:"pick another string" ()))
           | Some _ ->
             return (make ~save:"Nothing to save?" empty)
