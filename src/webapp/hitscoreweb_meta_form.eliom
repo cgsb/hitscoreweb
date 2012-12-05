@@ -710,15 +710,24 @@ and make_form f =
     return (the_div, fun () -> Integer_range (r, the_fun ()))
 
   | Upload (question, id, multiple) ->
+    let msg_box = span [] in
     let the_div = div [ Markup.(to_html (par question))] in
     let input =
       Dom_html.createInput ~_type:(Js.string "file") Dom_html.document in
     let the_elt = Html5_to_dom.of_div the_div in
+    let the_msg_elt = Html5_to_dom.of_span msg_box in
     if multiple
     then input##setAttribute(Js.string "multiple", Js.string "multiple");
+    (* let the_input_display = input##style##display in *)
     input##onchange <- Dom_html.handler (fun ev ->
+      let the_question_html = the_elt##innerHTML in
+      the_msg_elt##innerHTML <- Js.string "<b>Uploading …</b>";
+      (* input##style##display <- Js.string "none"; *)
+      input##disabled <- Js._true;
+      input##readOnly <- Js._true;
       begin match Js.Optdef.to_option input##files with
       | Some s ->
+        let results = Array.make s##length false in
         for i = 0 to s##length - 1 do
           let file = Js.Opt.get s##item(i) (fun () -> failwith "aaaahh") in
           dbg "input-file onchange: %d files, %dth: %s, %d" s##length
@@ -747,6 +756,18 @@ and make_form f =
               >>= fun http_frame ->
               dbg "http_frame: %s %d\ncontent: %S" http_frame.url
                 http_frame.code http_frame.content;
+              results.(i) <- true;
+              if Array.fold_left (fun b a -> b && a) true results
+              then (
+                (* the_elt##innerHTML <- the_question_html; *)
+                the_msg_elt##innerHTML <- Js.string "<i>Uploaded.</i>";
+                input##disabled <- Js._false;
+                (* input##readOnly <- Js._false; *)
+                dbg "ALL DOWNLOADED (%s)"
+                  (Js.to_string the_question_html);
+                  (* (Js.to_string the_input_display); *)
+                (* input##style##display <- the_input_display; *)
+              );
               return ())
 
           | Some u ->
@@ -759,6 +780,7 @@ and make_form f =
       end;
       Js._true);
     Dom.appendChild the_elt input;
+    Dom.appendChild the_elt the_msg_elt;
     return (the_div, fun () -> Upload (question, id, multiple))
 
   | Meta_enumeration me ->
