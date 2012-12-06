@@ -236,15 +236,19 @@ module Markup = struct
   let par l = Paragraph l
   let list l = List l
 
-  let to_html t =
+  let phrase_to_html t =
     let open Eliom_content.Html5.D in
     let rec simple =
       function
       | Text s -> span [pcdata s]
       | Italic t -> span [i [simple t]]
     in
+    simple t
+
+  let to_html t =
+    let open Eliom_content.Html5.D in
     let rec not_simple = function
-      | Paragraph p -> div (LL.map simple p)
+      | Paragraph p -> div (LL.map phrase_to_html p)
       | List tl -> div [ul (LL.map tl ~f:(fun t -> li [(not_simple t)]))]
     in
     not_simple t
@@ -253,7 +257,7 @@ end
 type phrase = Markup.phrase list deriving (Json)
 type content = Markup.structure deriving (Json)
   
-type ('a, 'b) item_value = V_some of 'a | V_none | V_wrong of 'b
+type ('a, 'b) item_value = V_some of 'a | V_none | V_wrong of 'b * phrase
 deriving (Json)
 
 
@@ -776,12 +780,12 @@ let make_upload ~state ~question ~store ~multiple =
 
 let form_item ~state (of_string, to_string) it =
   dbg "form_item";
-  let value =
+  let value, msg =
     match it.value with
-    | V_some s -> to_string s
-    | V_wrong s -> s
-    | V_none -> "" in
-  let potential_msg = span [] in
+    | V_some s -> (to_string s, [])
+    | V_wrong (s, m) -> (s, LL.map m ~f:Markup.phrase_to_html)
+    | V_none -> ("", []) in
+  let potential_msg = span msg in
   let current_value = ref it in
   let update ev =
     let msg_box = Html5_to_dom.of_span potential_msg in
@@ -796,7 +800,9 @@ let form_item ~state (of_string, to_string) it =
           current_value := { !current_value with value = V_some v }
         | `error s ->
           msg_box##innerHTML <- ksprintf Js.string "KO : %s" s;
-          current_value := { !current_value with value = V_wrong s }
+          current_value :=
+            { !current_value
+              with value = V_wrong (Js.to_string ielt##value, [Markup.(text s)]) }
         end
       | _ ->
         dbg "WRONG ELEMENT"
