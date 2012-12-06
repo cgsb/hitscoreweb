@@ -656,8 +656,6 @@ let start_server ~state ~form_content =
 open Html5
 open Lwt 
 
-(* We use a tuple with function accessors to avoid crazy Eliom service types  *)
-let make_form_state_client_id (one) = one
   
 let make_upload ~state ~question ~store ~multiple =
   let msg_box = span [] in
@@ -1000,7 +998,7 @@ and make_form ~state  f =
 
 }}
 
-let create ~state ~person_id form_content =
+let create ~state form_content =
   let hook_id = unique_id "meta_form_hook" in
   let the_link_like =
     let open Html5 in
@@ -1075,7 +1073,7 @@ let create ~state ~person_id form_content =
             >>= begin function
             | Make_form f ->
               dbg "Make form?!";
-              make_form ~state:( %person_id) f.form_content
+              make_form ~state:() f.form_content
               >>= fun (the_div, whole_function) ->
               let whole_form =
                 let bdiv =
