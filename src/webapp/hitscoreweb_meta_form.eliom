@@ -65,6 +65,8 @@ module Upload_shared = struct
       {!store with
         files = LL.map !store.files
           ~f:(fun f -> if file_id = f.id then {f with state} else f) }
+
+  let is_empty store = !store.files = []
       
 end
  }}
@@ -687,7 +689,6 @@ open Lwt
 
   
 let make_upload ~state ~question ~store ~multiple =
-  let msg_box = span [] in
   let hu_host, hu_port =
     let open Url in
     begin match Current.get () with
@@ -702,6 +703,11 @@ let make_upload ~state ~question ~store ~multiple =
     end in
   let current_store = ref store in
   let already_there_files = div [] in
+  let input =
+    Dom_html.createInput ~_type:(Js.string "file") Dom_html.document in
+  let the_div = div [ Markup.(to_html (par question)); already_there_files] in
+  let the_elt = Html5_to_dom.of_div the_div in
+  let the_msg_elt = Html5_to_dom.of_span (span []) in
   let rec update_already_there () =
     let open Upload in
       (* - transmit list of file names, and "to remove" files
@@ -744,15 +750,19 @@ let make_upload ~state ~question ~store ~multiple =
            span [b [pcdataf " (Upload error: %s)" e]]]
         end
     in
+    if not multiple
+    then if Upload.is_empty current_store
+      then (
+        the_msg_elt##style##display <- Js.string "inline";
+        input##style##display <- Js.string "inline";
+      ) else (
+        the_msg_elt##style##display <- Js.string "none";
+        input##style##display <- Js.string "none";
+      );
     Html5_manip.replaceAllChild already_there_files
       [ul (LL.map !current_store.files ~f)]
   in
-  let the_div = div [ Markup.(to_html (par question)); already_there_files] in
   update_already_there ();
-  let input =
-    Dom_html.createInput ~_type:(Js.string "file") Dom_html.document in
-  let the_elt = Html5_to_dom.of_div the_div in
-  let the_msg_elt = Html5_to_dom.of_span msg_box in
   if multiple
   then input##setAttribute(Js.string "multiple", Js.string "multiple");
     (* let the_input_display = input##style##display in *)
