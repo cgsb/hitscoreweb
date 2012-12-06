@@ -540,7 +540,8 @@ module Default_service = struct
       let content =
         let test_form =
           let open Hitscoreweb_meta_form in
-          let upload_file_store = Upload.fresh_store [] in
+          let upload_many_files_store = Upload.fresh_store [] in
+          let upload_one_file_store = Upload.fresh_store [] in
           let services_form =
             ref (
               let identifier_friendly =
@@ -559,8 +560,10 @@ module Default_service = struct
                       string
                         ~help:Markup.(par [text "HHEEEELLLPPP"])
                         ~text_question:"Pick a string" ~value:"sldk jskd" ();
-                      upload ~store:upload_file_store
-                        Markup.([text "Upload a FILE ! "; italic "pleaaase"]);
+                      upload ~store:upload_many_files_store
+                        Markup.([text "Upload many FILEs ! "; italic "pleaaase"]);
+                      upload ~store:upload_one_file_store  ~multiple:false
+                        Markup.([text "Upload one FILE ! "; italic "pleaaase"]);
                       float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
                       float  ~text_question:"percent float" ~range:percentage ();
                       float  ~text_question:"float > 0." ~range:strictly_positive ();
