@@ -25,6 +25,7 @@ module Upload_shared = struct
   | Uploading
   | Uploaded of string (* local path in $static/uploads/ *)
   | Upload_error of string
+  | Removing
   deriving (Json)
 
   type file = {
@@ -44,6 +45,7 @@ module Upload_shared = struct
   (* type t = {key : int; filenames: string list} deriving (Json) *)
   let post_path = ["meta_form_upload"]
   let get_path = ["meta_form_download"]
+  let remove_path = ["meta_form_remove"]
     
   let add_file store ~original_name ~state =
     let id = !store.next_id in
@@ -52,6 +54,11 @@ module Upload_shared = struct
       next_id ;
       files = !store.files @ [{id; original_name; state;}]};
     id
+
+  let remove_file store file_id =
+    store :=
+      {!store with
+        files = LL.filter !store.files ~f:(fun f -> f.id <> file_id) }
 
   let set_state store file_id state =
     store :=
@@ -123,8 +130,7 @@ module Upload = struct
       error (`wrong_credentials)
     end
     
-  let identify_and_verify path =
-    dbg "identify_and_verify %s" path;
+  let check_access_rights path =
     begin match String.Table.find _ownership path with
     | Some expected_id ->
       Authentication.user_logged ()
@@ -143,7 +149,10 @@ module Upload = struct
       dbg "not found %s" path;
       error (`file_not_found path)
     end
-    >>= fun () ->
+    
+  let identify_and_verify path =
+    dbg "identify_and_verify %s" path;
+    check_access_rights path >>= fun () ->
     let content_type =
       let mime_assoc = Ocsigen_charset_mime.default_mime_assoc () in
       Ocsigen_charset_mime.find_mime path mime_assoc in
@@ -154,8 +163,14 @@ module Upload = struct
     | false ->
       error (`path_not_right_volume path)
     end
-    
       
+  let check_and_remove_file path =
+    check_access_rights path >>= fun () ->
+    let real_path = Filename.concat uploads_dir path in
+    wrap_io Lwt_unix.unlink real_path >>= fun () ->
+    dbg "removed %s" real_path;
+    return ()
+    
   let init =
     let is_done = ref None in
     begin fun () ->
@@ -205,8 +220,22 @@ module Upload = struct
                 Eliom_registration.Html5.send ~content_type:"text/html" html
               end)
         in
-        is_done := Some (post, get);
-        (post, get)
+        let remove =
+          let service =
+            Eliom_service.service
+              ~path:remove_path
+              ~get_params:Eliom_parameter.(suffix (string "path")) () in
+          Eliom_registration.String.register ~service
+            (fun path () ->
+              let open Lwt  in
+              check_and_remove_file path
+              >>= begin function
+              | Ok () -> return ("OK", "")
+              | Error e -> dbg "error in remove service"; return ("ERROR", "")
+              end)
+        in
+        is_done := Some (post, get, remove);
+        (post, get, remove)
         (* is_done := true) *)
       | Some s -> s
     end
@@ -673,7 +702,7 @@ let make_upload ~state ~question ~store ~multiple =
     end in
   let current_store = ref store in
   let already_there_files = div [] in
-  let update_already_there () =
+  let rec update_already_there () =
     let open Upload in
       (* - transmit list of file names, and "to remove" files
          - display them with a "remove" link *)
@@ -683,6 +712,9 @@ let make_upload ~state ~question ~store ~multiple =
         | Uploading ->
           [pcdataf "File %s" file.original_name;
            span [i [pcdata " (Uploading) "]]]
+        | Removing ->
+          [pcdataf "File %s" file.original_name;
+           span [i [pcdata " (Removing) "]]]
         | Uploaded path ->
           [pcdata "File ";
            Eliom_content.Html5.D.Raw.a
@@ -692,8 +724,20 @@ let make_upload ~state ~question ~store ~multiple =
              [ pcdataf "%s" file.original_name ];
            span [i [pcdata " (";
                     span ~a:[ a_class ["like_link"]; a_onclick (fun _ ->
-                      dbg "TODO: remove %d" file.id
-                    ) ] [pcdata "Remove"];
+                      Upload.(set_state current_store file.id Removing);
+                      update_already_there ();
+                      Lwt.ignore_result begin
+                        let url =
+                          sprintf "https://%s:%d/%s/%s" hu_host hu_port
+                            (String.concat "/" Upload.remove_path) path in
+                        XmlHttpRequest.perform_raw_url url
+                        >>= fun result ->
+                        dbg "XmlHttpRequest.perform_raw_url -> %S"
+                          result.XmlHttpRequest.content;
+                        Upload.remove_file current_store file.id;
+                        update_already_there ();
+                        return ()
+                      end) ] [pcdata "Remove"];
                     pcdata ") "]]]
         | Upload_error e ->
           [pcdataf "File %s" file.original_name;
