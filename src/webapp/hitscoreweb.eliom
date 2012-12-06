@@ -537,84 +537,90 @@ module Default_service = struct
   let make ~state =
     (fun () () ->
       let open Html5 in
-      let test_form =
-        let open Hitscoreweb_meta_form in
-        let upload_file_key = Upload.fresh_key () in
-        create ~state
-          Form.(function
-          | None ->
-            return (make ~save:"Start the form" empty)
-          | Some {form_content = Empty; _} ->
-            return (
+      let content =
+        Authentication.user_logged ()
+        >>= fun u ->
+        let test_form =
+          let open Hitscoreweb_meta_form in
+          let upload_file_store = Upload.fresh_store [] in
+          let services_form =
+            ref (
               let identifier_friendly =
                 ("non-empty string of letters, numbers, underscores, and dashes",
                  "[a-zA-Z0-9_-]+") in
               let strictly_positive = Range.(make (exclusive 0.) infinity) in
               let percentage = Range.(make (inclusive 1.) (inclusive 100.)) in
+              let open Form in
               make ~save:"Submit …"
-                (section Markup.([text "First Section"]) [
-                  integer ~question:[Markup.text "Pick an integer"] ~value:42 ();
-                  (let question =
-                     Markup.([text "Pick a string "; italic "(regular expression)"]) in
-                   string ~regexp:identifier_friendly ~question ());
-                  section Markup.([text "Subsection"]) [
-                    string
-                      ~help:Markup.(par [text "HHEEEELLLPPP"])
-                      ~text_question:"Pick a string" ~value:"sldk jskd" ();
-                    upload ~key:upload_file_key
-                      Markup.([text "Upload a FILE ! "; italic "pleaaase"]);
-                    float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
-                    float  ~text_question:"percent float" ~range:percentage ();
-                    float  ~text_question:"float > 0." ~range:strictly_positive ();
-                    integer ~text_question:"int > 0" ~range:percentage (); 
-                    string_enumeration ~question:Markup.([text "Many strings?"])
-                      ~value:"one" ["zero"; "one"; "two"; "three"];
-                    open_string_enumeration ~question:Markup.([text "Many strings?"])
-                      ~value:"one" ~other:"Make up another one …"
-                      ["zero"; "one"; "two"; "three"];
-                    begin
-                      let make_sub ?name ?age () =
-                        section Markup.([text "Create a new person"]) [
-                          string  ~text_question:"person's name" ?value:name ();
-                          integer ~text_question:"person's age" ?value:age ();
-                        ] in
-                      meta_enumeration
-                        ~help:Markup.(list [par [text "some help"]; par [italic "more help"]])
-                        ~overall_question:Markup.([text "Please choose or create a person"])
-                        ~creation_case: ("Create …", make_sub ())
-                        ~choice:"the first"
-                        [("the first", make_sub ~name:"The First" ~age:42 ());
-                         ("anotherone", make_sub ~name:"Another One" ~age:45 ());
-                         ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
-                    end;
-                    section Markup.([text "Extensible List:"]) [begin
-                      let make_model sec =
-                        section Markup.([ text sec ]) [
-                          string ~text_question:"Pick a name" ();
-                          string_enumeration ~question:Markup.([text "Pick a ";
-                                                                italic "type:"])
-                            ["int"; "float"];
-                        ] in
-                      extensible_list ~question:Markup.([italic "Add a thing"])
-                        ~model:(make_model "New thing")
-                        (List.init 2 (ksprintf make_model "%d one"))
-                    end];
-                  ];
-                ]))
-          | Some {form_content = (Section (title, modified_form))}
-            when title = [Markup.text "First Section"]->
-            dbg "Modified form : %s"
-              Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
-            dbg "Files:[\n%s\n]"
-              (Upload.get_files upload_file_key
-               |! List.map ~f:(fun (path, orig) -> sprintf "%s (%s)" path orig)
-               |! String.concat ~sep:"\n");
-            return (make ~save:"Send" (string ~text_question:"pick another string" ()))
-          | Some _ ->
-            return (make ~save:"Nothing to save?" empty)
-          )
-      in
-      let content =
+                  (section Markup.([text "First Section"]) [
+                    integer ~question:[Markup.text "Pick an integer"] ~value:42 ();
+                    (let question =
+                       Markup.([text "Pick a string "; italic "(regular expression)"]) in
+                     string ~regexp:identifier_friendly ~question ());
+                    section Markup.([text "Subsection"]) [
+                      string
+                        ~help:Markup.(par [text "HHEEEELLLPPP"])
+                        ~text_question:"Pick a string" ~value:"sldk jskd" ();
+                      upload ~store:upload_file_store
+                        Markup.([text "Upload a FILE ! "; italic "pleaaase"]);
+                      float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
+                      float  ~text_question:"percent float" ~range:percentage ();
+                      float  ~text_question:"float > 0." ~range:strictly_positive ();
+                      integer ~text_question:"int > 0" ~range:strictly_positive (); 
+                      string_enumeration ~question:Markup.([text "Many strings?"])
+                        ~value:"one" ["zero"; "one"; "two"; "three"];
+                      open_string_enumeration ~question:Markup.([text "Many strings?"])
+                        ~value:"one" ~other:"Make up another one …"
+                        ["zero"; "one"; "two"; "three"];
+                      begin
+                        let make_sub ?name ?age () =
+                          section Markup.([text "Create a new person"]) [
+                            string  ~text_question:"person's name" ?value:name ();
+                            integer ~text_question:"person's age" ?value:age ();
+                          ] in
+                        meta_enumeration
+                          ~help:Markup.(list [par [text "some help"]; par [italic "more help"]])
+                          ~overall_question:Markup.([text "Please choose or create a person"])
+                          ~creation_case: ("Create …", make_sub ())
+                          ~choice:"the first"
+                          [("the first", make_sub ~name:"The First" ~age:42 ());
+                           ("anotherone", make_sub ~name:"Another One" ~age:45 ());
+                           ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
+                      end;
+                      section Markup.([text "Extensible List:"]) [begin
+                        let make_model sec =
+                          section Markup.([ text sec ]) [
+                            string ~text_question:"Pick a name" ();
+                            string_enumeration ~question:Markup.([text "Pick a ";
+                                                                  italic "type:"])
+                              ["int"; "float"];
+                          ] in
+                        extensible_list ~question:Markup.([italic "Add a thing"])
+                          ~model:(make_model "New thing")
+                          (List.init 2 (ksprintf make_model "%d one"))
+                      end];
+                    ];
+                  ])
+            ) in 
+          create ~state
+            ~person_id:(Option.value_map u ~default:0
+                          ~f:(fun u -> u.Authentication.person.Layout.Record_person.id))
+            Form.(function
+            | None ->
+              return (make ~save:"Start the form" empty)
+            | Some {form_content = Empty; _} ->
+              return (!services_form)
+            | Some ({form_content = (Section (title, modified_form))} as form)
+                when title = [Markup.text "First Section"]->
+              services_form := form;
+              dbg "Modified form : %s"
+                Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
+                  dbg "Files:[\n TODO \n]";
+                  return (make ~save:"Send" (string ~text_question:"pick another string" ()))
+            | Some _ ->
+              return (make ~save:"Nothing to save?" empty)
+            )
+        in
         Template.menu_ul ()
         >>= fun ul_menu ->
         let header = [h1 [pcdata "Gencore Home"];] in
@@ -903,13 +909,11 @@ TODO: All exceptions in coservices should be handled in some other way
           Configuration.configure
             ?vol_directory:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
             ?root_path:!rodi ?db_configuration () in
-        (*
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
         Web_data_access.init
           ~loop_time:(if !debug_mode then 90. else 600.)
           ~configuration:config ()
         |! Lwt.ignore_result;
-        *)
         let state = 
           Hitscoreweb_state.init_state ~configuration:config () in
         (state, config, debug_mode)
