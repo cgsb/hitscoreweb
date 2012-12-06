@@ -1,4 +1,6 @@
-
+module Authentication = Hitscoreweb_authentication
+module Template = Hitscoreweb_template
+  
 {shared{
 module LL = ListLabels
 module Html5 = struct
@@ -18,8 +20,45 @@ end
 
 
 module Upload_shared = struct
-  type t = {key : int} deriving (Json)
-  let path = ["meta_form_upload"]
+
+  type state =
+  | Uploading
+  | Uploaded of string (* local path in $static/uploads/ *)
+  | Upload_error of string
+  deriving (Json)
+
+  type file = {
+    id: int;
+    original_name: string;
+    state: state;
+  }
+  deriving (Json)
+
+  type store = {
+    key: int;
+    files: file list;
+    next_id: int;
+  }
+  deriving (Json)
+    
+  (* type t = {key : int; filenames: string list} deriving (Json) *)
+  let post_path = ["meta_form_upload"]
+  let get_path = ["meta_form_download"]
+    
+  let add_file store ~original_name ~state =
+    let id = !store.next_id in
+    let next_id = !store.next_id + 1  in
+    store := { !store with
+      next_id ;
+      files = !store.files @ [{id; original_name; state;}]};
+    id
+
+  let set_state store file_id state =
+    store :=
+      {!store with
+        files = LL.map !store.files
+          ~f:(fun f -> if file_id = f.id then {f with state} else f) }
+      
 end
  }}
 {client{
@@ -30,63 +69,146 @@ module Upload = struct
   include Upload_shared
   open Hitscoreweb_std
 
-  type file = {
-    id: int;
-    original_name: string;
-    path: string;
-  }
-  let _table : (int, file list) Hashtbl.t = Int.Table.create ()
   let _id = ref 0
+  let fresh_store files =
+    incr _id;
+    let next_id =
+      LL.fold_left files ~init:0 ~f:(fun b a -> max b a.id) in
+    {key = !_id; files; next_id}
 
-  let fresh_key () = incr _id; {key = !_id}
-
+  let uploads_dir = "/tmp"
 
   let upload_fallback =
     make_delayed
-      (Eliom_service.service ~path ~get_params:Eliom_parameter.unit)
+      (Eliom_service.service ~path:post_path ~get_params:Eliom_parameter.unit)
 
-  let get_files id =
-    Option.value_map ~default:[] (Hashtbl.find _table id.key)
-      ~f:(List.map ~f:(fun s -> (s.path, s.original_name)))
+  let _ownership: int String.Table.t = String.Table.create ()
+  let test_non_ownership = -1
+  let set_ownership file =
+    Authentication.user_logged ()
+    >>= begin function
+    | Some u ->
+      dbg "user: %d" u.Authentication.person.Layout.Record_person.id;
+      String.Table.set _ownership ~key:file
+        ~data:u.Authentication.person.Layout.Record_person.id;
+      return ()
+    | None ->
+      dbg "no user %s, %d" file test_non_ownership;
+      String.Table.set _ownership file test_non_ownership;
+      return ()
+    end
+
+  let move_posted_file id file =
+    Authentication.authorizes `upload_files
+    >>= begin function
+    | true ->
+      let newname =
+        let extension =
+          Option.value_map  ~default:"" ~f:(sprintf ".%s")
+            (Filename.split_extension
+               (Eliom_request_info.get_original_filename file) |! snd) in
+        Filename.temp_file ~in_dir:uploads_dir ~perm:0o600
+          (sprintf "hsw_mfupload_%d_" id) extension in
+      (try Unix.unlink newname; with _ -> ());
+      dbg "file %d tmp filename: %s, orig %s, new: %s" id
+        (Eliom_request_info.get_tmp_filename file)
+        (Eliom_request_info.get_original_filename file) newname;
+      wrap_io (Lwt_unix.link (Eliom_request_info.get_tmp_filename file)) newname
+      >>= fun () ->
+      set_ownership (Filename.basename newname)
+      >>= fun () ->
+      return newname
+    | false ->
+      dbg "cannot upload files !";
+      error (`wrong_credentials)
+    end
+    
+  let identify_and_verify path =
+    dbg "identify_and_verify %s" path;
+    begin match String.Table.find _ownership path with
+    | Some expected_id ->
+      Authentication.user_logged ()
+      >>= begin function
+      | Some u ->
+        dbg "user: %d, expected: %d"
+          u.Authentication.person.Layout.Record_person.id expected_id;
+        return u.Authentication.person.Layout.Record_person.id
+      | None ->
+        return test_non_ownership
+      end
+      >>= fun user_id ->
+      if user_id = expected_id then return ()
+      else error (`wrong_credentials)
+    | None ->
+      dbg "not found %s" path;
+      error (`file_not_found path)
+    end
+    >>= fun () ->
+    let content_type =
+      let mime_assoc = Ocsigen_charset_mime.default_mime_assoc () in
+      Ocsigen_charset_mime.find_mime path mime_assoc in
+    let total_path = Filename.concat uploads_dir path in
+    begin match Eliom_registration.File.check_file total_path with
+    | true ->
+      return (content_type, total_path)
+    | false ->
+      error (`path_not_right_volume path)
+    end
+    
       
   let init =
-    let is_done = ref false in
+    let is_done = ref None in
     begin fun () ->
-      if not !is_done then (
+      match !is_done with
+      | None ->
         dbg "registering meta_form_upload";
         let open Lwt in
         let () =
-          Eliom_registration.Html5.register
+          Eliom_registration.String.register
             ~service:(upload_fallback ()) (fun () () ->
               dbg "fall back service";
-              return Html5.(html
-                              (head (title (pcdata "Upload Fallback")) [])
-                              (body [h1 [pcdata "Upload Fallback"]]))) in
+              return ("FALLBACK", "")) in
 
-        let (_: _) = 
-          Eliom_registration.Html5.register_post_service ~fallback:(upload_fallback ())
+        let post = 
+          Eliom_registration.String.register_post_service ~fallback:(upload_fallback ())
             ~post_params:Eliom_parameter.(int "id" ** file "file")
             (fun () (id, file) ->
-              dbg "coservice !";
-              let newname =
-                Filename.temp_file ~in_dir:"/tmp" ~perm:0o600
-                  (sprintf "hsw_mfupload_%d_" id) "" in
-              (try Unix.unlink newname; with _ -> ());
-              dbg "file %d tmp filename: %s, orig %s, new: %s" id
-                (Eliom_request_info.get_tmp_filename file)
-                (Eliom_request_info.get_original_filename file) newname;
-              Lwt_unix.link (Eliom_request_info.get_tmp_filename file) newname
-              >>= fun () ->
-              let local_file =
-                {id; path = newname;
-                 original_name = Eliom_request_info.get_original_filename file}
-              in
-              Hashtbl.add_multi _table id local_file;
-              return Html5.(html
-                              (head (title (pcdata "Upload")) [])
-                              (body [h1 [pcdata "Upload"]])))
+              dbg "coservice ! Id: %d" id;
+              move_posted_file id file
+              >>= begin function
+              | Ok newname ->
+                return (Filename.basename newname, "")
+              | Error e ->
+                fail (Failure "meta_form_upload ERROR")
+              end)
         in
-        is_done := true)
+        let get =
+          let service =
+            Eliom_service.service
+              ~path:get_path
+              ~get_params:Eliom_parameter.(suffix (string "path")) () in
+          let error_content e =
+            let open Template in
+            let open Html5 in
+            Flow.return ( [Html5.pcdata "Error: Cannot retrieve that file …"])
+          in
+          Eliom_registration.Any.register ~service
+            (fun path () ->
+              let open Lwt  in
+              identify_and_verify path
+              >>= begin function
+              | Ok (content_type, path) ->
+                Eliom_registration.File.send ~content_type path
+              | Error e ->
+                Template.default ~title:"File Error" (error_content e)
+                >>= fun html ->
+                Eliom_registration.Html5.send ~content_type:"text/html" html
+              end)
+        in
+        is_done := Some (post, get);
+        (post, get)
+        (* is_done := true) *)
+      | Some s -> s
     end
 
 end
@@ -194,7 +316,7 @@ and form_content =
 | Float of (float, string) form_item
 | Float_range of Range.t * (float, string) form_item
 | String_regexp of string * string * (string, string) form_item
-| Upload of phrase * Upload.t * bool
+| Upload of phrase * Upload.store * bool
 | Meta_enumeration of meta_enumeration
 | Extensible_list of extensible_list
 | List of form_content list
@@ -265,8 +387,8 @@ module Form = struct
   let optional_help ?help content =
     match help with None -> content | Some c -> Help (c, content)
 
-  let upload ?(multiple=true) ~key q =
-    Upload (q, key, multiple)
+  let upload ?(multiple=true) ~store q =
+    Upload (q, store, multiple)
     
   let make_item ~f ?help ?question ?text_question ?value () =
     let question =
@@ -530,7 +652,129 @@ let start_server ~state ~form_content =
 open Html5
 open Lwt 
 
-let form_item (of_string, to_string) it =
+(* We use a tuple with function accessors to avoid crazy Eliom service types  *)
+let make_form_state_client_id (one) = one
+  
+let make_upload ~state ~question ~store ~multiple =
+  let msg_box = span [] in
+  let hu_host, hu_port =
+    let open Url in
+    begin match Current.get () with
+    | Some (Https { hu_host; hu_port; hu_arguments })
+    | Some (Http { hu_host; hu_port; hu_arguments }) ->
+      dbg "Args:";
+      LL.iter  hu_arguments ~f:(fun (a,b) -> dbg " * %s %s" a  b);
+      (hu_host, hu_port)
+    | Some u ->
+      dbg "URL: %s" (Url.string_of_url u); failwith "no URL"
+    | None -> dbg "NO URL" ; failwith "no URL"
+    end in
+  let current_store = ref store in
+  let already_there_files = div [] in
+  let update_already_there () =
+    let open Upload in
+      (* - transmit list of file names, and "to remove" files
+         - display them with a "remove" link *)
+    let f file =
+      li 
+        begin match file.state with
+        | Uploading ->
+          [pcdataf "File %s" file.original_name;
+           span [i [pcdata " (Uploading) "]]]
+        | Uploaded path ->
+          [pcdata "File ";
+           Eliom_content.Html5.D.Raw.a
+             ~a:[ a_target "_blank";
+                  a_hreff "https://%s:%d/%s/%s" hu_host hu_port
+                    (String.concat "/" Upload.get_path) path ]
+             [ pcdataf "%s" file.original_name ];
+           span [i [pcdata " (";
+                    span ~a:[ a_class ["like_link"]; a_onclick (fun _ ->
+                      dbg "TODO: remove %d" file.id
+                    ) ] [pcdata "Remove"];
+                    pcdata ") "]]]
+        | Upload_error e ->
+          [pcdataf "File %s" file.original_name;
+           span [b [pcdataf " (Upload error: %s)" e]]]
+        end
+    in
+    Html5_manip.replaceAllChild already_there_files
+      [ul (LL.map !current_store.files ~f)]
+  in
+  let the_div = div [ Markup.(to_html (par question)); already_there_files] in
+  update_already_there ();
+  let input =
+    Dom_html.createInput ~_type:(Js.string "file") Dom_html.document in
+  let the_elt = Html5_to_dom.of_div the_div in
+  let the_msg_elt = Html5_to_dom.of_span msg_box in
+  if multiple
+  then input##setAttribute(Js.string "multiple", Js.string "multiple");
+    (* let the_input_display = input##style##display in *)
+  input##onchange <- Dom_html.handler (fun ev ->
+    let the_question_html = the_elt##innerHTML in
+    the_msg_elt##innerHTML <- Js.string "<b>Uploading …</b>";
+      (* input##style##display <- Js.string "none"; *)
+    input##disabled <- Js._true;
+    input##readOnly <- Js._true;
+    begin match Js.Optdef.to_option input##files with
+    | Some s ->
+      let results = Array.make s##length false in
+      for i = 0 to s##length - 1 do
+        let file = Js.Opt.get s##item(i) (fun () -> failwith "aaaahh") in
+        dbg "input-file onchange: %d files, %dth: %s, %d" s##length
+          i (Js.to_string file##name) (file##size);
+        let original_name = Filename.basename (Js.to_string file##name) in
+        let file_id =
+          Upload.add_file current_store
+            ~original_name ~state:Upload.Uploading in
+        update_already_there ();
+        let form_contents =
+            (* http://ocsigen.org/js_of_ocaml/dev/api/Form *)
+          let zero = Form.empty_form_contents () in
+          Form.append zero ("id",
+                            `String (ksprintf Js.string "%d" store.Upload.key));
+          Form.append zero ("file", `File file);
+          zero
+        in
+        let url =
+          let open Url in
+          Https { hu_host; hu_port; hu_fragment = "";
+                  hu_path = Upload.post_path;
+                  hu_path_string = String.concat "/" Upload.post_path;
+                  hu_arguments = []} in
+        dbg "NEW URL: %s" (Url.string_of_url url);
+        Lwt.ignore_result XmlHttpRequest.(
+          (* http://ocsigen.org/js_of_ocaml/dev/api/XmlHttpRequest *)
+          perform_raw_url ~form_arg:form_contents (Url.string_of_url url)
+          >>= fun http_frame ->
+          dbg "http_frame: %s %d\ncontent: %S" http_frame.url
+            http_frame.code http_frame.content;
+          results.(i) <- true;
+          Upload.(set_state current_store file_id
+                    (Uploaded http_frame.content));
+          update_already_there ();
+          if Array.fold_left (fun b a -> b && a) true results
+          then (
+            (* the_elt##innerHTML <- the_question_html; *)
+            the_msg_elt##innerHTML <- Js.string "<i>Uploaded.</i>";
+            input##disabled <- Js._false;
+            (* input##readOnly <- Js._false; *)
+            dbg "ALL DOWNLOADED (%s)"
+              (Js.to_string the_question_html);
+          (* (Js.to_string the_input_display); *)
+          (* input##style##display <- the_input_display; *)
+          );
+          return ())
+      done
+    | None ->
+      dbg "input-file onchange: no files";
+    end;
+    Js._true);
+  Dom.appendChild the_elt input;
+  Dom.appendChild the_elt the_msg_elt;
+  return (the_div, fun () -> Upload (question, !current_store, multiple))
+
+let form_item ~state (of_string, to_string) it =
   dbg "form_item";
   let value =
     match it.value with
@@ -572,11 +816,11 @@ let form_item (of_string, to_string) it =
     potential_msg;
   ]), fun () -> !current_value)
 
-let rec make_meta_enumeration me =
+let rec make_meta_enumeration ~state me =
   let current_value = ref me in
   begin match me.creation_case with
   | Some (label, form) ->
-    make_form form
+    make_form ~state form
     >>= fun (d, f) ->
     return (d, fun () -> Some (label, f ()))
   | None -> return (div [], fun () -> None)
@@ -636,8 +880,8 @@ let rec make_meta_enumeration me =
   return (div (question_h5 @ [the_hook_div; creation_case_div]),
           fun () -> { !current_value with creation_case = creation_case_fun () })
 
-and make_extensible_list el =
-  Lwt_list.map_s make_form el.el_list
+and make_extensible_list ~state el =
+  Lwt_list.map_s (make_form ~state) el.el_list
   >>= fun div_funs ->
   let make_new_button =
     div ~a:[ Style.extensible_list_button ]
@@ -649,7 +893,7 @@ and make_extensible_list el =
   make_new_button_elt##onclick <- Dom_html.handler (fun ev ->
     dbg "make_new_button_elt clicked";
     Lwt.ignore_result begin
-      make_form el.el_model
+      make_form ~state el.el_model
       >>= fun (new_div, new_fun) ->
       Dom.appendChild additional_elements_elt (Html5_to_dom.of_div new_div);
       (* for i = 0 to 40 do *)
@@ -673,129 +917,58 @@ and make_extensible_list el =
     { el with el_list = Array.to_list tmp_array } in
   return (the_div, the_fun)
 
-and make_form f =
+and make_form ~state  f =
   begin match f with
   | List l ->
     let get_value_funs = ref [] in
     Lwt_list.map_s (fun f ->
-      make_form f
+      make_form ~state f
       >>= fun (the_div, the_fun) ->
       get_value_funs := the_fun :: !get_value_funs;
       return the_div) l
     >>= fun ldivs ->
     return (div ldivs, fun () -> List (List.rev_map (fun f -> f ()) !get_value_funs))
   | String it ->
-    form_item String_type.(of_string, to_string) it
+    form_item ~state String_type.(of_string, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> String (the_fun ()))
   | String_regexp (rex, msg, s) ->
-    form_item String_regexp_type.(of_string rex msg, to_string) s
+    form_item ~state String_regexp_type.(of_string rex msg, to_string) s
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> String_regexp (rex, msg, the_fun ()))
   | Integer it ->
-    form_item Integer_type.(of_string, to_string) it
+    form_item ~state Integer_type.(of_string, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Integer (the_fun ()))
   | Float it ->
-    form_item Float_type.(of_string, to_string) it
+    form_item ~state Float_type.(of_string, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Float (the_fun ()))
   | Float_range (r, it) ->
-    form_item Float_range_type.(of_string r, to_string) it
+    form_item ~state Float_range_type.(of_string r, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Float_range (r, the_fun ()))
   | Integer_range (r, it) ->
-    form_item Integer_range_type.(of_string r, to_string) it
+    form_item ~state Integer_range_type.(of_string r, to_string) it
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Integer_range (r, the_fun ()))
 
-  | Upload (question, id, multiple) ->
-    let msg_box = span [] in
-    let the_div = div [ Markup.(to_html (par question))] in
-    let input =
-      Dom_html.createInput ~_type:(Js.string "file") Dom_html.document in
-    let the_elt = Html5_to_dom.of_div the_div in
-    let the_msg_elt = Html5_to_dom.of_span msg_box in
-    if multiple
-    then input##setAttribute(Js.string "multiple", Js.string "multiple");
-    (* let the_input_display = input##style##display in *)
-    input##onchange <- Dom_html.handler (fun ev ->
-      let the_question_html = the_elt##innerHTML in
-      the_msg_elt##innerHTML <- Js.string "<b>Uploading …</b>";
-      (* input##style##display <- Js.string "none"; *)
-      input##disabled <- Js._true;
-      input##readOnly <- Js._true;
-      begin match Js.Optdef.to_option input##files with
-      | Some s ->
-        let results = Array.make s##length false in
-        for i = 0 to s##length - 1 do
-          let file = Js.Opt.get s##item(i) (fun () -> failwith "aaaahh") in
-          dbg "input-file onchange: %d files, %dth: %s, %d" s##length
-            i (Js.to_string file##name) (file##size);
-          let form_contents =
-            (* http://ocsigen.org/js_of_ocaml/dev/api/Form *)
-            let zero = Form.empty_form_contents () in
-            Form.append zero ("id",
-                              `String (ksprintf Js.string "%d" id.Upload.key));
-            Form.append zero ("file", `File file);
-            zero
-          in
-          let open Url in
-          begin match Current.get () with
-          | Some (Https { hu_host; hu_port })
-          | Some (Http { hu_host; hu_port }) ->
-            let url =
-              Https { hu_host; hu_port; hu_fragment = "";
-                      hu_path = Upload.path;
-                      hu_path_string = String.concat "/" Upload.path;
-                      hu_arguments = []} in
-            dbg "NEW URL: %s" (Url.string_of_url url);
-            Lwt.ignore_result XmlHttpRequest.(
-              (* http://ocsigen.org/js_of_ocaml/dev/api/XmlHttpRequest *)
-              perform_raw_url ~form_arg:form_contents (Url.string_of_url url)
-              >>= fun http_frame ->
-              dbg "http_frame: %s %d\ncontent: %S" http_frame.url
-                http_frame.code http_frame.content;
-              results.(i) <- true;
-              if Array.fold_left (fun b a -> b && a) true results
-              then (
-                (* the_elt##innerHTML <- the_question_html; *)
-                the_msg_elt##innerHTML <- Js.string "<i>Uploaded.</i>";
-                input##disabled <- Js._false;
-                (* input##readOnly <- Js._false; *)
-                dbg "ALL DOWNLOADED (%s)"
-                  (Js.to_string the_question_html);
-                  (* (Js.to_string the_input_display); *)
-                (* input##style##display <- the_input_display; *)
-              );
-              return ())
-
-          | Some u ->
-            dbg "URL: %s" (Url.string_of_url u)
-          | None -> dbg "NO URL"
-          end;
-        done
-      | None ->
-        dbg "input-file onchange: no files";
-      end;
-      Js._true);
-    Dom.appendChild the_elt input;
-    Dom.appendChild the_elt the_msg_elt;
-    return (the_div, fun () -> Upload (question, id, multiple))
+  | Upload (question, store, multiple) ->
+    make_upload ~state ~question ~store ~multiple
 
   | Meta_enumeration me ->
-    make_meta_enumeration me
+    make_meta_enumeration ~state me
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Meta_enumeration (the_fun ()))
   | Section (title, content) ->
-    make_form content
+    make_form ~state content
     >>= fun (the_div, the_fun) ->
     let d =
       div ~a:[ Style.section_block ]
         [ div [Markup.(to_html (par title))]; the_div] in
     return (d, fun () -> Section (title, the_fun ()))
   | Help (help, content) ->
-    make_form content
+    make_form ~state content
     >>= fun (the_div, the_fun) ->
     let help_div = div ~a:[ Style.help_block ] [Markup.(to_html help)] in
     let d = div [ the_div; help_div ] in
@@ -810,7 +983,7 @@ and make_form f =
       Js._true);
     return (d, fun () -> Help (help, the_fun ()))
   | Extensible_list el ->
-    make_extensible_list el
+    make_extensible_list ~state el
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Extensible_list (the_fun ()))
   | Empty ->
@@ -821,14 +994,14 @@ and make_form f =
 
 }}
 
-let create ~state  form_content =
+let create ~state ~person_id form_content =
   let hook_id = unique_id "meta_form_hook" in
   let the_link_like =
     let open Html5 in
-    span ~a:[a_id hook_id; a_class ["like_link"]]
-      [pcdata "Meta-form Hook … Loading …"] in
-  Upload.init ();
+    span ~a:[a_id hook_id; ] [pcdata "Meta-form Hook … Loading …"] in
+  let _ = Upload.init () in
   let bus = start_server ~state ~form_content  in
+
   Eliom_service.onload {{
     let open Html5 in
     let open Lwt in
@@ -882,10 +1055,7 @@ let create ~state  form_content =
             | None ->
               fail (Failure "server_stream ended")
             end in
-          if (String.length msg) > 5000 then
-            return (Make_form { form_content = Empty; form_button = "DUMMMY"})
-          else
-            next_down ()
+          next_down ()
         in
 
 
@@ -899,7 +1069,7 @@ let create ~state  form_content =
             >>= begin function
             | Make_form f ->
               dbg "Make form?!";
-              make_form f.form_content
+              make_form ~state:( %person_id) f.form_content
               >>= fun (the_div, whole_function) ->
               let whole_form =
                 let bdiv =
