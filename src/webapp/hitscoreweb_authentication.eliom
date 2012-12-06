@@ -29,6 +29,7 @@ type capability = [
            | `libraries_detailed_fastq_information
            | `facility_statistics
            | `flowcell]
+| `upload_files
 | `edit of [
   | `password_of_person of Layout.Record_person.t
   | `names_of_person of Layout.Record_person.t
@@ -66,6 +67,8 @@ let roles_allow
     List.exists roles (fun c -> c = `auditor || c = `administrator)
   | `edit _ | `view `benchmarks ->
     if List.exists roles (fun c -> c = `administrator) then true else false
+  | `upload_files ->
+    List.exists roles (fun c -> c = `auditor || c = `administrator || c = `user)
   | `view something ->
     if List.exists roles (fun c -> c = `auditor || c = `administrator) then
       true
