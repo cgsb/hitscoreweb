@@ -538,8 +538,6 @@ module Default_service = struct
     (fun () () ->
       let open Html5 in
       let content =
-        Authentication.user_logged ()
-        >>= fun u ->
         let test_form =
           let open Hitscoreweb_meta_form in
           let upload_file_store = Upload.fresh_store [] in
@@ -603,8 +601,6 @@ module Default_service = struct
                   ])
             ) in 
           create ~state
-            ~person_id:(Option.value_map u ~default:0
-                          ~f:(fun u -> u.Authentication.person.Layout.Record_person.id))
             Form.(function
             | None ->
               return (make ~save:"Start the form" empty)
