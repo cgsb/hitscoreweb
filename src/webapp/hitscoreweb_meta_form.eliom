@@ -595,7 +595,7 @@ module Style = struct
   let submit_button =
     make_class "subbutton" [
       "border: #00d solid 2px";
-      "padding: 3px";
+      "padding: 3px"; "margin : 3px";
       "background-color: #ddd";
     ]
   let extensible_list_button =
@@ -688,6 +688,31 @@ open Html5
 open Lwt 
 
   
+(* State is a tuple with accessors (we did not want to write some
+   crazy Eliom types in a record …) *)
+let validation_button ~state = state
+
+let update_validation_button btn_elt msg_elt list_ref =
+  match !list_ref with
+  | [] ->
+    btn_elt##style##display <- Js.string "inline";
+    msg_elt##innerHTML <- Js.string ""
+  | some ->
+    btn_elt##style##display <- Js.string "none";
+    msg_elt##innerHTML <- ksprintf Js.string "Thing are pending: %s."
+      (String.concat ", " (LL.map ~f:snd some))
+    
+let add_pending_thing ~state key value =
+  let btn_elt, msg_elt, list_ref = validation_button ~state in
+  list_ref := (key, value) :: !list_ref; 
+  update_validation_button btn_elt msg_elt list_ref;
+  ()
+let remove_pending_thing ~state key =
+  let btn_elt, msg_elt, list_ref = validation_button ~state in
+  list_ref := LL.remove_assoc key !list_ref;
+  update_validation_button btn_elt msg_elt list_ref;
+  ()
+    
 let make_upload ~state ~question ~store ~multiple =
   let hu_host, hu_port =
     let open Url in
@@ -732,6 +757,9 @@ let make_upload ~state ~question ~store ~multiple =
                     span ~a:[ a_class ["like_link"]; a_onclick (fun _ ->
                       Upload.(set_state current_store file.id Removing);
                       update_already_there ();
+                      let pending_key = sprintf "remove:%d" file.id in
+                      add_pending_thing ~state pending_key
+                        (sprintf "Removing %s" file.original_name);
                       Lwt.ignore_result begin
                         let url =
                           sprintf "https://%s:%d/%s/%s" hu_host hu_port
@@ -742,6 +770,7 @@ let make_upload ~state ~question ~store ~multiple =
                           result.XmlHttpRequest.content;
                         Upload.remove_file current_store file.id;
                         update_already_there ();
+                        remove_pending_thing ~state pending_key;
                         return ()
                       end) ] [pcdata "Remove"];
                     pcdata ") "]]]
@@ -799,6 +828,9 @@ let make_upload ~state ~question ~store ~multiple =
                   hu_path_string = String.concat "/" Upload.post_path;
                   hu_arguments = []} in
         dbg "NEW URL: %s" (Url.string_of_url url);
+        let pending_key = sprintf "upload:%d" store.Upload.key in
+        add_pending_thing ~state pending_key
+          (sprintf "Uploading %s" (Js.to_string file##name));
         Lwt.ignore_result XmlHttpRequest.(
           (* http://ocsigen.org/js_of_ocaml/dev/api/XmlHttpRequest *)
           perform_raw_url ~form_arg:form_contents (Url.string_of_url url)
@@ -820,6 +852,7 @@ let make_upload ~state ~question ~store ~multiple =
           (* (Js.to_string the_input_display); *)
           (* input##style##display <- the_input_display; *)
           );
+          remove_pending_thing ~state pending_key;
           return ())
       done
     | None ->
@@ -951,6 +984,8 @@ and make_extensible_list ~state el =
     { el with el_list = Array.to_list tmp_array } in
   let update () = current := the_fun () in
   let rec redraw () =
+    let pending_key = "update-list" in
+    add_pending_thing ~state pending_key "Updating list";
     Lwt_list.map_s (make_form ~state) !current.el_list
     >>= fun div_funs ->
     let make_new_button =
@@ -986,6 +1021,7 @@ and make_extensible_list ~state el =
        ));
     Html5_manip.appendChild container make_new_button;
     current_div_funs := div_funs;
+    remove_pending_thing ~state pending_key;
     return ()
   in
   redraw () >>= fun () ->
@@ -1138,24 +1174,27 @@ let create ~state form_content =
           let hook = get_element_exn %hook_id in
           hook##innerHTML <- Js.string "Contacting the server … ";
           (* List.iter (fun x -> dbg "class: %s" x.name) Kind.list; *)
+              
           Lwt.ignore_result begin
             call_server send_to_server
             >>= begin function
             | Make_form f ->
+              let button = span ~a:[ Style.submit_button ] [ pcdata f.form_button ] in
+              let message = span [] in
+              let save_section =
+                div [ button; message ] in
+              let state =
+                (Html5_to_dom.of_span button, Html5_to_dom.of_span message, ref [])
+              in
               dbg "Make form?!";
-              make_form ~state:() f.form_content
+              make_form ~state f.form_content
               >>= fun (the_div, whole_function) ->
-              let whole_form =
-                let bdiv =
-                  div ~a:[ Style.submit_button ] [ pcdata f.form_button ] in
-                let belt = Html5_to_dom.of_div bdiv in
-                belt##onclick <- Dom_html.handler(fun _ ->
+              ignore (Html5_manip.addEventListener  button Dom_html.Event.click
+                (fun _ _ ->
                   let new_form = { f with form_content = whole_function () } in
                   make_with_save_button (Form_changed new_form);
-                  Js._true
-                ); 
-                div [the_div; bdiv]
-              in
+                  true));
+              let whole_form = div [the_div; save_section] in
               let elt = Html5_to_dom.of_div whole_form in
               hook##innerHTML <- Js.string "Please fill the form: ";
               Dom.appendChild hook elt;
