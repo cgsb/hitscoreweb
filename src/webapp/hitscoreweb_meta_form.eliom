@@ -695,13 +695,16 @@ let validation_button ~state = state
 let update_validation_button btn_elt msg_elt list_ref =
   match !list_ref with
   | [] ->
-    btn_elt##style##display <- Js.string "inline";
-    msg_elt##innerHTML <- Js.string ""
+    Html5_set_css.display btn_elt "inline";
+    Html5_manip.replaceAllChild msg_elt [];
   | some ->
-    btn_elt##style##display <- Js.string "none";
-    msg_elt##innerHTML <- ksprintf Js.string "Thing are pending: %s."
-      (String.concat ", " (LL.map ~f:snd some))
-    
+    Html5_set_css.display btn_elt "none";
+    Html5_manip.replaceAllChild msg_elt [
+      pcdata "There are actions pending:";
+      ul (LL.map some ~f:(fun (_, m) -> li [i [pcdata m]]));
+    ];
+    ()
+
 let add_pending_thing ~state key value =
   let btn_elt, msg_elt, list_ref = validation_button ~state in
   list_ref := (key, value) :: !list_ref; 
@@ -1183,9 +1186,7 @@ let create ~state form_content =
               let message = span [] in
               let save_section =
                 div [ button; message ] in
-              let state =
-                (Html5_to_dom.of_span button, Html5_to_dom.of_span message, ref [])
-              in
+              let state = (button, message, ref []) in
               dbg "Make form?!";
               make_form ~state f.form_content
               >>= fun (the_div, whole_function) ->

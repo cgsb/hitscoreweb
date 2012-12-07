@@ -22,6 +22,7 @@ end
 {client{
 module Html5_to_dom = Eliom_content.Html5.To_dom
 module Html5_manip = Eliom_content.Html5.Manip
+module Html5_set_css = Eliom_content.Html5.Manip.SetCss
 
 (* Redefine the Array module to make _type.mli files happy *)
 module Array = struct type 'a t = 'a array include Array end
