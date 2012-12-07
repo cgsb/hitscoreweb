@@ -942,6 +942,14 @@ and make_extensible_list ~state el =
   let current = ref el in
   let current_div_funs = ref [] in
   let container = div [] in
+  let the_fun () =
+    let tmp_array =
+      Array.create (List.length !current_div_funs) el.el_model in
+    let idx = ref 0 in
+    let f = (fun g -> tmp_array.(!idx) <- g (); incr idx) in
+    List.iter !current_div_funs ~f:(fun (_, g) -> f g);
+    { el with el_list = Array.to_list tmp_array } in
+  let update () = current := the_fun () in
   let rec redraw () =
     Lwt_list.map_s (make_form ~state) !current.el_list
     >>= fun div_funs ->
@@ -952,28 +960,35 @@ and make_extensible_list ~state el =
       Html5_manip.addEventListener make_new_button
         Dom_html.Event.click (fun _ _ ->
           dbg "make_new_button elt clicked";
+          update ();
           current := { !current with
             el_list = !current.el_list @ [ !current.el_model ] };
-          Lwt.ignore_result begin
-            redraw ()
-          end;
+          Lwt.ignore_result (redraw ());
           true) in
+    let nth = ref 0 in
     Html5_manip.replaceAllChild container
-      (LL.map div_funs ~f:(fun (div, _) ->
-        div
+      (LL.map div_funs ~f:(fun (form_div, _) ->
+        let remove_button =
+          div ~a:[ Style.extensible_list_button ] [ pcdata "Remove" ] in
+        let (_ : Dom_html.event_listener_id) =
+          let nth = !nth in
+          Html5_manip.addEventListener remove_button Dom_html.Event.click (fun _ _ ->
+            update ();
+            let el_list =
+              let c = ref 0 in
+              LL.filter !current.el_list ~f:(fun _ ->
+                if !c = nth then (incr c; false)  else (incr c; true)) in
+            current := { !current with el_list };
+            Lwt.ignore_result (redraw ());
+            true) in
+        incr nth;
+        div [form_div; remove_button]
        ));
     Html5_manip.appendChild container make_new_button;
     current_div_funs := div_funs;
     return ()
   in
   redraw () >>= fun () ->
-  let the_fun () =
-    let tmp_array =
-      Array.create (List.length !current_div_funs) el.el_model in
-    let idx = ref 0 in
-    let f = (fun g -> tmp_array.(!idx) <- g (); incr idx) in
-    List.iter !current_div_funs ~f:(fun (_, g) -> f g);
-    { el with el_list = Array.to_list tmp_array } in
   return (container, the_fun)
 
 and make_form ~state  f =
