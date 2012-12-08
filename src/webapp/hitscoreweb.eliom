@@ -560,6 +560,8 @@ module Default_service = struct
                       string
                         ~help:Markup.(par [text "HHEEEELLLPPP"])
                         ~text_question:"Pick a string" ~value:"sldk jskd" ();
+                      date ~text_question:"A date:" ~value:"21/12/2012" ();
+                      date ~text_question:"Another date:" ();
                       upload ~store:upload_many_files_store
                         Markup.([text "Upload many FILEs ! "; italic "pleaaase"]);
                       upload ~store:upload_one_file_store  ~multiple:false
