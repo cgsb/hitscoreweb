@@ -371,6 +371,15 @@ let default ?(title) content =
                      ()) ();
           link ~rel:[`Stylesheet]
             ~href:(Html5.make_uri ~service:Services.(stylesheet ()) ()) ();
+          js_script
+            ~uri:(uri_of_string (fun () ->
+              "http://www.frequency-decoder.com/demo/datePicker/js/lang/en.js")) ();
+          js_script
+            ~uri:(uri_of_string (fun () ->
+              "http://www.frequency-decoder.com/demo/datePicker/js/datepicker.min.js" )) ();
+          css_link
+            ~uri:(uri_of_string (fun () ->
+              "http://www.frequency-decoder.com/demo/datePicker/css/datepicker.css")) ();
         ])
         (body [
           div ~a:[ a_class ["wrapper"] ] [
