@@ -351,6 +351,7 @@ and form_content =
 | Float of (float, string) form_item
 | Float_range of Range.t * (float, string) form_item
 | String_regexp of string * string * (string, string) form_item
+| Date of (string, string) form_item
 | Upload of phrase * Upload.store * bool
 | Meta_enumeration of meta_enumeration
 | Extensible_list of extensible_list
@@ -459,6 +460,8 @@ module Form = struct
     | [one] -> Section (s, one)
     | more_or_less -> Section (s, List more_or_less)
 
+  let date = make_item ~f:(fun x -> Date x)
+    
   let meta_enumeration
       ?help ?overall_question ?creation_case ?choice default_cases =
     let me = 
@@ -690,7 +693,8 @@ open Lwt
   
 (* State is a tuple with accessors (we did not want to write some
    crazy Eliom types in a record …) *)
-let validation_button ~state = state
+let validation_button ~state = fst state
+let after_draw_todo_list ~state = snd state
 
 let update_validation_button btn_elt msg_elt list_ref =
   match !list_ref with
@@ -715,6 +719,11 @@ let remove_pending_thing ~state key =
   list_ref := LL.remove_assoc key !list_ref;
   update_validation_button btn_elt msg_elt list_ref;
   ()
+    
+let add_todo_after_draw ~state f =
+  let l = after_draw_todo_list ~state in
+  l := f :: !l
+
     
 let make_upload ~state ~question ~store ~multiple =
   let hu_host, hu_port =
@@ -910,6 +919,63 @@ let form_item ~state (of_string, to_string) it =
     potential_msg;
   ]), fun () -> !current_value)
 
+let _dp_counter = ref 0
+  
+let date_picker ~state it =
+  let current = ref it in
+  let value, msg =
+    match it.value with
+    | V_some s -> (s, [])
+    | V_wrong (s, m) -> (s, LL.map m ~f:Markup.phrase_to_html)
+    | V_none -> ("", []) in
+  let unique_id = incr _dp_counter; !_dp_counter in
+  let input_id =  sprintf "mf_dp_input_%d" unique_id in
+  let update_method = sprintf "updateMfDpInput%d" !_dp_counter in
+  let attached = ref false in
+  let attach_data_picker input_id =
+    if not !attached then (
+      dbg "attaching to %s " input_id;
+      attached := true;
+      ksprintf Js.Unsafe.eval_string "
+      datePickerController.createDatePicker({
+        formElements:{
+          %s:\"%%Y-%%m-%%d\"
+        },
+      callbackFunctions: { \"datereturned\": [ this.window.%s ] }
+      });" input_id update_method
+    )
+  in
+  add_todo_after_draw ~state (fun () -> attach_data_picker input_id);
+  let input_element = ref None in
+  let update ev =
+    begin match !input_element with
+    | Some input_element ->
+      let ielt = Html5_to_dom.of_input input_element in
+      dbg "Input ELT : %s" (Js.to_string ielt##value);
+      current := { !current with value = V_some (Js.to_string ielt##value) }
+    | None -> dbg "input_element not defined yet"
+    end
+  in
+  Js.Unsafe.set Dom_html.window  update_method (Js.wrap_callback update);
+  let input =
+    string_input ~a:[ a_id input_id;
+                      a_onchange update;
+                      a_onmouseup update;
+                      a_onkeyup update;
+                      a_onmousedown update;
+                    ] ~input_type:`Text ~value () in
+  input_element := Some input;
+  let whole_div =
+    let question_h5 =
+      match it.question with
+      | Some q -> [div [ Markup.(to_html (par q)) ]]
+      | None -> [] in
+    dbg "creating input: %s" input_id;
+    div (question_h5 @ [
+      div [input];
+    ]) in
+  return (whole_div, fun () -> !current)
+          
 let rec make_meta_enumeration ~state me =
   let current_value = ref me in
   begin match me.creation_case with
@@ -1066,6 +1132,11 @@ and make_form ~state  f =
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Integer_range (r, the_fun ()))
 
+  | Date it ->
+    date_picker ~state it
+    >>= fun (the_div, the_fun) ->
+    return (the_div, fun () -> Date (the_fun ()))
+
   | Upload (question, store, multiple) ->
     make_upload ~state ~question ~store ~multiple
 
@@ -1186,7 +1257,7 @@ let create ~state form_content =
               let message = span [] in
               let save_section =
                 div [ button; message ] in
-              let state = (button, message, ref []) in
+              let state = ( (button, message, ref []), ref []) in
               dbg "Make form?!";
               make_form ~state f.form_content
               >>= fun (the_div, whole_function) ->
@@ -1199,6 +1270,8 @@ let create ~state form_content =
               let elt = Html5_to_dom.of_div whole_form in
               hook##innerHTML <- Js.string "Please fill the form: ";
               Dom.appendChild hook elt;
+              let l = after_draw_todo_list ~state in
+              LL.iter !l ~f:(fun f -> f ());
               return ()
             | Server_error s ->
               hook##innerHTML <- ksprintf Js.string "Server Error: %s" s;
