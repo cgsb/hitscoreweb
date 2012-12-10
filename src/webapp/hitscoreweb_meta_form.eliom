@@ -336,7 +336,7 @@ end
 type meta_enumeration = {
   overall_question: phrase option;
   default_cases: (string * form_content) list;
-  creation_case: (string * form_content) option;
+  creation_cases: (string * form_content) list;
   choice: string option;
 }
 and extensible_list = {
@@ -463,9 +463,11 @@ module Form = struct
   let date = make_item ~f:(fun x -> Date x)
     
   let meta_enumeration
-      ?help ?overall_question ?creation_case ?choice default_cases =
+      ?help ?overall_question ?creation_cases ?choice default_cases =
     let me = 
-      Meta_enumeration {overall_question; default_cases; creation_case;
+      Meta_enumeration {overall_question; default_cases;
+                        creation_cases =
+                         (match creation_cases with None -> [] | Some l -> l);
                         choice;} in
     optional_help ?help  me
 
@@ -475,7 +477,7 @@ module Form = struct
 
   let open_string_enumeration ?question ?value ?(other="New") l =
     meta_enumeration ?overall_question:question ?choice:value
-      ~creation_case:(other, string ())
+      ~creation_cases:[other, string ()] 
       (LL.map l ~f:(fun s -> (s, string ~value:s ())))
 
   let extensible_list ~question ~model l =
@@ -612,6 +614,10 @@ module Style = struct
       "padding: 1em";
       "float: right;";
       "background-color: #ddd";
+    ]
+  let meta_enumeration_creation =
+    make_class "meta_enumeration_creation" [
+      "background-color: #dd0";
     ]
       
   let () = Local_style.use _my_style
@@ -978,28 +984,22 @@ let date_picker ~state it =
           
 let rec make_meta_enumeration ~state me =
   let current_value = ref me in
-  begin match me.creation_case with
-  | Some (label, form) ->
+  Lwt_list.map_s (fun (label,form) ->
     make_form ~state form
     >>= fun (d, f) ->
-    return (d, fun () -> Some (label, f ()))
-  | None -> return (div [], fun () -> None)
-  end
-  >>= fun (creation_case_div, creation_case_fun) ->
-  let set_creation_visibility b =
-    let elt = Html5_to_dom.of_div creation_case_div in
-    if b then elt##style##display <- Js.string "block"
-    else elt##style##display <- Js.string "none"
-  in
+    return (div ~a:[ Style.meta_enumeration_creation] [d], fun () -> (label, f ()))
+  ) me.creation_cases
+  >>= fun div_funs ->
+  let set_creation_visibility elt b =
+    if b then
+      Html5_set_css.display elt "block"
+    else
+      Html5_set_css.display elt "none" in
   let selection_handler the_chosen_one =
     current_value := {!current_value with choice = Some the_chosen_one };
-    begin match me.creation_case with
-    | Some (label, _) ->
-      set_creation_visibility (the_chosen_one = label)
-    | None -> ()
-    end;
-    ()
-  in
+    LL.iter2 me.creation_cases div_funs ~f:(fun (label, _) (d, f) ->
+      set_creation_visibility d (the_chosen_one = label)
+    ) in
   let the_hook_div = div [] in
   let hook_elt = Html5_to_dom.of_div the_hook_div in
   let select = Dom_html.createSelect Dom_html.document in
@@ -1020,13 +1020,11 @@ let rec make_meta_enumeration ~state me =
     let is_selected = Some choice = me.choice in
     make_option ~is_selected choice
   );
-  begin match me.creation_case with
-  | Some (choice, _) ->
+  LL.iter2 me.creation_cases div_funs ~f:(fun (choice, _) (d, _) ->
     let is_selected = Some choice = me.choice in
     make_option ~is_selected choice;
-    set_creation_visibility is_selected;
-  | None -> ()
-  end;
+    set_creation_visibility d is_selected
+  );
   select##onchange <- Dom_html.handler (fun ev ->
     dbg "select changes: %S" (Js.to_string select##value);
     selection_handler (Js.to_string select##value);
@@ -1037,8 +1035,9 @@ let rec make_meta_enumeration ~state me =
     match me.overall_question with
     | Some q -> [div [ Markup.(to_html (par q)) ]]
     | None -> [] in
-  return (div (question_h5 @ [the_hook_div; creation_case_div]),
-          fun () -> { !current_value with creation_case = creation_case_fun () })
+  return (div (question_h5 @ (the_hook_div :: (LL.map div_funs ~f:fst))),
+          fun () -> { !current_value with
+            creation_cases = LL.map div_funs ~f:(fun (_, f) -> f ()) })
 
 and make_extensible_list ~state el =
   let current = ref el in
