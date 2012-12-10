@@ -610,11 +610,23 @@ module Style = struct
     ]
   let help_block =
     make_class "help_block" [
-      "border: #000 solid 1px";
+      "border: #000 solid 2px";
       "padding: 1em";
-      "float: right;";
+      "position: absolute";
+      "top: 0";
+      "left: 60%";
+      "width: 38%";
       "background-color: #ddd";
     ]
+  let help_container =
+    make_class "help_container" [
+      "position: relative"
+    ]
+  let help_contained =
+    make_class "help_contained" [
+      "width: 60%"
+    ]
+      
   let meta_enumeration_creation =
     make_class "meta_enumeration_creation" [
       "background-color: #dd0";
@@ -1154,7 +1166,9 @@ and make_form ~state  f =
     make_form ~state content
     >>= fun (the_div, the_fun) ->
     let help_div = div ~a:[ Style.help_block ] [Markup.(to_html help)] in
-    let d = div [ the_div; help_div ] in
+    let d =
+      div ~a:[ Style.help_container ]
+        [ div ~a:[Style.help_contained] [the_div]; help_div ] in
     let elt = Html5_to_dom.of_div d in
     let helt = Html5_to_dom.of_div help_div in
     helt##style##display <- Js.string "none";
