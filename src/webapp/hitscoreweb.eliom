@@ -584,7 +584,13 @@ module Default_service = struct
                         meta_enumeration
                           ~help:Markup.(list [par [text "some help"]; par [italic "more help"]])
                           ~overall_question:Markup.([text "Please choose or create a person"])
-                          ~creation_case: ("Create …", make_sub ())
+                          ~creation_cases:[
+                            ("Create person …", make_sub ());
+                            ("Create ageless person …",
+                             section Markup.([text "Create an ageless person"]) [
+                               string  ~text_question:"person's name" ~value:"LA Woman" ();
+                             ]);
+                          ]
                           ~choice:"the first"
                           [("the first", make_sub ~name:"The First" ~age:42 ());
                            ("anotherone", make_sub ~name:"Another One" ~age:45 ());
