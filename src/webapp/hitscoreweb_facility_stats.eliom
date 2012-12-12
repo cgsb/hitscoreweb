@@ -155,6 +155,24 @@ let caml_service =
           ~path:["stats_edition_caml_service"]
           ~get_params:Eliom_parameter.(caml "param" Json.t<up_message>))
 
+let parse_date_string newdate =
+  let date_time y m d =
+    let y = Int.of_string y in
+    let m = Int.of_string m |! Core.Month.of_int_exn in
+    let d = Int.of_string d in
+    Time.of_local_date_ofday
+      (Date.create_exn ~y ~m ~d) (Core.Ofday.create  ~hr:10 ()) in 
+  begin match String.split ~on:'-' newdate with
+  | [yr; m; d] ->
+    begin try 
+        return (date_time yr m d)
+      with e ->
+        error (`wrong_date newdate)
+    end
+  | _ ->
+    error (`wrong_date newdate)
+  end
+  
 let reply ~configuration = function
   | Change_date (id_field, newdate) ->
     Authentication.authorizes (`edit `facility_statistics)
@@ -351,7 +369,7 @@ let changeable_date name value =
   in
   (str, span)
     
-let hiseq_stats layout =
+let hiseq_stats ~configuration layout =
   let open Template in
   let open Html5 in
   layout#hiseq_statistics#all
@@ -361,9 +379,81 @@ let hiseq_stats layout =
   >>| List.sort ~cmp:(fun (_, a) (_, b) -> compare a#date b#date)
   >>= fun hstats ->
   while_sequential hstats (fun (hs, hsr) ->
-    let stat name s =
-      let str, span = changeable_date (sprintf "%d:%s" hs#g_id name) s in
-      `sortable (str, [span]) in
+    let stat name initial stat_id set_fun =
+      (* let str, span = changeable_date (sprintf "%d:%s" hs#g_id name) s in *)
+      let current = ref initial in
+      let strdate s =
+        Option.value_map s ~default:"None" ~f:(fun s ->
+          Time.to_local_date s |! Date.to_string) in
+      let form =
+        Hitscoreweb_meta_form.(create ~state:() Form.(fun from_client ->
+          begin match from_client with
+          | None ->
+            return (make ~save:(strdate !current) empty)
+          | Some {form_content = Empty; _} ->
+            return (make ~save:"Send"
+                      (date ~text_question:"A date:" ~value:(strdate !current) ()))
+          | Some c ->
+            begin match c.form_content with
+            | Date { value = V_some s } ->
+              dbg "SOME !!! : %s" s;
+              begin match s with
+              | "" -> return None
+              | some -> parse_date_string some >>= fun d -> return (Some d)
+              end
+              >>= fun time ->
+              Authentication.authorizes (`edit `facility_statistics)
+              >>= begin function
+              | true ->
+                dbg "authorized !";
+                with_database configuration (fun ~dbh ->
+                  let layout = Classy.make dbh in
+                  layout#hiseq_statistics#get_unsafe stat_id >>= fun hs ->
+                  set_fun hs time)
+                >>= fun () ->
+                current := time;
+                return (make ~save:(strdate time) empty)
+              | false ->
+                error (`wrong_rights)
+              end
+            | Date _ ->
+              return (make ~save:"Try Again!" c.form_content)
+            | _ ->
+              error (`wrong_form_returned "/stats")
+            end
+          end
+            (*
+          >>< begin function
+          | Ok o -> return o
+          | Error e ->
+            begin match e with
+            | `auth_state_exn e ->
+              dbg "auth_state_exn %s" Exn.(to_string e);
+              return (make ~save:str empty)
+           | `io_exn e ->
+             dbg "io_exn %s" Exn.(to_string e);
+             return (make ~save:str empty)
+           | `wrong_date s ->
+             dbg "wrong_date %s" s;
+             return (make ~save:str empty)
+           | `wrong_form_returned s ->
+             dbg "wrong_form_returned %s" s;
+             return (make ~save:str empty)
+           | `wrong_rights ->
+             dbg "wrong_rights"; return (make ~save:str empty)
+           | `Layout (l, e) ->
+             dbg "layout %s :: %s"
+               (Layout.sexp_of_error_location l |! Sexp.to_string_hum)
+               (Layout.sexp_of_error_cause e |! Sexp.to_string_hum) ;
+             return (make ~save:str empty)
+           |  e ->
+             dbg "other error";
+             return (make ~save:str empty)
+            end
+          end
+            *)
+        )) in
+      `sortable (strdate !current, [form]) in
     let fc_row side stats p =
       p#get >>= fun fc ->
       let fc_link =
@@ -376,17 +466,17 @@ let hiseq_stats layout =
       |! return in
     map_option hsr#flowcell_a (fun p ->
       fc_row "A" [
-        stat "a_clustered" hs#a_clustered;
-        stat "a_started"   hs#a_started;
-        stat "a_finished"  hs#a_finished;
-        stat "a_returned"  hs#a_returned; ] p)
+        stat "a_clustered" hs#a_clustered hs#g_id (fun hs o -> hs#set_a_clustered o);
+        stat "a_started"   hs#a_started   hs#g_id (fun hs o -> hs#set_a_started   o);
+        stat "a_finished"  hs#a_finished  hs#g_id (fun hs o -> hs#set_a_finished  o);
+        stat "a_returned"  hs#a_returned  hs#g_id (fun hs o -> hs#set_a_returned  o); ] p)
     >>= fun a_row ->
     map_option hsr#flowcell_b (fun p ->
       fc_row "B" [
-        stat "b_clustered" hs#b_clustered;
-        stat "b_started"   hs#b_started;
-        stat "b_finished"  hs#b_finished;
-        stat "b_returned"  hs#b_returned; ] p)
+        stat "b_clustered" hs#b_clustered hs#g_id (fun hs o -> hs#set_b_clustered o);
+        stat "b_started"   hs#b_started   hs#g_id (fun hs o -> hs#set_b_started   o);
+        stat "b_finished"  hs#b_finished  hs#g_id (fun hs o -> hs#set_b_finished  o);
+        stat "b_returned"  hs#b_returned  hs#g_id (fun hs o -> hs#set_b_returned  o); ] p)
     >>= fun b_row ->
     return (List.filter_opt [a_row; b_row]))
   >>| List.concat 
@@ -408,7 +498,7 @@ let statistics_page configuration =
     gencore_users_stats layout
     >>= fun users_section ->
     flowcell_data layout >>= fun flowcells ->
-    hiseq_stats layout >>= fun hstats ->
+    hiseq_stats ~configuration layout >>= fun hstats ->
     return (content_list [users_section;
                           mini_run_plan flowcells;
                           libraries_per_month flowcells;

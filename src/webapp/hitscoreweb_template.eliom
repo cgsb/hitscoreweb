@@ -306,6 +306,14 @@ let html_of_error_sublevel poly_error =
   | `email_verification_in_progress _
   | `sendmail _
   | `wrong_parameter _ -> [pcdata "some error with email verification"]
+  | `json_parsing  e ->
+    [pcdata "JSon parsing: "; codef "%s" Exn.(to_string e)]
+  | `wrong_chunk _ ->
+    [pcdata "Client-server communication error: wrong_chunck"]
+  | `wrong_date s ->
+    [pcdataf "Cannot parse date: %s" s]
+  | `wrong_form_returned s ->
+    [pcdataf "Wrong form returned: %s" s]
 
 let html_of_error  poly_error = 
   let open Html5 in
