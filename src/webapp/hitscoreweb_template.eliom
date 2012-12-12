@@ -372,12 +372,6 @@ let default ?(title) content =
             ~href:(uri_of_string (fun () ->
               "http://biology.as.nyu.edu/docs/TEMPLATE/1817/favicon.ico"));
           link ~rel:[`Stylesheet]
-            ~href:(Html5.make_uri
-                     ~service:(Eliom_service.preapply
-                                 ~service:(Eliom_service.static_dir ())
-                                 ["hitscoreweb.css"])
-                     ()) ();
-          link ~rel:[`Stylesheet]
             ~href:(Html5.make_uri ~service:Services.(stylesheet ()) ()) ();
           js_script
             ~uri:(uri_of_string (fun () ->
