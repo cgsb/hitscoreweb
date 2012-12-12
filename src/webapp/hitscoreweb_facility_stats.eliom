@@ -206,6 +206,29 @@ let hiseq_stats ~configuration layout =
               error (`wrong_form_returned "/stats")
             end
           end
+          >>< begin function
+          | Ok o -> return o
+          | Error e ->
+            let error_string = 
+              begin match e with
+              | `auth_state_exn e ->
+                sprintf "auth_state_exn %s" Exn.(to_string e)
+              | `io_exn e ->
+                sprintf "io_exn %s" Exn.(to_string e)
+              | `wrong_date s -> sprintf "wrong_date %s" s
+              | `wrong_form_returned s -> sprintf "wrong_form_returned %s" s
+              | `wrong_rights ->
+                sprintf "wrong_rights"
+              | `Layout (l, e) ->
+                sprintf "layout %s :: %s"
+                  (Layout.sexp_of_error_location l |! Sexp.to_string_hum)
+                  (Layout.sexp_of_error_cause e |! Sexp.to_string_hum)
+              |  e -> sprintf "other error"
+              end in
+            logf "Error in /stats date-picking: %s" error_string >>= fun () ->
+            return (make ~save:"Try Again!"
+                      (date ~text_question:"A date:" ~value:(strdate !current) ()))
+          end
         )) in
       `sortable (strdate !current, [form]) in
     let fc_row side stats p =
