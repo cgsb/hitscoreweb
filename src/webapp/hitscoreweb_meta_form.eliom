@@ -657,7 +657,6 @@ let reply ~state form_content param =
 
 let start_server ~state ~form_content =
   let bus =
-    (* Eliom_bus.create ~scope:Eliom_common.site Json.t<message> in *)
     Eliom_bus.create ~scope:Eliom_common.client_process Json.t<message> in
   let stream = Eliom_bus.stream bus in
   let unpacketizer = unpacketizer () in
@@ -666,7 +665,7 @@ let start_server ~state ~form_content =
       wrap_io Lwt_stream.get stream
       >>= begin function
       | Some (Up up) ->
-        dbg "up: %d %d %d" up.index up.total_number (String.length up.content);
+        (* dbg "up: %d %d %d" up.index up.total_number (String.length up.content); *)
         begin match digest_chunk unpacketizer up with
         | `not_ready -> loop ()
         | `ready up_msg ->
@@ -1264,8 +1263,7 @@ let create ~state form_content =
 
         let rec make_with_save_button send_to_server =
           let hook = get_element_exn %hook_id in
-          hook##innerHTML <- Js.string "Contacting the server … ";
-          (* List.iter (fun x -> dbg "class: %s" x.name) Kind.list; *)
+          hook##innerHTML <- Js.string "<i>Contacting the server …</i>";
               
           Lwt.ignore_result begin
             call_server send_to_server
@@ -1277,7 +1275,6 @@ let create ~state form_content =
               let save_section =
                 div [ button; message ] in
               let state = ( (button, message, ref []), ref []) in
-              dbg "Make form?!";
               make_form ~state f.form_content
               >>= fun (the_div, whole_function) ->
               ignore (Html5_manip.addEventListener  button Dom_html.Event.click
@@ -1287,7 +1284,7 @@ let create ~state form_content =
                   true));
               let whole_form = div [the_div; save_section] in
               let elt = Html5_to_dom.of_div whole_form in
-              hook##innerHTML <- Js.string "Please fill the form: ";
+              hook##innerHTML <- Js.string "";
               Dom.appendChild hook elt;
               let l = after_draw_todo_list ~state in
               LL.iter !l ~f:(fun f -> f ());
