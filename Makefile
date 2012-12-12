@@ -14,7 +14,7 @@ TO_MOUNT=$(patsubst src/webapp/%,_build/hitscoreweb/%,${wildcard src/webapp/*})
 mount_hitscoreweb:: _build/hitscoreweb $(TO_MOUNT)
 
 build: mount_hitscoreweb
-	make -C _build/hitscoreweb byte js css
+	make -C _build/hitscoreweb byte js
 	ocaml setup.ml -build
 
 build_opt: mount_hitscoreweb

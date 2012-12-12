@@ -67,9 +67,9 @@ export ELIOM_TYPE_DIR   := .
 
 #####################################
 
-all: byte opt js css
+all: byte opt js
 js::  ${APP_NAME}.js
-css::  ${APP_NAME}.css
+#css::  ${APP_NAME}.css
 byte:: ${APP_NAME}.cma 
 opt:: ${APP_NAME}.cmxs 
 
@@ -106,8 +106,8 @@ ${ELIOM_SERVER_DIR}/%.cmx: %.eliom
 
 #OCLOSURE_CSS_DIR=$(shell ocamlfind query oclosure)/closure/goog/css
 #CLOSURE_CSS_FILES := $(patsubst %, ${OCLOSURE_CSS_DIR}/%.css,${CLOSURE_CSS_NAMES})
-${APP_NAME}.css:
-	echo "" > $@
+#${APP_NAME}.css:
+#	echo "" > $@
 #	cat ${CLOSURE_CSS_FILES} > $@
 
 ##### Client side compilation ####
