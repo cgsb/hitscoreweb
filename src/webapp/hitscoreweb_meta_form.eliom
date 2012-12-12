@@ -599,10 +599,15 @@ module Style = struct
     ]
   let submit_button =
     make_class "subbutton" [
-      "border: #00d solid 2px";
-      "padding: 3px"; "margin : 3px";
-      "background-color: #ddd";
+      "background-color:#ededed";
+      "border-radius:6px";
+      "border:1px solid #dcdcdc";
+      "display:inline-block";
+      "color:#444";
+      "padding: 2px";
     ]
+
+      
   let extensible_list_button =
     make_class "extensible_list_button" [
       "color: #050;";
@@ -1266,7 +1271,8 @@ let create ~state form_content =
             call_server send_to_server
             >>= begin function
             | Make_form f ->
-              let button = span ~a:[ Style.submit_button ] [ pcdata f.form_button ] in
+              let button =
+                core_a ~a:[ Style.submit_button ] [ pcdata f.form_button ] in
               let message = span [] in
               let save_section =
                 div [ button; message ] in
