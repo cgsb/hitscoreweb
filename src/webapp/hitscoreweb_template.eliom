@@ -373,15 +373,12 @@ let default ?(title) content =
               "http://biology.as.nyu.edu/docs/TEMPLATE/1817/favicon.ico"));
           link ~rel:[`Stylesheet]
             ~href:(Html5.make_uri ~service:Services.(stylesheet ()) ()) ();
-          js_script
-            ~uri:(uri_of_string (fun () ->
-              "http://www.frequency-decoder.com/demo/datePicker/js/lang/en.js")) ();
-          js_script
-            ~uri:(uri_of_string (fun () ->
-              "http://www.frequency-decoder.com/demo/datePicker/js/datepicker.min.js" )) ();
-          css_link
-            ~uri:(uri_of_string (fun () ->
-              "http://www.frequency-decoder.com/demo/datePicker/css/datepicker.css")) ();
+          link ~rel:[`Stylesheet]
+            ~href:(Html5.make_uri
+                     ~service:(Eliom_service.preapply
+                                 ~service:(Eliom_service.static_dir ())
+                                 ["hitscoreweb.css"])
+                     ()) ();
         ])
         (body [
           div ~a:[ a_class ["wrapper"] ] [

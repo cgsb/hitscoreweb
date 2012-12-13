@@ -33,11 +33,15 @@ CLIENT_FILES := $(COMMON_FILES)
 
 # CLOSURE_CSS_NAMES= common dialog datepicker
 
-JQUERY_MIN_JS=../../src/ext/highcharts/jquery.min.js
-HIGHCHARTS_JS=../../src/ext/highcharts/highcharts.js
+EXTERNAL_DIR=../../src/ext/
+JQUERY_MIN_JS=${EXTERNAL_DIR}/highcharts/jquery.min.js
+HIGHCHARTS_JS=${EXTERNAL_DIR}/highcharts/highcharts.js
 HIGHCHARTS_LIB=${JQUERY_MIN_JS} ${HIGHCHARTS_JS}
 
-## Required binaries
+DATE_PICKER_JS=${EXTERNAL_DIR}/date-picker/js/lang/en-US.js ${EXTERNAL_DIR}/date-picker/js/datepicker.min.js
+DATE_PICKER_CSS=${EXTERNAL_DIR}/date-picker/css/datepicker.min.css
+
+# binaries
 #CAMLP4= 'camlp4o str.cma \
 #   -I`ocamlfind query extlib` extLib.cma \
 #   -I`ocamlfind query pcre` pcre.cma \
@@ -67,9 +71,9 @@ export ELIOM_TYPE_DIR   := .
 
 #####################################
 
-all: byte opt js
+all: byte opt js css
 js::  ${APP_NAME}.js
-#css::  ${APP_NAME}.css
+css::  ${APP_NAME}.css
 byte:: ${APP_NAME}.cma 
 opt:: ${APP_NAME}.cmxs 
 
@@ -106,7 +110,8 @@ ${ELIOM_SERVER_DIR}/%.cmx: %.eliom
 
 #OCLOSURE_CSS_DIR=$(shell ocamlfind query oclosure)/closure/goog/css
 #CLOSURE_CSS_FILES := $(patsubst %, ${OCLOSURE_CSS_DIR}/%.css,${CLOSURE_CSS_NAMES})
-#${APP_NAME}.css:
+${APP_NAME}.css: ${DATE_PICKER_CSS}
+	cat ${DATE_PICKER_CSS} > $@
 #	echo "" > $@
 #	cat ${CLOSURE_CSS_FILES} > $@
 
@@ -126,8 +131,8 @@ ${APP_NAME}_tmp.js: ${CLIENT_OBJS}
 
 #${APP_NAME}.js: ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB}
 #	cat  ${APP_NAME}_tmp_oclosure.js ${HIGHCHARTS_LIB}  ${APP_NAME}_tmp.js > $@
-${APP_NAME}.js: ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB}
-	cat ${HIGHCHARTS_LIB}  ${APP_NAME}_tmp.js > $@
+${APP_NAME}.js: ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB} ${DATE_PICKER_JS}
+	cat ${HIGHCHARTS_LIB} ${DATE_PICKER_JS} ${APP_NAME}_tmp.js > $@
 
 ${ELIOM_CLIENT_DIR}/%.cmi: %.eliom
 	${JS_OF_ELIOM} -c ${CLIENT_INC} $<

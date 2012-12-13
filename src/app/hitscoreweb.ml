@@ -208,7 +208,7 @@ let testing ~session_timeout
       ~port ~runtime_root kind (output_string o));
   syscmdf "cp _build/hitscoreweb/hitscoreweb.js %s/static/" 
     runtime_root |! ok_exn;
-  (* syscmdf "cp _build/hitscoreweb/hitscoreweb.css %s/static/" runtime_root |! ok_exn; *)
+  syscmdf "cp _build/hitscoreweb/hitscoreweb.css %s/static/" runtime_root |! ok_exn;
   syscmd (sprintf "%s -c %s/hitscoreweb.conf" exec runtime_root) |> ok_exn
 
 
@@ -379,10 +379,10 @@ let rpm_build ~session_timeout ?authentication ?(release=1) ?ssl ?ssl_dir () =
   let javascript_target =
     sprintf "%s/hitscoreweb.js" static_dir in
 
-  (* let css_tmp = *)
-    (* sprintf "%s/_build/hitscoreweb/hitscoreweb.css"  (Unix.getcwd ()) in *)
-  (* let css_target = *)
-    (* sprintf "%s/hitscoreweb.css" static_dir in *)
+  let css_tmp =
+    sprintf "%s/_build/hitscoreweb/hitscoreweb.css"  (Unix.getcwd ()) in
+  let css_target =
+    sprintf "%s/hitscoreweb.css" static_dir in
   
   let static_www =
     match Option.bind !global_hitscore_configuration
@@ -458,7 +458,7 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" mimes_tmp conf_root;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" sysv_tmp sysv_target;
     fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" javascript_tmp static_dir;
-    (* fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" css_tmp static_dir; *)
+    fprintf o "cp %s $RPM_BUILD_ROOT/%s\n" css_tmp static_dir;
     output_string o "
 %clean
 rm -rf $RPM_BUILD_ROOT
@@ -472,7 +472,7 @@ rm -rf $RPM_BUILD_ROOT
     fprintf o "%s\n" conf_target;
     fprintf o "%s\n" mimes_target;
     fprintf o "%s\n" javascript_target;
-    (* fprintf o "%s\n" css_target; *)
+    fprintf o "%s\n" css_target;
     fprintf o "%s/*\n" static_dir;
     output_string o "
 
