@@ -550,7 +550,7 @@ module Default_service = struct
               let strictly_positive = Range.(make (exclusive 0.) infinity) in
               let percentage = Range.(make (inclusive 1.) (inclusive 100.)) in
               let open Form in
-              make ~text_buttons:["Submit …"; "Cancel"]
+              make ~text_buttons:["Submit …"; "Cancel"; "Trigger Error"]
                   (section Markup.([text "First Section"]) [
                     integer ~question:[Markup.text "Pick an integer"] ~value:42 ();
                     (let question =
@@ -619,17 +619,24 @@ module Default_service = struct
               return (!services_form)
             | Some ({form_content = (Section (title, modified_form));} as form)
                 when title = [Markup.text "First Section"] ->
-              if form.form_choice = Some 0 then (
+              begin match form.form_choice with
+              | Some 0 ->
                 services_form := form;
                 dbg "Modified form : %s"
                   Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
                 dbg "Files:[\n TODO \n]";
                 return (make ~text_buttons:["Would you like to restart?"] empty)
-              ) else (
+              | Some 1 ->
                 dbg "User clicked Cancel";
                 return (make ~text_buttons:["Send"]
                           (string ~text_question:"Why did you cancel???" ()))
-              )
+              | Some 2 ->
+                dbg "User clicked to trigger an error";
+                error [Markup.text "TRIGGERED ERROR !!"]
+              | _ ->
+                dbg "unexpected input";
+                error [Markup.text "UNEXPECTED ERROR !!"]
+              end
             | Some _ ->
               return (make ~text_buttons:["Nothing to save?"] empty)
             )
