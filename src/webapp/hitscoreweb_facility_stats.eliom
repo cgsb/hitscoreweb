@@ -209,6 +209,10 @@ let hiseq_stats ~configuration layout =
           end
           >>< begin function
           | Ok o -> return o
+          | Error (`wrong_date s) ->
+            return (make ~text_buttons:["Try Again!"]
+                      (date ~text_question:"Wrong Input: A DATE or NOTHING:"
+                         ~value:(strdate !current) ()))
           | Error e ->
             let error_string = 
               begin match e with
@@ -226,10 +230,9 @@ let hiseq_stats ~configuration layout =
                   (Layout.sexp_of_error_cause e |! Sexp.to_string_hum)
               |  e -> sprintf "other error"
               end in
-            logf "Error in /stats date-picking: %s" error_string >>= fun () ->
-            return (make ~text_buttons:["Try Again!"]
-                      (date ~text_question:"A date or nothing:"
-                         ~value:(strdate !current) ()))
+            Lwt.ignore_result
+              (logf "Error in /stats date-picking: %s" error_string);
+            error [Markup.text error_string]
           end
         )) in
       `sortable (strdate !current, [form]) in
