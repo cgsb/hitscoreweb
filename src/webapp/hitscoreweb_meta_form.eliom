@@ -280,6 +280,14 @@ module Markup = struct
     in
     LL.map ~f:simple t
 
+  let phrase_to_html_string t =
+    let rec simple =
+      function
+      | Text s -> s
+      | Italic t -> sprintf "<i>%s</i>" (simple t)
+    in
+    String.concat "" (LL.map simple t)
+
   let to_html t =
     let open Eliom_content.Html5.D in
     let rec not_simple = function
@@ -509,7 +517,7 @@ deriving (Json)
 type down_message =
 | Make_form of form
 | Form_saved
-| Server_error of string
+| Server_error of phrase
 deriving (Json)
 
 type chunk =
@@ -645,6 +653,13 @@ module Style = struct
     make_class "meta_enumeration_creation" [
       "background-color: #dd0";
     ]
+
+  let error_message =
+    make_class "error_message" [
+      "background-color: #d00";
+      "color: black";
+      "font-weight: bold";
+    ]
       
   let () = Local_style.use _my_style
 
@@ -654,15 +669,15 @@ end
 
 
 let reply ~state form_content param =
-  match param with
-  | Ready ->
-    form_content None
-    >>= fun f ->
-    return (Make_form f)
-  | Form_changed form ->
-    form_content (Some form)
-    >>= fun f ->
-    return (Make_form f)
+  let to_handle = 
+    match param with
+    | Ready -> None
+    | Form_changed form -> Some form in
+  form_content to_handle
+  >>< begin function
+  | Ok f -> return (Make_form f)
+  | Error m -> return (Server_error m)
+  end
 
 let start_server ~state ~form_content =
   let bus =
@@ -707,7 +722,7 @@ let start_server ~state ~form_content =
           | `wrong_chunk e ->
             sprintf "wrong_message: %s"
               Deriving_Json.(to_string Json.t<chunk> e)
-          | other -> "OTHER"
+          | `io_exn e -> sprintf "IO-Exn: %s" (Exn.to_string e)
       in
       logf "Meta_form: Server-side dies with error: %s" s |! Lwt.ignore_result;
       dbg "Meta_form: Server-side dies with error: %s" s;
@@ -1253,7 +1268,8 @@ let create ~state form_content =
                   with
                     e ->
                       dbg "Exn: %s\n\n%s\n" Printexc.(to_string e) msg;
-                      return (Server_error "WRONG MESSAGE FROM SERVER")
+                      return (Server_error
+                                [Markup.text "WRONG MESSAGE FROM SERVER"])
                 end
               | `not_ready ->
                 (* dbg "call_server: `not_ready"; *)
@@ -1261,7 +1277,8 @@ let create ~state form_content =
               | `wrong_chunk c ->
                 dbg "call_server: `wrong_chunk: %d %d %s"
                   c.index c.total_number c.content;
-                return (Server_error "WRONG MESSAGE CHUNK FROM SERVER")
+                return (Server_error
+                          [Markup.text "WRONG CHUNK FROM SERVER"])
               end
             | Some (Up up) ->
               dbg "call_server: up-msg";
@@ -1311,7 +1328,9 @@ let create ~state form_content =
               LL.iter !l ~f:(fun f -> f ());
               return ()
             | Server_error s ->
-              hook##innerHTML <- ksprintf Js.string "Server Error: %s" s;
+              hook##innerHTML <- ksprintf Js.string "Server Error: %s"
+                (Markup.phrase_to_html_string s);
+              hook##className <- Js.string "meta_formerror_message";
               return ()
             | Form_saved ->
               hook##innerHTML <- ksprintf Js.string "Form saved, thank you.";
