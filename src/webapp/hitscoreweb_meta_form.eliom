@@ -253,12 +253,16 @@ open Printf
 type kind_key = string deriving (Json)
 
 module Markup = struct
-  type phrase =
+  type phrase_item =
   | Text of string
-  | Italic of phrase
+  | Italic of phrase_item
       deriving (Json)
+
+  type phrase = phrase_item list
+      deriving (Json)
+
   type structure =
-  | Paragraph of phrase list
+  | Paragraph of phrase
   | List of structure list
       deriving (Json)
 
@@ -274,18 +278,18 @@ module Markup = struct
       | Text s -> span [pcdata s]
       | Italic t -> span [i [simple t]]
     in
-    simple t
+    LL.map ~f:simple t
 
   let to_html t =
     let open Eliom_content.Html5.D in
     let rec not_simple = function
-      | Paragraph p -> div (LL.map phrase_to_html p)
+      | Paragraph p -> div (phrase_to_html p)
       | List tl -> div [ul (LL.map tl ~f:(fun t -> li [(not_simple t)]))]
     in
     not_simple t
       
 end
-type phrase = Markup.phrase list deriving (Json)
+type phrase = Markup.phrase deriving (Json)
 type content = Markup.structure deriving (Json)
   
 type ('a, 'b) item_value = V_some of 'a | V_none | V_wrong of 'b * phrase
@@ -363,7 +367,8 @@ deriving (Json)
 
 type form = {
   form_content: form_content;
-  form_button: string;
+  form_buttons: phrase list;
+  form_choice: int option;
 }
 deriving (Json)
 
@@ -487,8 +492,12 @@ module Form = struct
 
   let empty = Empty
 
-  let make ?(save="[[Save]]") form_content =
-    { form_content; form_button = save }
+  let make ?buttons ?(text_buttons=["[[Save]]"]) form_content =
+    let form_buttons =
+      match buttons with
+      | Some b -> b
+      | None -> LL.map text_buttons ~f:(fun t -> [Markup.text t]) in
+    { form_content; form_buttons; form_choice = None }
 
 end
     
@@ -732,14 +741,18 @@ let update_validation_button btn_elt msg_elt list_ref =
     ()
 
 let add_pending_thing ~state key value =
-  let btn_elt, msg_elt, list_ref = validation_button ~state in
+  let btn_elts, msg_elt, list_ref = validation_button ~state in
   list_ref := (key, value) :: !list_ref; 
-  update_validation_button btn_elt msg_elt list_ref;
+  LL.iter btn_elts ~f:(fun btn_elt ->
+    update_validation_button btn_elt msg_elt list_ref;
+  );
   ()
 let remove_pending_thing ~state key =
-  let btn_elt, msg_elt, list_ref = validation_button ~state in
+  let btn_elts, msg_elt, list_ref = validation_button ~state in
   list_ref := LL.remove_assoc key !list_ref;
-  update_validation_button btn_elt msg_elt list_ref;
+  LL.iter btn_elts ~f:(fun btn_elt ->
+    update_validation_button btn_elt msg_elt list_ref;
+  );
   ()
     
 let add_todo_after_draw ~state f =
@@ -902,7 +915,7 @@ let form_item ~state (of_string, to_string) it =
   let value, msg =
     match it.value with
     | V_some s -> (to_string s, [])
-    | V_wrong (s, m) -> (s, LL.map m ~f:Markup.phrase_to_html)
+    | V_wrong (s, m) -> (s, Markup.phrase_to_html m)
     | V_none -> ("", []) in
   let potential_msg = span msg in
   let current_value = ref it in
@@ -948,7 +961,7 @@ let date_picker ~state it =
   let value, msg =
     match it.value with
     | V_some s -> (s, [])
-    | V_wrong (s, m) -> (s, LL.map m ~f:Markup.phrase_to_html)
+    | V_wrong (s, m) -> (s, Markup.phrase_to_html m)
     | V_none -> ("", []) in
   let unique_id = incr _dp_counter; !_dp_counter in
   let input_id =  sprintf "mf_dp_input_%d" unique_id in
@@ -1261,7 +1274,7 @@ let create ~state form_content =
 
 
 
-        let rec make_with_save_button send_to_server =
+        let rec make_with_save_buttons send_to_server =
           let hook = get_element_exn %hook_id in
           hook##innerHTML <- Js.string "<i>Contacting the server …</i>";
               
@@ -1269,19 +1282,27 @@ let create ~state form_content =
             call_server send_to_server
             >>= begin function
             | Make_form f ->
-              let button =
-                core_a ~a:[ Style.submit_button ] [ pcdata f.form_button ] in
+              let buttons =
+                LL.map f.form_buttons ~f:(fun markup ->
+                  core_a ~a:[ Style.submit_button ]
+                    (Markup.phrase_to_html markup)) in
               let message = span [] in
               let save_section =
-                div [ button; message ] in
-              let state = ( (button, message, ref []), ref []) in
+                div (message :: (LL.map buttons ~f:(fun b -> span [b]))) in
+              let state = ( (buttons, message, ref []), ref []) in
               make_form ~state f.form_content
               >>= fun (the_div, whole_function) ->
-              ignore (Html5_manip.addEventListener  button Dom_html.Event.click
-                (fun _ _ ->
-                  let new_form = { f with form_content = whole_function () } in
-                  make_with_save_button (Form_changed new_form);
-                  true));
+              let count = ref 0 in
+              LL.iter buttons ~f:(fun b ->
+                let button_number = !count in
+                ignore (Html5_manip.addEventListener b Dom_html.Event.click
+                          (fun _ _ ->
+                            let new_form =
+                              { f with form_content = whole_function ();
+                                form_choice = Some button_number} in
+                            make_with_save_buttons (Form_changed new_form);
+                            true));
+                incr count);
               let whole_form = div [the_div; save_section] in
               let elt = Html5_to_dom.of_div whole_form in
               hook##innerHTML <- Js.string "";
@@ -1298,7 +1319,7 @@ let create ~state form_content =
             end
           end
         in
-        make_with_save_button Ready;
+        make_with_save_buttons Ready;
       end
     with e -> 
       dbg "Exception in onload for %S: %s" %hook_id (Printexc.to_string e);

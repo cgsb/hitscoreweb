@@ -175,10 +175,11 @@ let hiseq_stats ~configuration layout =
         Hitscoreweb_meta_form.(create ~state:() Form.(fun from_client ->
           begin match from_client with
           | None ->
-            return (make ~save:(strdate !current) empty)
+            return (make ~text_buttons:[strdate !current] empty)
           | Some {form_content = Empty; _} ->
-            return (make ~save:"Send"
-                      (date ~text_question:"A date:" ~value:(strdate !current) ()))
+            return (make ~text_buttons:[ "Send" ]
+                      (date ~text_question:"A date or nothing:"
+                         ~value:(strdate !current) ()))
           | Some c ->
             begin match c.form_content with
             | Date { value = V_some s } ->
@@ -196,12 +197,12 @@ let hiseq_stats ~configuration layout =
                   set_fun hs time)
                 >>= fun () ->
                 current := time;
-                return (make ~save:(strdate time) empty)
+                return (make ~text_buttons:[strdate time] empty)
               | false ->
                 error (`wrong_rights)
               end
             | Date _ ->
-              return (make ~save:"Try Again!" c.form_content)
+              return (make ~text_buttons:["Try Again!"] c.form_content)
             | _ ->
               error (`wrong_form_returned "/stats")
             end
@@ -226,8 +227,9 @@ let hiseq_stats ~configuration layout =
               |  e -> sprintf "other error"
               end in
             logf "Error in /stats date-picking: %s" error_string >>= fun () ->
-            return (make ~save:"Try Again!"
-                      (date ~text_question:"A date:" ~value:(strdate !current) ()))
+            return (make ~text_buttons:["Try Again!"]
+                      (date ~text_question:"A date or nothing:"
+                         ~value:(strdate !current) ()))
           end
         )) in
       `sortable (strdate !current, [form]) in
