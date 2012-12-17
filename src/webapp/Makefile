@@ -12,18 +12,18 @@ CLIENT_PACKAGES := re.posix
 
 ## Source files for the server part
 COMMON_FILES := \
-  hitscoreweb_std.eliom	    \
   hitscoreweb_messages.eliom	    \
+  hitscoreweb_authentication.eliom \
+  hitscoreweb_template.eliom	   \
+  hitscoreweb_meta_form.eliom	    \
   hitscoreweb_data_access.eliom	    \
   hitscoreweb_state.eliom	    \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_services.eliom	    \
-  hitscoreweb_authentication.eliom \
-  hitscoreweb_template.eliom	   \
-  hitscoreweb_meta_form.eliom	    \
   hitscoreweb_persons.eliom	   \
   hitscoreweb_hiseq_runs.eliom	   \
   hitscoreweb_layout_service.eliom \
+  hitscoreweb_std.eliom	    \
   hitscoreweb_one_person_service.eliom \
   hitscoreweb_libraries.eliom \
   hitscoreweb_facility_stats.eliom \
@@ -49,13 +49,13 @@ DATE_PICKER_CSS=${EXTERNAL_DIR}/date-picker/css/datepicker.min.css
 #   -I`ocamlfind query calendar` calendarLib.cma \
 #   -I`ocamlfind query pgocaml.syntax` pgocaml.cma pa_pgsql.cmo'
 
-#ELIOMC      := eliomc -thread -pp $(CAMLP4) -I . 
-ELIOMC      := eliomc 
+#ELIOMC      := eliomc -thread -pp $(CAMLP4) -I .
+ELIOMC      := eliomc
 ELIOMOPT    := eliomopt
 
 #ELIOMDEPSERVER := eliomdep -server -pp $(CAMLP4) -I .
-ELIOMDEPSERVER := eliomdep -server 
-ELIOMDEPCLIENT := eliomdep -client
+ELIOMDEP := eliomdep
+# ELIOMDEPCLIENT := eliomdep -client
 
 JS_OF_ELIOM := js_of_eliom -jsopt -pretty -I _client/ -I .
 
@@ -74,8 +74,15 @@ export ELIOM_TYPE_DIR   := .
 all: byte opt js css
 js::  ${APP_NAME}.js
 css::  ${APP_NAME}.css
-byte:: ${APP_NAME}.cma 
-opt:: ${APP_NAME}.cmxs 
+byte:: ${APP_NAME}.cma
+opt:: ${APP_NAME}.cmxs
+
+ifeq ($(DEBUG),yes)
+  GENERATE_DEBUG ?= -g
+  RUN_DEBUG ?= "-v"
+  DEBUG_JS ?= -jsopt -pretty -jsopt -noinline -jsopt -debuginfo
+endif
+
 
 #### Server side compilation #######
 
@@ -85,28 +92,34 @@ SERVER_OBJS := $(patsubst %.eliom,${ELIOM_SERVER_DIR}/%.cmo, ${SERVER_FILES})
 #SERVER_OBJS := $(patsubst %.ml,${ELIOM_SERVER_DIR}/%.cmo, ${SERVER_OBJS})
 
 ${APP_NAME}.cma: ${SERVER_OBJS}
-	${ELIOMC} -a -o $@ $^
+	${ELIOMC} -a -o $@ $(GENERATE_DEBUG) \
+          $(call depsort,$(ELIOM_SERVER_DIR),cmo,-server,$(SERVER_INC),$(SERVER_FILES))
+
 ${APP_NAME}.cmxa: ${SERVER_OBJS:.cmo=.cmx}
-	${ELIOMOPT} -a -o $@ $^
+	${ELIOMOPT} -a -o $@ $(GENERATE_DEBUG) \
+          $(call depsort,$(ELIOM_SERVER_DIR),cmx,-server,$(SERVER_INC),$(SERVER_FILES))
 
 ${ELIOM_TYPE_DIR}/%.type_mli: %.eliom
 	${ELIOMC} -infer ${SERVER_INC} $<
 
 ${ELIOM_SERVER_DIR}/%.cmi: %.mli
-	${ELIOMC} -c ${SERVER_INC} $<
+	${ELIOMC} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
+
+${ELIOM_SERVER_DIR}/%.cmi: %.eliomi
+	${ELIOMC} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
 
 ${ELIOM_SERVER_DIR}/%.cmo: %.ml
-	${ELIOMC} -c ${SERVER_INC} -o $@ $<
+	${ELIOMC} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
 ${ELIOM_SERVER_DIR}/%.cmo: %.eliom
-	${ELIOMC} -c ${SERVER_INC} -o $@ $<
+	${ELIOMC} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
 
 ${ELIOM_SERVER_DIR}/%.cmx: %.ml
-	${ELIOMOPT} -c ${SERVER_INC} -o $@ $<
+	${ELIOMOPT} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
 ${ELIOM_SERVER_DIR}/%.cmx: %.eliom
-	${ELIOMOPT} -c ${SERVER_INC} -o $@ $<
+	${ELIOMOPT} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
 
 %.cmxs: %.cmxa
-	$(ELIOMOPT) -shared -linkall -o $@ $<
+	$(ELIOMOPT) -shared -linkall -o $@ $(GENERATE_DEBUG) $<
 
 #OCLOSURE_CSS_DIR=$(shell ocamlfind query oclosure)/closure/goog/css
 #CLOSURE_CSS_FILES := $(patsubst %, ${OCLOSURE_CSS_DIR}/%.css,${CLOSURE_CSS_NAMES})
@@ -124,13 +137,9 @@ CLIENT_OBJS := $(patsubst %.eliom,${ELIOM_CLIENT_DIR}/%.cmo, ${CLIENT_FILES})
 CLIENT_OBJS := $(patsubst %.ml,${ELIOM_CLIENT_DIR}/%.cmo, ${CLIENT_OBJS})
 
 ${APP_NAME}_tmp.js: ${CLIENT_OBJS}
-	${JS_OF_ELIOM} -o $@ ${CLIENT_LIBS} $^
+	${JS_OF_ELIOM} -o $@ $(GENERATE_DEBUG) $(CLIENT_INC) $(DEBUG_JS) \
+          $(call depsort,$(ELIOM_CLIENT_DIR),cmo,-client,$(CLIENT_INC),$(CLIENT_FILES))
 
-#${APP_NAME}_tmp_oclosure.js: ${APP_NAME}_tmp.js
-#	oclosure_req $<
-
-#${APP_NAME}.js: ${APP_NAME}_tmp_oclosure.js ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB}
-#	cat  ${APP_NAME}_tmp_oclosure.js ${HIGHCHARTS_LIB}  ${APP_NAME}_tmp.js > $@
 ${APP_NAME}.js: ${APP_NAME}_tmp.js ${HIGHCHARTS_LIB} ${DATE_PICKER_JS}
 	cat ${HIGHCHARTS_LIB} ${DATE_PICKER_JS} ${APP_NAME}_tmp.js > $@
 
@@ -155,16 +164,42 @@ clean:
 distclean: clean.local
 	-rm -f *~ \#* .\#*
 
+##----------------------------------------------------------------------
 ## Dependencies
 
-depend: .depend
-.depend:
-	$(ELIOMDEPSERVER) ${SERVER_FILES} > .depend
-	$(ELIOMDEPCLIENT) ${CLIENT_FILES} >> .depend
-	ocaml ../../bin/fake_eliomdep.ml $(patsubst %.eliom,%,${COMMON_FILES}) >> .depend
-## Warning: Dependencies towards *.eliom are not handled by eliomdep yet.
+DEPSDIR := _deps
+
+# Use `eliomdep -sort' only in OCaml>4
+ifeq ($(shell ocamlc -version|cut -c1),4)
+eliomdep=$(shell $(ELIOMDEP) $(1) -sort $(2) $(filter %.eliom %.ml,$(3))))
+else
+eliomdep=$(3)
+endif
+objs=$(patsubst %.ml,$(1)/%.$(2),$(patsubst %.eliom,$(1)/%.$(2),$(filter %.eliom %.ml,$(3))))
+depsort=$(call objs,$(1),$(2),$(call eliomdep,$(3),$(4),$(5)))
 
 include .depend
+
+.depend: $(patsubst %,$(DEPSDIR)/%.server,$(SERVER_FILES)) $(patsubst %,$(DEPSDIR)/%.client,$(CLIENT_FILES))
+	cat $^ > $@
+
+$(DEPSDIR)/%.server: % | $(DEPSDIR)
+	$(ELIOMDEP) -server $(SERVER_INC) $< > $@
+
+$(DEPSDIR)/%.client: % | $(DEPSDIR)
+	$(ELIOMDEP) -client $(CLIENT_INC) $< > $@
+
+$(DEPSDIR):
+	mkdir $@
+
+depend: .depend
+## .depend:
+## 	$(ELIOMDEPSERVER) ${SERVER_FILES} > .depend
+## 	$(ELIOMDEPCLIENT) ${CLIENT_FILES} >> .depend
+## 	ocaml ../../bin/fake_eliomdep.ml $(patsubst %.eliom,%,${COMMON_FILES}) >> .depend
+## ## Warning: Dependencies towards *.eliom are not handled by eliomdep yet.
+##
+## include .depend
 
 ## installation #########
 
