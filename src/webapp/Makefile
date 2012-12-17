@@ -98,12 +98,12 @@ ${ELIOM_SERVER_DIR}/%.cmi: %.mli
 ${ELIOM_SERVER_DIR}/%.cmo: %.ml
 	${ELIOMC} -c ${SERVER_INC} -o $@ $<
 ${ELIOM_SERVER_DIR}/%.cmo: %.eliom
-	${ELIOMC} -c -noinfer ${SERVER_INC} -o $@ $<
+	${ELIOMC} -c ${SERVER_INC} -o $@ $<
 
 ${ELIOM_SERVER_DIR}/%.cmx: %.ml
 	${ELIOMOPT} -c ${SERVER_INC} -o $@ $<
 ${ELIOM_SERVER_DIR}/%.cmx: %.eliom
-	${ELIOMOPT} -c -noinfer ${SERVER_INC} -o $@ $<
+	${ELIOMOPT} -c ${SERVER_INC} -o $@ $<
 
 %.cmxs: %.cmxa
 	$(ELIOMOPT) -shared -linkall -o $@ $<

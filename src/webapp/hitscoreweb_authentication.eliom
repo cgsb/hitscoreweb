@@ -104,7 +104,7 @@ type authentication_state = [
 
 let authentication_history =
   Eliom_reference.eref ~secure:true
-    ~scope:Eliom_common.session ([]: authentication_state list)
+    ~scope:Eliom_common.default_session_scope ([]: authentication_state list)
    
 let authentication_configuration = 
   ref (None: Configuration.local_configuration option)
@@ -361,7 +361,7 @@ let login_form () =
               (* The onclick seems to work also when the user types <enter>
                  but onsubmit does not seem to to anything (?)
                  a_onsubmit {{debugf %dbgsrv "onsubmit!"}}; *)
-               a_onclick {{
+               a_onclick {{fun _ ->
                  let form_span =
                    Dom_html.document##getElementById (Js.string %form_span_id) in
                  let message_span =

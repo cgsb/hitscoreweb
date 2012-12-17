@@ -21,11 +21,11 @@ build_opt: mount_hitscoreweb
 	make -C _build/hitscoreweb byte opt js css
 	ocaml setup.ml -build
 
-static: build_opt install
+static: build_opt
 	ocamlfind ocamlopt -linkall \
 	    -package ocsigenserver,ocsigenserver.ext.ocsipersist-sqlite  \
 	    -package eliom.server,ocsigenserver.ext.staticmod  \
-	    -package hitscore,core_extended \
+	    -package re.posix,hitscore,core_extended \
 	     _build/hitscoreweb/hitscoreweb.cmxa \
 	     server_main.cmx -o hitscoreserver -linkpkg -thread
 

@@ -7,7 +7,7 @@ module Authentication = Hitscoreweb_authentication
 module Msg = Hitscoreweb_messages
 
 let make_unsafe_eval_string_onload to_run =
-  Eliom_service.onload {{
+  ignore {unit{
     Eliom_lib.debug "Running %S" %to_run;
     Js.Unsafe.eval_string %to_run
   }}
@@ -328,7 +328,7 @@ let a_link ?(a=[]) ?fragment service content args =
   let on_click = {{
     (* Without the on_click, firefox/chrome do not display the "in progress"
        turning thing ... *)
-    ()
+    fun ev -> ()
   }} in
   Html5.a ~a:(a_onclick on_click :: aa) ?fragment
     ~service:(service ()) content args
@@ -502,7 +502,7 @@ let _global_table_ids = ref 0
 let td_on_click_to_sort do_something order cell_id idx id =
   let order_multiplier =
     match order with `normal -> 1 | `reverse -> -1 in
-  {{
+  {{fun ev ->
     if %do_something then (
       let tab =
         Js.coerce_opt 
@@ -919,7 +919,7 @@ let hide_show_div ?(a=[]) ?(display_property="block")
       a_id the_msg_id;
       a_class ["like_link"];
       a_style "padding: 2px";
-      a_onclick {{
+      a_onclick {{fun _ ->
         let the_div = get_element_exn %the_div_id in
         let the_msg = get_element_exn %the_msg_id in
         if the_div##style##display = Js.string "none"
@@ -970,7 +970,7 @@ let involution =
         
 let anti_spam_mailto ~id ~mailto =
   let (encoded:string) = (involution mailto : string) in
-  Eliom_service.onload {{
+  ignore {unit{
     let open Dom_html in
     begin match opt_tagged (document##getElementById (Js.string %id)) with
     | Some (A anchor) ->

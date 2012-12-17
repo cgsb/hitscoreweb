@@ -16,12 +16,12 @@ module State = Hitscoreweb_state
   
 let one_time_post_coservice_error =
   Eliom_reference.eref ~secure:true
-    ~scope:Eliom_common.client_process (None: string option)
+    ~scope:Eliom_common.default_process_scope (None: string option)
 
 
 let email_verification_tokens =
   Eliom_reference.eref ~secure:true
-    ~scope:Eliom_common.global ([]: (string * string * string) list)
+    ~scope:Eliom_common.global_scope ([]: (string * string * string) list)
 
 let email_verification_service =
   make_delayed (Eliom_service.service
@@ -255,7 +255,7 @@ let change_password_interface person_email =
     [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
         [pcdata "You may change your GenCore password"]] in
   let caml = caml_service () in
-  Eliom_service.onload {{
+  ignore {unit{
     let open Html5 in
     let open Lwt in
     try
@@ -362,7 +362,7 @@ let change_emails_interface person_email secondary_emails =
     [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
         [pcdata "You may change your emails"]] in
   let caml = caml_service () in
-  Eliom_service.onload {{
+  ignore {unit{
     let open Html5 in
     let open Lwt in
     try
@@ -641,7 +641,7 @@ let make_view_page ~home ~state person =
 
 let one_time_post_coservice ~redirection ~state person =
   Eliom_registration.Redirection.register_post_coservice
-    ~scope:Eliom_common.session
+    ~scope:Eliom_common.default_session_scope
     ~max_use:1
     ~fallback:Services.(home ())
     ~post_params:Eliom_parameter.(
@@ -747,7 +747,7 @@ let make_edit_page ~home ~state person =
           ]) ())
   in
   
-  Eliom_service.onload {{
+  ignore {unit{
     let open Dom_html in
     let hide_exn id =
       (get_element_exn id)##style##visibility <- Js.string "hidden"; in

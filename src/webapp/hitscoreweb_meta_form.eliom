@@ -681,7 +681,7 @@ let reply ~state form_content param =
 
 let start_server ~state ~form_content =
   let bus =
-    Eliom_bus.create ~scope:Eliom_common.client_process Json.t<message> in
+    Eliom_bus.create ~scope:Eliom_common.default_process_scope Json.t<message> in
   let stream = Eliom_bus.stream bus in
   let unpacketizer = unpacketizer () in
   Lwt.ignore_result begin
@@ -1231,7 +1231,7 @@ let create ~state form_content =
   let _ = Upload.init () in
   let bus = start_server ~state ~form_content  in
 
-  Eliom_service.onload {{
+  ignore {unit{
     let open Html5 in
     let open Lwt in
     try

@@ -127,7 +127,7 @@ let add_or_modify_sexp_interface
   let caml = caml_service () in
   let (type_name: string) = "" ^ type_name in
   (* the "" ^ _ is to please js_of_eliom's typing issues *)
-  Eliom_service.onload {{
+  ignore {unit{
     let open Html5 in
     let open Lwt in
     let open Printf in

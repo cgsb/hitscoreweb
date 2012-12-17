@@ -50,7 +50,7 @@ end
 
   
 let log_session_info =
-  Eliom_reference.eref ~scope:Eliom_common.session "NO-SESSION"
+  Eliom_reference.eref ~scope:Eliom_common.default_session_scope "NO-SESSION"
 
 let log_function  =
   ref (None : (string -> unit Lwt.t) option)
@@ -77,7 +77,7 @@ let log s =
   begin
     try (* Hackish way of knowing is session info is available. *)
       if Eliom_state.(
-        volatile_data_state_status ~scope:Eliom_common.session ()
+        volatile_data_state_status ~scope:Eliom_common.default_session_scope ()
         = Alive_state)
       then
         wrap_io Eliom_reference.get log_session_info
