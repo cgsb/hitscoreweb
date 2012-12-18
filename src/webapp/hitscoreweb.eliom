@@ -530,10 +530,8 @@ module Evaluations_service = struct
 end
 
 
-module Default_service = struct
+module Test_service = struct
 
-    
-    
   let make ~state =
     (fun () () ->
       let open Html5 in
@@ -641,6 +639,24 @@ module Default_service = struct
               return (make ~text_buttons:["Nothing to save?"] empty)
             )
         in
+        let welcome = [
+          h2 [pcdata "Welcome"];
+          p [test_form]
+        ] in
+        return (welcome)
+      in
+      Template.default ~title:"Testing service" content)
+
+end
+
+module Default_service = struct
+
+    
+    
+  let make ~state =
+    (fun () () ->
+      let open Html5 in
+      let content =
         Template.menu_ul ()
         >>= fun ul_menu ->
         let header = [h1 [pcdata "Gencore Home"];] in
@@ -657,7 +673,6 @@ module Default_service = struct
               [pcdata "Gencore's webpages"];
             pcdata ". ";
           ];
-          p [test_form]
         ] in
         return (header @ welcome @ menu)
       in
@@ -940,8 +955,8 @@ TODO: All exceptions in coservices should be handled in some other way
       in
 
       Services.(register default) (Default_service.make ~state);
-
       Services.(register home) (Default_service.make ~state);
+      Services.(register test) (Test_service.make ~state);
 
       Services.(register hiseq_runs)
         Hitscoreweb_hiseq_runs.(make hitscore_configuration);
@@ -949,7 +964,6 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register facility_statistics)
         Hitscoreweb_facility_stats.(make ~configuration:hitscore_configuration);
 
-(*
       Services.(register persons) Persons_service.(make ~state);
 
       Services.(register libraries)
@@ -958,7 +972,7 @@ TODO: All exceptions in coservices should be handled in some other way
             ~information_cache_timming:(
               if !debug_mode then (40., 60.) else (60., 1200.))
             ~configuration:hitscore_configuration);
-*)
+
       Services.(register flowcell)
         Flowcell_service.(make hitscore_configuration);
 

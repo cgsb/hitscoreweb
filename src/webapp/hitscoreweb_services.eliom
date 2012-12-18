@@ -29,6 +29,11 @@ let persons =
       ~get_params:Eliom_parameter.(opt (bool "transpose")
                                     ** set string "email"))
 
+let test =
+  make (
+    Eliom_service.service ~path:["test"] ~get_params:Eliom_parameter.(unit))
+
+    
 type libraries_show = [ `basic | `stock | `fastq | `details ]
 let libraries_show_of_string = function
   | "basic" -> `basic
