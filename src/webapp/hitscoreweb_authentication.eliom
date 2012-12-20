@@ -305,10 +305,10 @@ let start_impersonation_coservice =
           else return ())
       in
       let handler =
-        Eliom_registration.Action.register_coservice'
+        Eliom_registration.Action.register_post_coservice'
           ~https:true
-          ~get_params:Eliom_parameter.(string "user")
-          (fun (user) () ->
+          ~post_params:Eliom_parameter.(string "user")
+          (fun () (user) ->
             Lwt.bind
               (if Eliom_request_info.get_ssl ()
                then check_and_set (String.strip user)
@@ -387,7 +387,7 @@ let logout_form () =
 
 let start_impersonating_form () =
   let open Html5 in
-  Html5.get_form ~service:(start_impersonation_coservice ())
+  Html5.post_form ~service:(start_impersonation_coservice ())
     (fun (name) ->
       [
         pcdata "Impersonate someone else: ";
@@ -451,7 +451,10 @@ let display_state () =
   end
   >>= fun state ->
   let impersonation_form =
-    if can_impersonate then [pcdata "; "; start_impersonating_form ()] else [] in
+    if can_impersonate
+    then [span [pcdata "; "];
+          div ~a:[ a_style "display: inline"] [start_impersonating_form () ()]]
+    else [] in
   let maintenance_warning =
     if is_maintenance_mode () then
       [ span ~a:[ a_class ["big_warning"] ] [pcdataf "Read-Only (Maintenance)"] ]
