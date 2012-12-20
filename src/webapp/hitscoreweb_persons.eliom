@@ -50,15 +50,45 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
                          [code ~a:[a_id person#t#email; a_style style]
                              [pcdata person#t#email]]
                          (person#t#email, None);
-                      pcdata " — ";
-                      Html5.get_form ~a:[ a_style "display: inline;" ]
+                      Hitscoreweb_meta_form.(
+                        create ~state ~and_reload:true
+                          Form.(function
+                          | None ->
+                            return (make ~text_buttons:["Impersonate"] empty)
+                          | Some _ ->
+                            begin
+                              let open Authentication in
+                              user_logged () >>= fun a ->
+                              map_option a (fun adminauditor ->
+                                find_user person#t#email >>= fun person ->
+                                authorizes (`impersonate (`person person)) >>= fun can ->
+                                if can
+                                then
+                                  set_state (`user_impersonating (adminauditor, make_user person))
+                                else return ())
+                              >>= fun _ ->
+                              return (make ~text_buttons:["Done"] empty)
+                            end
+                            >>< begin function
+                            | Ok o -> return o
+                            | Error e ->
+                              let s = match e with
+                                | `auth_state_exn e -> sprintf "auth_state_exn %s" Exn.(to_string e)
+                                | `io_exn  e -> sprintf "io_exn %s" Exn.(to_string e)
+                                | `login_not_found  e -> sprintf "login_not_found %s" e in
+                              error [Markup.text s]
+                            end
+                          ));
+                      (*
+                      Html5.post_form ~a:[ a_style "display: inline;" ]
                         ~service:(
                           Eliom_service.preapply
                             ~service:(Authentication.start_impersonation_coservice ())
-                            person#t#email)
+                            () person#t#email)
                         (fun () ->
                           [Html5.string_input
                               ~input_type:`Submit ~value:"Impersonate" ();]) 
+                      *)
                      ]
           )
       in
