@@ -1098,7 +1098,7 @@ and make_form ~state  f =
 
 }}
 
-let create ~state form_content =
+let create ~state ?(and_reload=false) form_content =
   let hook_id = unique_id "meta_form_hook" in
   let the_link_like =
     let open Html5 in
@@ -1125,7 +1125,7 @@ let create ~state form_content =
           let hook = get_element_exn %hook_id in
           hook##innerHTML <- Js.string "<i>Contacting the server …</i>";
               
-          Lwt.ignore_result begin
+          (* Lwt.ignore_result begin *)
             call_server send_to_server
             >>= begin function
             | Make_form f ->
@@ -1147,10 +1147,19 @@ let create ~state form_content =
                             let new_form =
                               { f with form_content = whole_function ();
                                 form_choice = Some button_number} in
-                            make_with_save_buttons (Form_changed new_form);
+                            Lwt.ignore_result begin
+                              make_with_save_buttons (Form_changed new_form)
+                              >>= fun () ->
+                              if %and_reload then
+                                Eliom_client.change_page
+                                  ~service:Eliom_service.void_hidden_coservice'
+                                  () ()
+                              else
+                                return ()
+                            end;
                             true));
                 incr count);
-              let whole_form = div [the_div; save_section] in
+              let whole_form = div  [the_div; save_section] in
               let elt = Html5_to_dom.of_div whole_form in
               hook##innerHTML <- Js.string "";
               Dom.appendChild hook elt;
@@ -1166,9 +1175,11 @@ let create ~state form_content =
               hook##innerHTML <- ksprintf Js.string "Form saved, thank you.";
               return ()
             end
-          end
+        (* end *)
         in
-        make_with_save_buttons Ready;
+        Lwt.ignore_result begin
+          make_with_save_buttons Ready
+        end
       end
     with e -> 
       dbg "Exception in onload for %S: %s" %hook_id (Printexc.to_string e);
