@@ -999,7 +999,28 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register_file file)
         File_service.(make ~configuration:hitscore_configuration);
 
-      logf "All services are registered" |! Lwt.ignore_result
+      logf "All services are registered" |! Lwt.ignore_result;
 
+      Lwt.ignore_result begin
+        let open Lwt in
+        let rec loop () =
+          Lwt_unix.sleep 200.
+          >>= fun () ->
+          let url =
+            sprintf "https://localhost:%d/test"
+              Ocsigen_config.(get_default_sslport ()) in
+          dbg "Doing a request on %s!" url;
+          Ocsigen_http_client.get_url url >>= fun frame ->
+          begin match frame.Ocsigen_http_frame.frame_content with
+          | Some stream ->
+            Ocsigen_stream.finalize stream `Success
+          | None -> return ()
+          end
+          >>= fun () ->
+          loop ()
+        in
+        loop ()
+          
+      end
     )
 
