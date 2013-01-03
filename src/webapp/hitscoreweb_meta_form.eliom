@@ -733,9 +733,7 @@ let make_upload ~state ~question ~store ~multiple =
   then input##setAttribute(Js.string "multiple", Js.string "multiple");
     (* let the_input_display = input##style##display in *)
   input##onchange <- Dom_html.handler (fun ev ->
-    let the_question_html = the_elt##innerHTML in
     the_msg_elt##innerHTML <- Js.string "<b>Uploading …</b>";
-      (* input##style##display <- Js.string "none"; *)
     input##disabled <- Js._true;
     input##readOnly <- Js._true;
     begin match Js.Optdef.to_option input##files with
@@ -772,22 +770,31 @@ let make_upload ~state ~question ~store ~multiple =
           (* http://ocsigen.org/js_of_ocaml/dev/api/XmlHttpRequest *)
           perform_raw_url ~form_arg:form_contents (Url.string_of_url url)
           >>= fun http_frame ->
-          dbg "http_frame: %s %d\ncontent: %S" http_frame.url
+          dbg "http_frame: %s → %d\ncontent: %S" http_frame.url
             http_frame.code http_frame.content;
           results.(i) <- true;
-          Upload.(set_state current_store file_id
-                    (Uploaded http_frame.content));
+          begin match http_frame.code with
+          | 200 ->
+            Upload.(set_state current_store file_id
+                      (Uploaded http_frame.content));
+          | 413 ->
+            Upload.(set_state current_store file_id
+                      (Upload_error
+                         (sprintf "File too big: %d Bytes" file##size)))
+          | error ->
+            Upload.(set_state current_store file_id
+                      (Upload_error (sprintf "HTTP Error: %d" error)))
+          end;
           update_already_there ();
           if Array.fold_left (fun b a -> b && a) true results
           then (
-            (* the_elt##innerHTML <- the_question_html; *)
-            the_msg_elt##innerHTML <- Js.string "<i>Uploaded.</i>";
+              (* the_elt##innerHTML <- the_question_html; *)
+            the_msg_elt##innerHTML <- Js.string "";
             input##disabled <- Js._false;
-            (* input##readOnly <- Js._false; *)
-            dbg "ALL DOWNLOADED (%s)"
-              (Js.to_string the_question_html);
-          (* (Js.to_string the_input_display); *)
-          (* input##style##display <- the_input_display; *)
+              (* input##readOnly <- Js._false; *)
+            dbg "ALL DOWNLOADED";
+            (* (Js.to_string the_input_display); *)
+            (* input##style##display <- the_input_display; *)
           );
           remove_pending_thing ~state pending_key;
           return ())
