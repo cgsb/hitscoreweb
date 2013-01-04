@@ -36,7 +36,6 @@ module Upload_shared = struct
   deriving (Json)
 
   type store = {
-    key: int;
     files: file list;
     next_id: int;
   }
@@ -50,15 +49,13 @@ module Upload_shared = struct
   let add_file store ~original_name ~state =
     let id = !store.next_id in
     let next_id = !store.next_id + 1  in
-    store := { !store with
-      next_id ;
-      files = !store.files @ [{id; original_name; state;}]};
+    store := {next_id ;
+              files = !store.files @ [{id; original_name; state;}]};
     id
 
   let remove_file store file_id =
-    store :=
-      {!store with
-        files = LL.filter !store.files ~f:(fun f -> f.id <> file_id) }
+    store := {!store with
+      files = LL.filter !store.files ~f:(fun f -> f.id <> file_id) }
 
   let set_state store file_id state =
     store :=
@@ -78,12 +75,10 @@ module Upload = struct
   include Upload_shared
   open Hitscoreweb_std
 
-  let _id = ref 0
   let fresh_store files =
-    incr _id;
     let next_id =
       LL.fold_left files ~init:0 ~f:(fun b a -> max b a.id) in
-    {key = !_id; files; next_id}
+    {files; next_id}
 
   let uploads_dir ~state =
     let configuration = Hitscoreweb_state.configuration state in
@@ -111,7 +106,7 @@ module Upload = struct
       return ()
     end
 
-  let move_posted_file ~state id file =
+  let move_posted_file ~state file =
     Authentication.authorizes `upload_files
     >>= begin function
     | true ->
@@ -122,10 +117,9 @@ module Upload = struct
           Option.value_map  ~default:"" ~f:(sprintf ".%s")
             (Filename.split_extension
                (Eliom_request_info.get_original_filename file) |! snd) in
-        Filename.temp_file ~in_dir ~perm:0o600
-          (sprintf "hsw_mfupload_%d_" id) extension in
+        Filename.temp_file ~in_dir ~perm:0o600 "hsw_mfupload_" extension in
       (try Unix.unlink newname; with _ -> ());
-      dbg "file %d tmp filename: %s, orig %s, new: %s" id
+      dbg "new file: tmp filename: %s, orig %s, new: %s"
         (Eliom_request_info.get_tmp_filename file)
         (Eliom_request_info.get_original_filename file) newname;
       wrap_io (Lwt_unix.link (Eliom_request_info.get_tmp_filename file)) newname
@@ -193,10 +187,10 @@ module Upload = struct
 
         let post = 
           Eliom_registration.String.register_post_service ~fallback:(upload_fallback ())
-            ~post_params:Eliom_parameter.(int "id" ** file "file")
-            (fun () (id, file) ->
-              dbg "coservice ! Id: %d" id;
-              Lwt.bind (move_posted_file ~state id file)
+            ~post_params:Eliom_parameter.(file "file")
+            (fun () (file) ->
+              (* dbg "coservice ! Id: %d" id; *)
+              Lwt.bind (move_posted_file ~state file)
                 begin function
                 | Ok newname ->
                   Lwt.return (Filename.basename newname, "")
@@ -755,8 +749,6 @@ let make_upload ~state ~question ~store ~multiple =
         let form_contents =
             (* http://ocsigen.org/js_of_ocaml/dev/api/Form *)
           let zero = Form.empty_form_contents () in
-          Form.append zero ("id",
-                            `String (ksprintf Js.string "%d" store.Upload.key));
           Form.append zero ("file", `File file);
           zero
         in
@@ -767,7 +759,7 @@ let make_upload ~state ~question ~store ~multiple =
                   hu_path_string = String.concat "/" Upload.post_path;
                   hu_arguments = []} in
         dbg "NEW URL: %s" (Url.string_of_url url);
-        let pending_key = sprintf "upload:%d" store.Upload.key in
+        let pending_key = sprintf "upload:%s" (Js.to_string file##name) in
         add_pending_thing ~state pending_key
           (sprintf "Uploading %s" (Js.to_string file##name));
         Lwt.ignore_result XmlHttpRequest.(
