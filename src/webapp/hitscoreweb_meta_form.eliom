@@ -85,7 +85,11 @@ module Upload = struct
       LL.fold_left files ~init:0 ~f:(fun b a -> max b a.id) in
     {key = !_id; files; next_id}
 
-  let uploads_dir = "/tmp"
+  let uploads_dir ~state =
+    let configuration = Hitscoreweb_state.configuration state in
+    match Hitscore.Configuration.upload_path configuration with
+    | Some s -> s
+    | None -> "/tmp"
 
   let upload_fallback =
     make_delayed
@@ -93,7 +97,7 @@ module Upload = struct
 
   let _ownership: int String.Table.t = String.Table.create ()
   let test_non_ownership = -1
-  let set_ownership file =
+  let set_ownership ~state file =
     Authentication.user_logged ()
     >>= begin function
     | Some u ->
@@ -107,16 +111,18 @@ module Upload = struct
       return ()
     end
 
-  let move_posted_file id file =
+  let move_posted_file ~state id file =
     Authentication.authorizes `upload_files
     >>= begin function
     | true ->
+      let in_dir = (uploads_dir ~state) in
+      wrap_io (Lwt_unix.mkdir in_dir) 0o700 >>< fun _ -> return () >>= fun () ->
       let newname =
         let extension =
           Option.value_map  ~default:"" ~f:(sprintf ".%s")
             (Filename.split_extension
                (Eliom_request_info.get_original_filename file) |! snd) in
-        Filename.temp_file ~in_dir:uploads_dir ~perm:0o600
+        Filename.temp_file ~in_dir ~perm:0o600
           (sprintf "hsw_mfupload_%d_" id) extension in
       (try Unix.unlink newname; with _ -> ());
       dbg "file %d tmp filename: %s, orig %s, new: %s" id
@@ -124,7 +130,7 @@ module Upload = struct
         (Eliom_request_info.get_original_filename file) newname;
       wrap_io (Lwt_unix.link (Eliom_request_info.get_tmp_filename file)) newname
       >>= fun () ->
-      set_ownership (Filename.basename newname)
+      set_ownership ~state (Filename.basename newname)
       >>= fun () ->
       return newname
     | false ->
@@ -132,7 +138,7 @@ module Upload = struct
       error (`wrong_credentials)
     end
     
-  let check_access_rights path =
+  let check_access_rights ~state path =
     begin match String.Table.find _ownership path with
     | Some expected_id ->
       Authentication.user_logged ()
@@ -152,13 +158,13 @@ module Upload = struct
       error (`file_not_found path)
     end
     
-  let identify_and_verify path =
+  let identify_and_verify ~state path =
     dbg "identify_and_verify %s" path;
-    check_access_rights path >>= fun () ->
+    check_access_rights ~state path >>= fun () ->
     let content_type =
       let mime_assoc = Ocsigen_charset_mime.default_mime_assoc () in
       Ocsigen_charset_mime.find_mime path mime_assoc in
-    let total_path = Filename.concat uploads_dir path in
+    let total_path = Filename.concat (uploads_dir ~state) path in
     begin match Eliom_registration.File.check_file total_path with
     | true ->
       return (content_type, total_path)
@@ -166,38 +172,37 @@ module Upload = struct
       error (`path_not_right_volume path)
     end
       
-  let check_and_remove_file path =
-    check_access_rights path >>= fun () ->
-    let real_path = Filename.concat uploads_dir path in
+  let check_and_remove_file ~state path =
+    check_access_rights ~state path >>= fun () ->
+    let real_path = Filename.concat (uploads_dir ~state) path in
     wrap_io Lwt_unix.unlink real_path >>= fun () ->
     dbg "removed %s" real_path;
     return ()
     
-  let init =
+  let init ~state =
     let is_done = ref None in
     begin fun () ->
       match !is_done with
       | None ->
         dbg "registering meta_form_upload";
-        let open Lwt in
         let () =
           Eliom_registration.String.register
             ~service:(upload_fallback ()) (fun () () ->
               dbg "fall back service";
-              return ("FALLBACK", "")) in
+              Lwt.return ("FALLBACK", "")) in
 
         let post = 
           Eliom_registration.String.register_post_service ~fallback:(upload_fallback ())
             ~post_params:Eliom_parameter.(int "id" ** file "file")
             (fun () (id, file) ->
               dbg "coservice ! Id: %d" id;
-              move_posted_file id file
-              >>= begin function
-              | Ok newname ->
-                return (Filename.basename newname, "")
-              | Error e ->
-                fail (Failure "meta_form_upload ERROR")
-              end)
+              Lwt.bind (move_posted_file ~state id file)
+                begin function
+                | Ok newname ->
+                  Lwt.return (Filename.basename newname, "")
+                | Error e ->
+                  Lwt.fail (Failure "meta_form_upload ERROR")
+                end)
         in
         let get =
           let service =
@@ -211,16 +216,15 @@ module Upload = struct
           in
           Eliom_registration.Any.register ~service
             (fun path () ->
-              let open Lwt  in
-              identify_and_verify path
-              >>= begin function
-              | Ok (content_type, path) ->
-                Eliom_registration.File.send ~content_type path
-              | Error e ->
-                Template.default ~title:"File Error" (error_content e)
-                >>= fun html ->
-                Eliom_registration.Html5.send ~content_type:"text/html" html
-              end)
+              Lwt.bind (identify_and_verify ~state path)
+                begin function
+                | Ok (content_type, path) ->
+                  Eliom_registration.File.send ~content_type path
+                | Error e ->
+                  Lwt.bind (Template.default ~title:"File Error" (error_content e))
+                    (fun html ->
+                      Eliom_registration.Html5.send ~content_type:"text/html" html)
+                end)
         in
         let remove =
           let service =
@@ -229,12 +233,12 @@ module Upload = struct
               ~get_params:Eliom_parameter.(suffix (string "path")) () in
           Eliom_registration.String.register ~service
             (fun path () ->
-              let open Lwt  in
-              check_and_remove_file path
-              >>= begin function
-              | Ok () -> return ("OK", "")
-              | Error e -> dbg "error in remove service"; return ("ERROR", "")
-              end)
+              Lwt.bind (check_and_remove_file ~state path)
+                begin function
+                | Ok () -> Lwt.return ("OK", "")
+                | Error e ->
+                  dbg "error in remove service"; Lwt.return ("ERROR", "")
+                end)
         in
         is_done := Some (post, get, remove);
         (post, get, remove)
@@ -1110,7 +1114,7 @@ let create ~state ?(and_reload=false) form_content =
   let the_link_like =
     let open Html5 in
     span ~a:[a_id hook_id; ] [pcdata "Meta-form Hook … Loading …"] in
-  let _ = Upload.init () in
+  let _ = Upload.init ~state () in
   let call_server = create_reply_function ~state ~form_content in
 
   ignore {unit{

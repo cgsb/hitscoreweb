@@ -156,9 +156,10 @@ let parse_date_string newdate =
 
 
 
-let hiseq_stats ~configuration layout =
+let hiseq_stats ~state layout =
   let open Template in
   let open Html5 in
+  let configuration = Hitscoreweb_state.configuration state in
   layout#hiseq_statistics#all
   >>= while_sequential ~f:(fun hs ->
     hs#run#get >>= fun hsr ->
@@ -172,7 +173,7 @@ let hiseq_stats ~configuration layout =
         Option.value_map s ~default:"None" ~f:(fun s ->
           Time.to_local_date s |! Date.to_string) in
       let form =
-        Hitscoreweb_meta_form.(create ~state:() Form.(fun from_client ->
+        Hitscoreweb_meta_form.(create ~state Form.(fun from_client ->
           begin match from_client with
           | None ->
             return (make ~text_buttons:[strdate !current] empty)
@@ -272,21 +273,23 @@ let hiseq_stats ~configuration layout =
      `head [pcdata "Date Returned"]; ] in
   return (content_section (pcdata "HiSeq Statistics Editor") (content_table (head :: rows)))
 
-let statistics_page configuration =
+let statistics_page state =
   let open Template in
   let open Html5 in
+  let configuration = Hitscoreweb_state.configuration state in
   with_database configuration (fun ~dbh ->
     let layout = Classy.make dbh in
     gencore_users_stats layout
     >>= fun users_section ->
     flowcell_data layout >>= fun flowcells ->
-    hiseq_stats ~configuration layout >>= fun hstats ->
+    hiseq_stats ~state layout >>= fun hstats ->
     return (content_list [users_section;
                           mini_run_plan flowcells;
                           libraries_per_month flowcells;
                           hstats]))
 
-let make ~configuration =
+let make ~state =
+  let configuration = Hitscoreweb_state.configuration state in
   (fun () () ->
     let main_title = "Facility Statistics" in
     Template.default ~title:main_title
@@ -294,7 +297,7 @@ let make ~configuration =
        >>= function
        | true ->
          Template.make_content ~configuration ~main_title
-           (statistics_page configuration);
+           (statistics_page state);
        | false ->
          Template.make_authentication_error ~configuration ~main_title
            (return [Html5.pcdataf
