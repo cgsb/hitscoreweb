@@ -411,17 +411,18 @@ let rendered_fastx_table path =
       return [Template.pretty_box [msg; div]])
     ~error:(fun e ->
       let errf fmt =
-        ksprintf (fun s -> [br(); Template.error_span [pcdata s]]) fmt in
+        ksprintf (fun s ->
+          Template.error_box "No Fastx Stats" "%s" s >>= fun box ->
+          return [br(); box]) fmt in
       begin match e with
       | `empty_fastx_quality_stats s ->
-        return (errf "ERROR: file %s gave empty quality stats" s)
+        (errf "file %s gave empty quality stats" s)
       | `error_in_fastx_quality_stats_parsing (s, sll) ->
-        return (errf "ERROR: parsing file %s gave an error (%d)"
-                  s (List.length sll))
+        (errf "parsing file %s gave an error (%d)" s (List.length sll))
       | `read_file_timeout (f, t) ->
-        return (errf "I/O Error in with fastx (file %S): timeout %f\n%!" f t)
+        (errf "I/O Error in with fastx (file %S): timeout %f\n%!" f t)
       | `read_file_error (f, e) ->
-        return (errf "I/O Error in with fastx (file %S): %s\n%!" f (Exn.to_string e))
+        (errf "I/O Error in with fastx (file %S): %s\n%!" f (Exn.to_string e))
       end)
 
 let fastx_quality_plots path =
@@ -468,12 +469,9 @@ let fastx_quality_plots path =
     >>= fun acgtnplot ->
     return (acgtnplot @ qplot)
   in
-  let errf fmt =
-    ksprintf (fun s -> [br(); Template.error_span [pcdata s]]) fmt in
   double_bind make_chart 
-    ~ok:(fun chart ->
-      return chart)
-    ~error:(fun _ -> return (errf "ERROR while getting the fastx plot"))
+    ~ok:(fun chart -> return chart)
+    ~error:(fun _ -> (* error already `displayed' *) return [])
 
 let per_lirbary_details info =
   let open Html5 in
