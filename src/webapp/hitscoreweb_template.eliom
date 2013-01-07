@@ -156,6 +156,26 @@ let css_service_handler ~configuration () () =
 
   Lwt.return (Buffer.contents css)
 
+let error_span content =
+  let open Html5 in
+  span ~a:[ a_style "background-color: #ecc" ] [strong content]
+
+let error_box for_the_people fmt_for_the_priviledged =
+  let open Html5 in
+  ksprintf (fun for_the_priviledged ->
+    logf "ERROR-BOX:\nUser: %s\nDetails: %s" for_the_people for_the_priviledged
+    >>= fun () ->
+    Authentication.authorizes (`view `error_details)
+    >>= begin function
+    | true ->
+      let span =
+        error_span [pcdataf "ERROR: %s: %s" for_the_people for_the_priviledged]
+      in
+      return span
+    | false -> return (error_span [pcdata for_the_people])
+    end
+  ) fmt_for_the_priviledged
+
 let string_of_backend_error e =
   begin match e with
   | `exn e
@@ -950,9 +970,6 @@ let pretty_box content =
                 border-radius: 3px; " color_theme#title_violet]
       content]
 
-let error_span content =
-  let open Html5 in
-  span ~a:[ a_style "background-color: #ecc" ] [strong content]
 
 {client{
   let string_map ~f s =

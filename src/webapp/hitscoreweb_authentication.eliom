@@ -28,6 +28,7 @@ type capability = [
            | `phix_details
            | `libraries_detailed_fastq_information
            | `facility_statistics
+           | `error_details
            | `flowcell]
 | `upload_files
 | `edit of [
