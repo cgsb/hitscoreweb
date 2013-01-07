@@ -221,6 +221,9 @@ let html_of_error_sublevel poly_error =
      pcdata "."]
   | `wrong_rights ->
     [pcdata "You don't have enough access rights to do edit this."]
+  | `read_file_timeout (f, t) ->
+    [pcdata "Error while reading file: "; codef "%s" f;
+     pcdataf ": timeout %f" t]
   | `read_file_error (f, e) ->
     [pcdata "Error while reading file: "; codef "%s" f;
      pcdataf ": %s" (Exn.to_string e)]

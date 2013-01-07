@@ -418,6 +418,8 @@ let rendered_fastx_table path =
       | `error_in_fastx_quality_stats_parsing (s, sll) ->
         return (errf "ERROR: parsing file %s gave an error (%d)"
                   s (List.length sll))
+      | `read_file_timeout (f, t) ->
+        return (errf "I/O Error in with fastx (file %S): timeout %f\n%!" f t)
       | `read_file_error (f, e) ->
         return (errf "I/O Error in with fastx (file %S): %s\n%!" f (Exn.to_string e))
       end)
