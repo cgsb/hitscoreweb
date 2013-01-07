@@ -87,7 +87,9 @@ let log s =
       e -> return "NO-SESSION"
   end
   >>= fun session_info ->
-  wrap_io lwt_log (sprintf "[%s][%s] %s" Time.(now () |! to_string) session_info s)
+  let indented = String.split ~on:'\n' s |! String.concat ~sep:"\n     " in
+  wrap_io lwt_log
+    (sprintf "[%s][%s] %s" Time.(now () |! to_string) session_info indented)
 
 let logf fmt = ksprintf log fmt
 
