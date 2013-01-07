@@ -870,6 +870,8 @@ let () =
 
       Lwt_preemptive.init 1 500 (eprintf "LwtP:%s\n%!");
 
+      Sequme_flow_sys.Timeout.set_global_default 10.;
+      
       let _ =
         (* From the doc: http://ocsigen.org/eliom/api/server/Eliom_output
            >   Note that you should not catch every exception here
