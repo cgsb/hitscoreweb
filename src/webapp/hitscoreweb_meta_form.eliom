@@ -119,16 +119,16 @@ module Upload = struct
                (Eliom_request_info.get_original_filename file) |! snd) in
         Filename.temp_file ~in_dir ~perm:0o600 "hsw_mfupload_" extension in
       (try Unix.unlink newname; with _ -> ());
-      dbg "new file: tmp filename: %s, orig %s, new: %s"
+      logf "New upload:\ntmp filename: %s\noriginal: %s\nnew: %s"
         (Eliom_request_info.get_tmp_filename file)
-        (Eliom_request_info.get_original_filename file) newname;
+        (Eliom_request_info.get_original_filename file) newname >>= fun () ->
       wrap_io (Lwt_unix.link (Eliom_request_info.get_tmp_filename file)) newname
       >>= fun () ->
       set_ownership ~state (Filename.basename newname)
       >>= fun () ->
       return newname
     | false ->
-      dbg "cannot upload files !";
+      logf "`wrong_credentials in move_posted_file" >>= fun () ->
       error (`wrong_credentials)
     end
     
@@ -195,6 +195,13 @@ module Upload = struct
                 | Ok newname ->
                   Lwt.return (Filename.basename newname, "")
                 | Error e ->
+                  let s =
+                    match e with
+                    | `io_exn e -> sprintf "io_exn %s" Exn.(to_string e)
+                    | `auth_state_exn e -> sprintf "auth_state_exn %s" Exn.(to_string e)
+                    | `wrong_credentials -> "wrong_credentials"
+                  in
+                  Lwt.ignore_result (logf "Error in meta_form_upload:\n%s" s);
                   Lwt.fail (Failure "meta_form_upload ERROR")
                 end)
         in
@@ -215,6 +222,16 @@ module Upload = struct
                 | Ok (content_type, path) ->
                   Eliom_registration.File.send ~content_type path
                 | Error e ->
+                  let s =
+                    match e with
+                    | `io_exn e -> sprintf "io_exn %s" Exn.(to_string e)
+                    | `file_not_found f -> sprintf "file_not_found: %s" f
+                    | `wrong_credentials -> "wrong_credentials"
+                    | `path_not_right_volume s ->
+                      sprintf "path_not_right_volume: %s" s
+                  in
+                  Lwt.ignore_result
+                    (logf "Error in Meta_form's get service: %s" s);
                   Lwt.bind (Template.default ~title:"File Error" (error_content e))
                     (fun html ->
                       Eliom_registration.Html5.send ~content_type:"text/html" html)
@@ -231,7 +248,16 @@ module Upload = struct
                 begin function
                 | Ok () -> Lwt.return ("OK", "")
                 | Error e ->
-                  dbg "error in remove service"; Lwt.return ("ERROR", "")
+                  let s =
+                    match e with
+                    | `io_exn e -> sprintf "io_exn %s" Exn.(to_string e)
+                    | `file_not_found f -> sprintf "file_not_found: %s" f
+                    | `wrong_credentials -> "wrong_credentials"
+                  in
+                  Lwt.ignore_result
+                    (logf "Error in Meta_form's remove service: %s" s);
+                  dbg "error in remove service";
+                  Lwt.return ("ERROR", "")
                 end)
         in
         is_done := Some (post, get, remove);
