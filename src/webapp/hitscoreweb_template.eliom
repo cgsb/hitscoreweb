@@ -212,9 +212,95 @@ let string_of_layout_error = function
   | `wrong_version (v1, v2) ->
     sprintf "Wrong version: %s Vs %s" v1 v2
 
-let html_of_layout_error (where, what) =
+    
+    
+let string_of_error_sublevel poly_error = 
   let open Html5 in
-  [pcdataf "LAYOUT-ERROR (%s): %s"
+  String.concat ~sep:""
+  (match poly_error with
+  | `eliom_404 -> [sprintf "Error 404."]
+  | `eliom_wrong_parameter -> [sprintf "Error 404 (wrong parameter)."]
+  | `eliom_typing_error _ -> [sprintf "Error 404 (wrong parameter types)."]
+  | `io_exn e -> [sprintf "Generic I/O exception: %s" (Exn.to_string e)]
+  | `auth_state_exn e ->
+    [sprintf "Authentication-state exception: %s" (Exn.to_string e)]
+  | `pg_exn e -> [sprintf "PGOCaml exception: %s" (Exn.to_string e)]
+  | `person_not_found id ->
+    [sprintf "There is no person with that identifier: %s" id]
+  | `wrong_rights ->
+    [sprintf "You don't have enough access rights to do edit this."]
+  | `read_file_timeout (f, t) ->
+    [sprintf "Error while reading file: "; sprintf "%s" f;
+     sprintf ": timeout %f" t]
+  | `read_file_error (f, e) ->
+    [sprintf "Error while reading file: "; sprintf "%s" f;
+     sprintf ": %s" (Exn.to_string e)]
+  | `non_emptiness_violation ->
+    [sprintf "You're trying to violate non-emptiness constraints!"]
+  | `broker_not_initialized -> [sprintf "The query broker has not been initialized"]
+  | `hiseq_runs e ->
+    [sprintf "Service /hiseq_runs: %s"
+        (match e with
+        | `no_logged_user -> "No user logged"
+        | `cannot_retrieve_person_affairs person ->
+          "Cannot retrieve current person's stuff")]
+  | `person_not_unique id ->
+    [sprintf "There are too many persons with that identifier: %s." id]
+  | `no_flowcell_named name ->
+    [sprintf "There is no flowcell with that serial name: %s." name]
+  | `sample_sheet_kind_not_found i ->
+    [sprintf "Cannot find this sample-sheet: %d." i]
+  | `sample_sheet_should_a_lonely_file p ->
+    [sprintf "This sample-sheet should be lonely in its volume: %d."
+        p.Layout.Record_sample_sheet.id]
+  | `cannot_recognize_file_type s ->
+    [sprintf "The file-system is in a bad state, cannot recognize this \
+              file-type: %s." s]
+  | `inconsistency_inode_not_found inode ->
+    [sprintf "The file-system is in a bad state, cannot find file: %d." inode]
+  | `sample_sheet_kind_of_string s ->
+    [sprintf "Could not transform %S to a sample-sheet kind." s;]
+  | `nothing_to_edit (types, values) ->
+    [sprintf "There is nothing to edit.";]
+  | `not_implemented action ->
+    [sprintf "The action %S is not implemented … yet." action;]
+  | `unknown_layout_action s ->
+    [sprintf "Cannot understand this action: %S." s;]
+  | `did_not_get_one_row (name, not_one_row) ->
+    [sprintf "Getting a value did not return right: %s (%d rows)." 
+        name (List.length not_one_row);]
+  | `wrong_layout_typing name ->
+    [sprintf "The record %S is not well typed w.r.t the official Layout." name;]
+  | `raw_data_path_not_configured ->
+    [sprintf "The path to the raw data has not been configured."]
+  | `bcl_to_fastq_succeeded_without_result b2f ->
+    [sprintf "Layout problem: B2F succeeded without result"]
+  | `root_directory_not_configured ->
+    [sprintf "The root directory is not configured"]
+  | `wrong_unaligned_volume _ ->
+    [sprintf "B2F/Unaligned/ virtual volume does not have the expected structure"]
+  | `wrong_fastx_volume _ ->
+    [sprintf "FASTX/Unaligned/ virtual volume does not have the expected structure"]
+  | `parse_flowcell_demux_summary_error e ->
+    [sprintf "Error while parsing demux-summary: %s" (Exn.to_string e)]
+  | `person_edit_coservice_error exn ->
+    sprintf "Error while editing: " :: [sprintf "%s" (Exn.to_string exn)]
+  | `no_lane_index (fcid, pointer) ->
+    [sprintf "no_lane_index: %S (lane %d)" fcid pointer.Layout.Record_lane.id]
+  | `xml_parsing_error ((l, c), e) ->
+    [sprintf "Error while parsing the XML: Line %d, Character %d: %s"
+        l c (Xml_tree.error_message e)]
+  | `email_verification e ->
+    [sprintf "Error while verifying email: %s"
+        (match e with
+        | `cannot_find_old_email old ->
+          sprintf "old email not there: %S" old
+        | `cannot_find_user_key (id, key) ->
+          sprintf "cannot find find user %s with key %s" id key)]
+  | `more_than_one_flowcell_called serial_name ->
+    [sprintf "More than one flowcell is called: %s" serial_name]
+  | `Layout (where, what) ->
+  [sprintf "LAYOUT-ERROR (%s): %s"
       (match where with
       | `Dump -> "Dump"
       | `Identification -> "Identification"
@@ -223,127 +309,33 @@ let html_of_layout_error (where, what) =
       | `Record r -> sprintf "record %S" r) 
       (string_of_layout_error what)
   ]
-    
-    
-let html_of_error_sublevel poly_error = 
-  let open Html5 in
-  match poly_error with
-  | `eliom_404 -> [pcdataf "Error 404."]
-  | `eliom_wrong_parameter -> [pcdataf "Error 404 (wrong parameter)."]
-  | `eliom_typing_error _ -> [pcdataf "Error 404 (wrong parameter types)."]
-  | `io_exn e -> [pcdataf "Generic I/O exception: %s" (Exn.to_string e)]
-  | `auth_state_exn e ->
-    [pcdataf "Authentication-state exception: %s" (Exn.to_string e)]
-  | `pg_exn e -> [pcdataf "PGOCaml exception: %s" (Exn.to_string e)]
-  | `person_not_found id ->
-    [pcdataf "There is no person with that identifier: ";
-     code [pcdata id];
-     pcdata "."]
-  | `wrong_rights ->
-    [pcdata "You don't have enough access rights to do edit this."]
-  | `read_file_timeout (f, t) ->
-    [pcdata "Error while reading file: "; codef "%s" f;
-     pcdataf ": timeout %f" t]
-  | `read_file_error (f, e) ->
-    [pcdata "Error while reading file: "; codef "%s" f;
-     pcdataf ": %s" (Exn.to_string e)]
-  | `non_emptiness_violation ->
-    [pcdata "You're trying to violate non-emptiness constraints!"]
-  | `broker_not_initialized -> [pcdata "The query broker has not been initialized"]
-
-  | `hiseq_runs e ->
-    [pcdataf "Service /hiseq_runs: %s"
-        (match e with
-        | `no_logged_user -> "No user logged"
-        | `cannot_retrieve_person_affairs person ->
-          "Cannot retrieve current person's stuff")]
-  | `person_not_unique id ->
-    [pcdataf "There are too many persons with that identifier: ";
-     code [pcdata id];
-     pcdata "."]
-  | `no_flowcell_named name ->
-    [pcdata "There is no flowcell with that serial name: ";
-     code [pcdata name];
-     pcdata "."]
-  | `sample_sheet_kind_not_found i ->
-    [pcdataf "Cannot find this sample-sheet: %d." i]
-  | `sample_sheet_should_a_lonely_file p ->
-    [pcdataf "This sample-sheet should be lonely in its volume: %d."
-        p.Layout.Record_sample_sheet.id]
-  | `cannot_recognize_file_type s ->
-    [pcdataf "The file-system is in a bad state, cannot recognize this \
-              file-type: %s." s]
-  | `inconsistency_inode_not_found inode ->
-    [pcdataf "The file-system is in a bad state, cannot find file: %d." inode]
-  | `sample_sheet_kind_of_string s ->
-    [pcdataf "Could not transform %S to a sample-sheet kind." s;]
-  | `nothing_to_edit (types, values) ->
-    [pcdataf "There is nothing to edit.";]
-  | `not_implemented action ->
-    [pcdataf "The action %S is not implemented … yet." action;]
-  | `unknown_layout_action s ->
-    [pcdataf "Cannot understand this action: %S." s;]
-  | `did_not_get_one_row (name, not_one_row) ->
-    [pcdataf "Getting a value did not return right: %s (%d rows)." 
-        name (List.length not_one_row);]
-  | `wrong_layout_typing name ->
-    [pcdataf "The record %S is not well typed w.r.t the official Layout." name;]
-  | `raw_data_path_not_configured ->
-    [pcdataf "The path to the raw data has not been configured."]
-  | `bcl_to_fastq_succeeded_without_result b2f ->
-    [pcdataf "Layout problem: B2F succeeded without result"]
-  | `root_directory_not_configured ->
-    [pcdataf "The root directory is not configured"]
-  | `wrong_unaligned_volume _ ->
-    [pcdataf "B2F/Unaligned/ virtual volume does not have the expected structure"]
-  | `wrong_fastx_volume _ ->
-    [pcdataf "FASTX/Unaligned/ virtual volume does not have the expected structure"]
-  | `parse_flowcell_demux_summary_error e ->
-    [pcdataf "Error while parsing demux-summary: %s" (Exn.to_string e)]
-  | `person_edit_coservice_error exn ->
-    pcdata "Error while editing: " :: [pcdata (Exn.to_string exn)]
-  | `no_lane_index (fcid, pointer) ->
-    [pcdataf "no_lane_index: %S (lane %d)" fcid pointer.Layout.Record_lane.id]
-  | `xml_parsing_error ((l, c), e) ->
-    [pcdataf "Error while parsing the XML: Line %d, Character %d: %s"
-        l c (Xml_tree.error_message e)]
-  | `email_verification e ->
-    [pcdataf "Error while verifying email: %s"
-        (match e with
-        | `cannot_find_old_email old ->
-          sprintf "old email not there: %S" old
-        | `cannot_find_user_key (id, key) ->
-          sprintf "cannot find find user %s with key %s" id key)]
-  | `more_than_one_flowcell_called serial_name ->
-    [pcdataf "More than one flowcell is called: %s" serial_name]
-  | `Layout l -> html_of_layout_error l
   | `db_backend_error _
   | `result_not_unique _ 
   | `parse_evaluation_error _
   | `parse_volume_error _
   | `parse_value_error _ as e->
-    [pcdata (string_of_layout_error e)]
+    [sprintf "%s" (string_of_layout_error e)]
   | `broker_error _ -> []
   | `Layout_service _ -> []
   | `cannot_find_secondary_email
   | `email_verification_in_progress _
   | `sendmail _
-  | `wrong_parameter _ -> [pcdata "some error with email verification"]
+  | `wrong_parameter _ -> [sprintf "some error with email verification"]
   | `json_parsing  e ->
-    [pcdata "JSon parsing: "; codef "%s" Exn.(to_string e)]
+    [sprintf "JSon parsing: "; Exn.(to_string e)]
   | `wrong_chunk _ ->
-    [pcdata "Client-server communication error: wrong_chunck"]
+    [sprintf "Client-server communication error: wrong_chunck"]
   | `wrong_date s ->
-    [pcdataf "Cannot parse date: %s" s]
+    [sprintf "Cannot parse date: %s" s]
   | `wrong_form_returned s ->
-    [pcdataf "Wrong form returned: %s" s]
+    [sprintf "Wrong form returned: %s" s]
+  )
 
-let html_of_error  poly_error = 
-  let open Html5 in
+let string_of_error  poly_error = 
   match poly_error with
-  | `broker_error e -> html_of_error_sublevel e
-  | `Layout_service e -> html_of_error_sublevel e
-  | e -> html_of_error_sublevel e
+  | `broker_error e -> string_of_error_sublevel e
+  | `Layout_service e -> string_of_error_sublevel e
+  | e -> string_of_error_sublevel e
 
 let a_link ?(a=[]) ?fragment service content args =
   let aa =  a in
@@ -438,13 +430,12 @@ let default ?(title) content =
     return (page page_title main_menu auth_state good_content)
   in
   let open Html5 in
-  let error_page msg =
+  let error_page () =
     page "Error" None [] [
       h1 [ksprintf pcdata "Gencore: Error Page"];
       p [ksprintf pcdata "An error occurred on %s:"
             Time.(now () |> to_string)];
-      div msg;
-      p [pcdata "Please complain at ";
+      p [pcdata "If you think this is not normal, please complain at ";
          codef "bio.gencore@nyu.edu";
          pcdataf "."];]
     |! Lwt.return
@@ -452,7 +443,18 @@ let default ?(title) content =
   Lwt.bind html_result (function
   | Ok html -> 
     Lwt.return html
-  | Error e -> error_page (html_of_error e))
+  | Error e ->
+    let error_string = string_of_error e in
+    Lwt.(
+      logf "Generating error page because:\nError: %s\n\
+            URL: %s\nUser-agent: %s\nFrom: %s\nRequest-id: %Ld"
+        error_string
+        (Eliom_request_info.get_full_url ())
+        (Eliom_request_info.get_user_agent ())
+        (Eliom_request_info.get_remote_ip ())
+        (Eliom_request_info.get_request_id ())
+      >>= fun _ ->
+      error_page ()))
 
 type table_cell_html5 = Html5_types.flow5 Html5.elt list
 
