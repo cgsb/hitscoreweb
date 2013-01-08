@@ -64,6 +64,14 @@ module Upload_shared = struct
           ~f:(fun f -> if file_id = f.id then {f with state} else f) }
 
   let is_empty store = !store.files = []
+
+  let has_successes store =
+    List.exists (fun file ->
+      match file.state with
+      | Upload_error _ -> false
+      | Uploading -> false
+      | Removing -> false
+      | Uploaded _ -> true) (!store.files) 
       
 end
  }}
@@ -741,7 +749,7 @@ let make_upload ~state ~question ~store ~multiple =
         end
     in
     if not multiple
-    then if Upload.is_empty current_store
+    then if not (Upload.has_successes current_store)
       then (
         the_msg_elt##style##display <- Js.string "inline";
         input##style##display <- Js.string "inline";
