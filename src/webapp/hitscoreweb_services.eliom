@@ -17,6 +17,10 @@ let facility_statistics =
   make
     (Eliom_service.service ~path:["stats"] ~get_params:Eliom_parameter.unit)
 
+let log =
+  make
+    (Eliom_service.service ~path:["log"] ~get_params:Eliom_parameter.unit)
+
 let flowcell =
   make
     (Eliom_service.service ~path:["flowcell"]

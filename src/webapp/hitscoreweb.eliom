@@ -18,6 +18,30 @@ module One_person_service = Hitscoreweb_one_person_service
 
 module Persons_service = Hitscoreweb_persons
 
+module Log = struct
+
+  let make ~state =
+    (fun () () ->
+      let open Html5 in
+      let content =
+        Authentication.authorizes (`view `log)
+        >>= begin function
+        | true ->
+          Sequme_flow_sys.get_system_command_output
+            (sprintf "tail -n 180 %s" (log_file_path ()))
+          >>= fun (stdout, stderr) ->
+          return [pcdata "Log:"; br ();
+                  pre [pcdata stdout];
+                  pre [pcdata stderr];
+                 ]
+        | false ->
+          let configuration = state.Hitscoreweb_state.configuration in
+          Template.make_authentication_error ~configuration ~main_title:"Logs"
+            (return [pcdataf "You may not view the Logs."])
+        end
+      in
+      Template.default ~title:"Log" content)
+end
 
 module Flowcell_service = struct
 
@@ -994,6 +1018,8 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register self) One_person_service.(make_self ~state);
 
       Services.(register person) One_person_service.(make_person ~state);
+
+      Services.(register log) Log.(make ~state);
 
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);

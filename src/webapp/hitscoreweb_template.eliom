@@ -329,6 +329,13 @@ let string_of_error_sublevel poly_error =
     [sprintf "Cannot parse date: %s" s]
   | `wrong_form_returned s ->
     [sprintf "Wrong form returned: %s" s]
+  | `system_command_error (s, e) ->
+    [sprintf "System command error:\nCommand: %S\nError: %s" s
+        (match e with
+        | `exited i -> sprintf "Exited with %d" i
+        | `exn e -> sprintf "Exn %s" Exn.(to_string e)
+        | `signaled i -> sprintf "Got signal %d" i
+        | `stopped i -> sprintf "Got stopped (%d)" i)]
   )
 
 let string_of_error  poly_error = 
@@ -370,6 +377,8 @@ let menu_ul () =
      [a_link Services.evaluations [pcdata "Function evaluations"] ()]);
     (`view `layout,
      [a_link Services.layout [ pcdata "Layout Navigaditor" ] ([], [])]);
+    (`view `log,
+     [a_link Services.log [ pcdata "Log" ] ()]);
   ]
   >>= fun ul_opt ->
   match List.filter_opt ul_opt with

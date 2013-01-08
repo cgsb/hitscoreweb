@@ -55,14 +55,16 @@ let log_session_info =
 let log_function  =
   ref (None : (string -> unit Lwt.t) option)
 
+let log_file_path () =
+  Filename.(
+    concat
+      (dirname (Ocsigen_messages.error_log_path ())) "hitscoreweb.log")
+
 let log s =
   begin match !log_function with
   | None -> 
     let open Lwt in
-    let file_name =
-      Filename.(
-        concat
-          (dirname (Ocsigen_messages.error_log_path ())) "hitscoreweb.log") in
+    let file_name = log_file_path () in
     (* eprintf "logging to %s\n%!" file_name; *)
     Lwt_log.file ~mode:`Append
       ~template:"$(message)"

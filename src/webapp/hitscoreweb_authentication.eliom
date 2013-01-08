@@ -17,6 +17,7 @@ type capability = [
            | `all_flowcells
            | `all_hiseq_runs
            | `layout
+           | `log
            | `persons
            | `libraries
            | `libraries_of of Layout.Record_person.pointer list
