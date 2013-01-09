@@ -20,6 +20,14 @@ module Persons_service = Hitscoreweb_persons
 
 module Log = struct
 
+  let display_output_box content =
+    let open Html5 in
+    div ~a:[
+      a_style "border: 1px solid black; max-height: 40em; overflow: auto"
+    ] [
+      pre [pcdata content];
+    ]
+
   let make ~state =
     (fun () () ->
       let open Html5 in
@@ -28,12 +36,24 @@ module Log = struct
         >>= begin function
         | true ->
           Sequme_flow_sys.get_system_command_output
-            (sprintf "tail -n 180 %s" (log_file_path ()))
+            (sprintf "tail -n 2000 %s" (log_file_path ()))
           >>= fun (stdout, stderr) ->
-          return [pcdata "Log:"; br ();
-                  pre [pcdata stdout];
-                  pre [pcdata stderr];
-                 ]
+          with_database state.Hitscoreweb_state.configuration (fun ~dbh ->
+            let layout = Classy.make dbh in
+            layout#log#all >>= fun logs ->
+            while_sequential logs (fun log -> return (log#g_created, log#log)))
+          >>| List.sort ~cmp:(fun a b -> Time.compare (fst b) (fst a))
+          >>| (fun l -> List.take l 30)
+          >>| List.map ~f:(fun (t, l) -> sprintf "%s\n%s" (Time.to_string t) l)
+          >>| String.concat ~sep:"\n\n"
+          >>= fun layout_log ->
+
+          return [
+            h1 [pcdata "Hitscoreweb Log:"];
+            display_output_box (stdout ^ stderr);
+            h1 [pcdata "Layout  Log:"];
+            display_output_box (layout_log);
+          ]
         | false ->
           let configuration = state.Hitscoreweb_state.configuration in
           Template.make_authentication_error ~configuration ~main_title:"Logs"
