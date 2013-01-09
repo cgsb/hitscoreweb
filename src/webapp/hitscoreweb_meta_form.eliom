@@ -88,8 +88,7 @@ module Upload = struct
       LL.fold_left files ~init:0 ~f:(fun b a -> max b a.id) in
     {files; next_id}
 
-  let uploads_dir ~state =
-    let configuration = Hitscoreweb_state.configuration state in
+  let uploads_dir ~configuration =
     match Hitscore.Configuration.upload_path configuration with
     | Some s -> s
     | None -> "/tmp"
@@ -100,7 +99,7 @@ module Upload = struct
 
   let _ownership: int String.Table.t = String.Table.create ()
   let test_non_ownership = -1
-  let set_ownership ~state file =
+  let set_ownership ~configuration file =
     Authentication.user_logged ()
     >>= begin function
     | Some u ->
@@ -114,11 +113,11 @@ module Upload = struct
       return ()
     end
 
-  let move_posted_file ~state file =
+  let move_posted_file ~configuration file =
     Authentication.authorizes `upload_files
     >>= begin function
     | true ->
-      let in_dir = (uploads_dir ~state) in
+      let in_dir = (uploads_dir ~configuration) in
       wrap_io (Lwt_unix.mkdir in_dir) 0o700 >>< fun _ -> return () >>= fun () ->
       let newname =
         let extension =
@@ -132,7 +131,7 @@ module Upload = struct
         (Eliom_request_info.get_original_filename file) newname >>= fun () ->
       wrap_io (Lwt_unix.link (Eliom_request_info.get_tmp_filename file)) newname
       >>= fun () ->
-      set_ownership ~state (Filename.basename newname)
+      set_ownership ~configuration (Filename.basename newname)
       >>= fun () ->
       return newname
     | false ->
@@ -140,7 +139,7 @@ module Upload = struct
       error (`wrong_credentials)
     end
     
-  let check_access_rights ~state path =
+  let check_access_rights ~configuration path =
     begin match String.Table.find _ownership path with
     | Some expected_id ->
       Authentication.user_logged ()
@@ -160,13 +159,13 @@ module Upload = struct
       error (`file_not_found path)
     end
     
-  let identify_and_verify ~state path =
+  let identify_and_verify ~configuration path =
     dbg "identify_and_verify %s" path;
-    check_access_rights ~state path >>= fun () ->
+    check_access_rights ~configuration path >>= fun () ->
     let content_type =
       let mime_assoc = Ocsigen_charset_mime.default_mime_assoc () in
       Ocsigen_charset_mime.find_mime path mime_assoc in
-    let total_path = Filename.concat (uploads_dir ~state) path in
+    let total_path = Filename.concat (uploads_dir ~configuration) path in
     begin match Eliom_registration.File.check_file total_path with
     | true ->
       return (content_type, total_path)
@@ -174,16 +173,16 @@ module Upload = struct
       error (`path_not_right_volume path)
     end
       
-  let check_and_remove_file ~state path =
-    check_access_rights ~state path >>= fun () ->
-    let real_path = Filename.concat (uploads_dir ~state) path in
+  let check_and_remove_file ~configuration path =
+    check_access_rights ~configuration path >>= fun () ->
+    let real_path = Filename.concat (uploads_dir ~configuration) path in
     wrap_io Lwt_unix.unlink real_path >>= fun () ->
     dbg "removed %s" real_path;
     return ()
     
-  let init ~state =
+  let init =
     let is_done = ref None in
-    begin fun () ->
+    begin fun ~configuration () ->
       match !is_done with
       | None ->
         dbg "registering meta_form_upload";
@@ -198,7 +197,7 @@ module Upload = struct
             ~post_params:Eliom_parameter.(file "file")
             (fun () (file) ->
               (* dbg "coservice ! Id: %d" id; *)
-              Lwt.bind (move_posted_file ~state file)
+              Lwt.bind (move_posted_file ~configuration file)
                 begin function
                 | Ok newname ->
                   Lwt.return (Filename.basename newname, "")
@@ -206,7 +205,8 @@ module Upload = struct
                   let s =
                     match e with
                     | `io_exn e -> sprintf "io_exn %s" Exn.(to_string e)
-                    | `auth_state_exn e -> sprintf "auth_state_exn %s" Exn.(to_string e)
+                    | `auth_state_exn e ->
+                      sprintf "auth_state_exn %s" Exn.(to_string e)
                     | `wrong_credentials -> "wrong_credentials"
                   in
                   Lwt.ignore_result (logf "Error in meta_form_upload:\n%s" s);
@@ -225,7 +225,7 @@ module Upload = struct
           in
           Eliom_registration.Any.register ~service
             (fun path () ->
-              Lwt.bind (identify_and_verify ~state path)
+              Lwt.bind (identify_and_verify ~configuration path)
                 begin function
                 | Ok (content_type, path) ->
                   Eliom_registration.File.send ~content_type path
@@ -252,7 +252,7 @@ module Upload = struct
               ~get_params:Eliom_parameter.(suffix (string "path")) () in
           Eliom_registration.String.register ~service
             (fun path () ->
-              Lwt.bind (check_and_remove_file ~state path)
+              Lwt.bind (check_and_remove_file ~configuration path)
                 begin function
                 | Ok () -> Lwt.return ("OK", "")
                 | Error e ->
@@ -1140,7 +1140,7 @@ let create ~state ?(and_reload=false) form_content =
   let the_link_like =
     let open Html5 in
     span ~a:[a_id hook_id; ] [pcdata "Meta-form Hook … Loading …"] in
-  let _ = Upload.init ~state () in
+  let _ = Upload.init ~configuration:state.Hitscoreweb_state.configuration () in
   let call_server = create_reply_function ~state ~form_content in
 
   ignore {unit{
