@@ -329,6 +329,7 @@ let string_of_error_sublevel poly_error =
     [sprintf "Cannot parse date: %s" s]
   | `wrong_form_returned s ->
     [sprintf "Wrong form returned: %s" s]
+  | `wrong_credentials -> ["wrong_credentials"]
   | `system_command_error (s, e) ->
     [sprintf "System command error:\nCommand: %S\nError: %s" s
         (match e with

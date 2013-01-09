@@ -129,7 +129,8 @@ module Upload = struct
       logf "New upload:\ntmp filename: %s\noriginal: %s\nnew: %s"
         (Eliom_request_info.get_tmp_filename file)
         (Eliom_request_info.get_original_filename file) newname >>= fun () ->
-      wrap_io (Lwt_unix.link (Eliom_request_info.get_tmp_filename file)) newname
+      ksprintf system_command "cp %s %s"
+        (Eliom_request_info.get_tmp_filename file) newname
       >>= fun () ->
       set_ownership ~configuration (Filename.basename newname)
       >>= fun () ->
@@ -202,13 +203,7 @@ module Upload = struct
                 | Ok newname ->
                   Lwt.return (Filename.basename newname, "")
                 | Error e ->
-                  let s =
-                    match e with
-                    | `io_exn e -> sprintf "io_exn %s" Exn.(to_string e)
-                    | `auth_state_exn e ->
-                      sprintf "auth_state_exn %s" Exn.(to_string e)
-                    | `wrong_credentials -> "wrong_credentials"
-                  in
+                  let s = Template.string_of_error e in
                   Lwt.ignore_result (logf "Error in meta_form_upload:\n%s" s);
                   Lwt.fail (Failure "meta_form_upload ERROR")
                 end)
