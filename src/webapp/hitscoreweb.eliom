@@ -594,121 +594,133 @@ end
 
 module Test_service = struct
 
+  let test ~state =
+    let open Html5 in
+    let content =
+      let test_form =
+        let open Hitscoreweb_meta_form in
+        let upload_many_files_store = Upload.fresh_store [] in
+        let upload_one_file_store = Upload.fresh_store [] in
+        let services_form =
+          ref (
+            let identifier_friendly =
+              ("non-empty string of letters, numbers, underscores, and dashes",
+               "[a-zA-Z0-9_-]+") in
+            let strictly_positive = Range.(make (exclusive 0.) infinity) in
+            let percentage = Range.(make (inclusive 1.) (inclusive 100.)) in
+            let open Form in
+            make ~text_buttons:["Submit …"; "Cancel"; "Trigger Error"]
+              (section Markup.([text "First Section"]) [
+                integer ~question:[Markup.text "Pick an integer"] ~value:42 ();
+                (let question =
+                   Markup.([text "Pick a string "; italic "(regular expression)"]) in
+                 string ~regexp:identifier_friendly ~question ());
+                section Markup.([text "Subsection"]) [
+                  string
+                    ~help:Markup.(par [text "HHEEEELLLPPP"])
+                    ~text_question:"Pick a string" ~value:"sldk jskd" ();
+                  date ~text_question:"A date:" ~value:"21/12/2012" ();
+                  date ~text_question:"Another date:" ();
+                  upload ~store:upload_many_files_store
+                    Markup.([text "Upload many FILEs ! "; italic "pleaaase"]);
+                  upload ~store:upload_one_file_store  ~multiple:false
+                    Markup.([text "Upload one FILE ! "; italic "pleaaase"]);
+                  float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
+                  float  ~text_question:"percent float" ~range:percentage ();
+                  float  ~text_question:"float > 0." ~range:strictly_positive ();
+                  integer ~text_question:"int > 0" ~range:strictly_positive (); 
+                  string_enumeration ~question:Markup.([text "Many strings?"])
+                    ~value:"one" ["zero"; "one"; "two"; "three"];
+                  open_string_enumeration ~question:Markup.([text "Many strings?"])
+                    ~value:"one" ~other:"Make up another one …"
+                    ["zero"; "one"; "two"; "three"];
+                  begin
+                    let make_sub ?name ?age () =
+                      section Markup.([text "Create a new person"]) [
+                        string  ~text_question:"person's name" ?value:name ();
+                        integer ~text_question:"person's age" ?value:age ();
+                      ] in
+                    meta_enumeration
+                      ~help:Markup.(list [par [text "some help"]; par [italic "more help"]])
+                      ~overall_question:Markup.([text "Please choose or create a person"])
+                      ~creation_cases:[
+                        ("Create person …", make_sub ());
+                        ("Create ageless person …",
+                         section Markup.([text "Create an ageless person"]) [
+                           string  ~text_question:"person's name" ~value:"LA Woman" ();
+                         ]);
+                      ]
+                      ~choice:"the first"
+                      [("the first", make_sub ~name:"The First" ~age:42 ());
+                       ("anotherone", make_sub ~name:"Another One" ~age:45 ());
+                       ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
+                  end;
+                  section Markup.([text "Extensible List:"]) [begin
+                    let make_model sec =
+                      section Markup.([ text sec ]) [
+                        string ~text_question:"Pick a name" ();
+                        string_enumeration ~question:Markup.([text "Pick a ";
+                                                              italic "type:"])
+                          ["int"; "float"];
+                      ] in
+                    extensible_list ~question:Markup.([italic "Add a thing"])
+                      ~model:(make_model "New thing")
+                      (List.init 2 (ksprintf make_model "%d one"))
+                  end];
+                ];
+              ])
+          ) in 
+        create ~state
+          Form.(function
+          | None ->
+            return (make ~text_buttons:["Start the form"] empty)
+          | Some {form_content = Empty; _} ->
+            return (!services_form)
+          | Some ({form_content = (Section (title, modified_form));} as form)
+              when title = [Markup.text "First Section"] ->
+            begin match form.form_choice with
+            | Some 0 ->
+              services_form := form;
+              dbg "Modified form : %s"
+                Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
+              dbg "Files:[\n TODO \n]";
+              return (make ~text_buttons:["Would you like to restart?"] empty)
+            | Some 1 ->
+              dbg "User clicked Cancel";
+              return (make ~text_buttons:["Send"]
+                        (string ~text_question:"Why did you cancel???" ()))
+            | Some 2 ->
+              dbg "User clicked to trigger an error";
+              error [Markup.text "TRIGGERED ERROR !!"]
+            | _ ->
+              dbg "unexpected input";
+              error [Markup.text "UNEXPECTED ERROR !!"]
+            end
+          | Some _ ->
+            return (make ~text_buttons:["Nothing to save?"] empty)
+          )
+      in
+      let welcome = [
+        h2 [pcdata "Welcome"];
+        p [test_form]
+      ] in
+      return (welcome)
+    in
+    content
+
   let make ~state =
     (fun () () ->
-      let open Html5 in
-      let content =
-        let test_form =
-          let open Hitscoreweb_meta_form in
-          let upload_many_files_store = Upload.fresh_store [] in
-          let upload_one_file_store = Upload.fresh_store [] in
-          let services_form =
-            ref (
-              let identifier_friendly =
-                ("non-empty string of letters, numbers, underscores, and dashes",
-                 "[a-zA-Z0-9_-]+") in
-              let strictly_positive = Range.(make (exclusive 0.) infinity) in
-              let percentage = Range.(make (inclusive 1.) (inclusive 100.)) in
-              let open Form in
-              make ~text_buttons:["Submit …"; "Cancel"; "Trigger Error"]
-                  (section Markup.([text "First Section"]) [
-                    integer ~question:[Markup.text "Pick an integer"] ~value:42 ();
-                    (let question =
-                       Markup.([text "Pick a string "; italic "(regular expression)"]) in
-                     string ~regexp:identifier_friendly ~question ());
-                    section Markup.([text "Subsection"]) [
-                      string
-                        ~help:Markup.(par [text "HHEEEELLLPPP"])
-                        ~text_question:"Pick a string" ~value:"sldk jskd" ();
-                      date ~text_question:"A date:" ~value:"21/12/2012" ();
-                      date ~text_question:"Another date:" ();
-                      upload ~store:upload_many_files_store
-                        Markup.([text "Upload many FILEs ! "; italic "pleaaase"]);
-                      upload ~store:upload_one_file_store  ~multiple:false
-                        Markup.([text "Upload one FILE ! "; italic "pleaaase"]);
-                      float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
-                      float  ~text_question:"percent float" ~range:percentage ();
-                      float  ~text_question:"float > 0." ~range:strictly_positive ();
-                      integer ~text_question:"int > 0" ~range:strictly_positive (); 
-                      string_enumeration ~question:Markup.([text "Many strings?"])
-                        ~value:"one" ["zero"; "one"; "two"; "three"];
-                      open_string_enumeration ~question:Markup.([text "Many strings?"])
-                        ~value:"one" ~other:"Make up another one …"
-                        ["zero"; "one"; "two"; "three"];
-                      begin
-                        let make_sub ?name ?age () =
-                          section Markup.([text "Create a new person"]) [
-                            string  ~text_question:"person's name" ?value:name ();
-                            integer ~text_question:"person's age" ?value:age ();
-                          ] in
-                        meta_enumeration
-                          ~help:Markup.(list [par [text "some help"]; par [italic "more help"]])
-                          ~overall_question:Markup.([text "Please choose or create a person"])
-                          ~creation_cases:[
-                            ("Create person …", make_sub ());
-                            ("Create ageless person …",
-                             section Markup.([text "Create an ageless person"]) [
-                               string  ~text_question:"person's name" ~value:"LA Woman" ();
-                             ]);
-                          ]
-                          ~choice:"the first"
-                          [("the first", make_sub ~name:"The First" ~age:42 ());
-                           ("anotherone", make_sub ~name:"Another One" ~age:45 ());
-                           ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
-                      end;
-                      section Markup.([text "Extensible List:"]) [begin
-                        let make_model sec =
-                          section Markup.([ text sec ]) [
-                            string ~text_question:"Pick a name" ();
-                            string_enumeration ~question:Markup.([text "Pick a ";
-                                                                  italic "type:"])
-                              ["int"; "float"];
-                          ] in
-                        extensible_list ~question:Markup.([italic "Add a thing"])
-                          ~model:(make_model "New thing")
-                          (List.init 2 (ksprintf make_model "%d one"))
-                      end];
-                    ];
-                  ])
-            ) in 
-          create ~state
-            Form.(function
-            | None ->
-              return (make ~text_buttons:["Start the form"] empty)
-            | Some {form_content = Empty; _} ->
-              return (!services_form)
-            | Some ({form_content = (Section (title, modified_form));} as form)
-                when title = [Markup.text "First Section"] ->
-              begin match form.form_choice with
-              | Some 0 ->
-                services_form := form;
-                dbg "Modified form : %s"
-                  Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
-                dbg "Files:[\n TODO \n]";
-                return (make ~text_buttons:["Would you like to restart?"] empty)
-              | Some 1 ->
-                dbg "User clicked Cancel";
-                return (make ~text_buttons:["Send"]
-                          (string ~text_question:"Why did you cancel???" ()))
-              | Some 2 ->
-                dbg "User clicked to trigger an error";
-                error [Markup.text "TRIGGERED ERROR !!"]
-              | _ ->
-                dbg "unexpected input";
-                error [Markup.text "UNEXPECTED ERROR !!"]
-              end
-            | Some _ ->
-              return (make ~text_buttons:["Nothing to save?"] empty)
-            )
-        in
-        let welcome = [
-          h2 [pcdata "Welcome"];
-          p [test_form]
-        ] in
-        return (welcome)
-      in
-      Template.default ~title:"Testing service" content)
-
+      let main_title = "Test" in
+      Template.default ~title:main_title
+        (Authentication.authorizes (`view `test_service)
+         >>= function
+         | true ->
+           test ~state >>= fun c ->
+           return c
+         | false ->
+           Template.make_authentication_error ~main_title
+             ~configuration:state.Hitscoreweb_state.configuration
+             (return [Html5.pcdataf "You may not view he tests."])))
 end
 
 module Default_service = struct

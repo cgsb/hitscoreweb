@@ -27,6 +27,7 @@ type capability = [
            | `demux_info
            | `benchmarks
            | `phix_details
+           | `test_service
            | `libraries_detailed_fastq_information
            | `facility_statistics
            | `error_details
