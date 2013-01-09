@@ -1,4 +1,6 @@
+{shared{
 open Hitscoreweb_std
+}}
 
 module Msg = Hitscoreweb_messages
 
@@ -22,11 +24,17 @@ module Log = struct
 
   let display_output_box content =
     let open Html5 in
-    div ~a:[
-      a_style "border: 1px solid black; max-height: 40em; overflow: auto"
-    ] [
-      pre [pcdata content];
-    ]
+    let box =
+      div ~a:[
+        a_style "border: 1px solid black; max-height: 40em; overflow: auto"
+      ] [
+        pre [pcdata content];
+      ] in
+    ignore {unit{
+      let elt = Html5_to_dom.of_div %box in
+      elt##scrollTop <- elt##scrollHeight;
+    }};
+    box
 
   let make ~state =
     (fun () () ->
@@ -44,10 +52,10 @@ module Log = struct
             while_sequential logs (fun log -> return (log#g_created, log#log)))
           >>| List.sort ~cmp:(fun a b -> Time.compare (fst b) (fst a))
           >>| (fun l -> List.take l 30)
+          >>| List.rev
           >>| List.map ~f:(fun (t, l) -> sprintf "%s\n%s" (Time.to_string t) l)
           >>| String.concat ~sep:"\n\n"
           >>= fun layout_log ->
-
           return [
             h1 [pcdata "Hitscoreweb Log:"];
             display_output_box (stdout ^ stderr);
