@@ -104,6 +104,24 @@ type authentication_state = [
     | `person_not_unique of string ]
 ]
 
+let authentication_state_to_string =
+  let module LRP = Layout.Record_person in
+  function
+  | `nothing -> "NOTHING"
+  | `user_logged u -> sprintf "USER-LOGGED: %d" u.person.LRP.id
+  | `insufficient_credentials i -> sprintf "INSUFFICIENT-CREDENTIALS: %S" i
+  | `user_impersonating (a, u) ->
+    sprintf "USER %d IMPERSONATING %d" a.person.LRP.id u.person.LRP.id
+  | `error (id, e) ->
+    sprintf "ERROR: %S -- %s" id
+      (match e with
+      | `auth_state_exn e
+      | `io_exn e
+      | `pam_exn e ->  (Exn.to_string e)
+      | `broker_not_initialized -> "broker_not_initialized"
+      | `login_not_found s -> sprintf "login_not_found: %S" s
+      | `person_not_unique s -> sprintf "person_not_unique: %S" s)
+
 let authentication_history =
   Eliom_reference.eref ~secure:true
     ~scope:Eliom_common.default_session_scope ([]: authentication_state list)
@@ -123,6 +141,7 @@ let maintenance_mode_off () =
   global_maintenance_mode := false
     
 let init ?(disabled=false) ?(pam_service="") configuration  =
+
   authentication_configuration := (Some configuration);
   global_pam_service := pam_service;
   global_authentication_disabled := disabled
@@ -131,6 +150,21 @@ let get_configuration () =
   match !authentication_configuration with
   | Some e -> return e
   | None -> error (`auth_state_exn (Failure "Not initialized"))
+
+let get_all_sessions () =
+  let volatile_state =
+    Eliom_state.Ext.volatile_data_group_state "authentication_group" in
+      (* ~scope:Eliom_common.default_session_scope () in *)
+  wrap_io () ~on_exn:(fun e -> `io_exn e)
+    ~f:begin fun () ->
+      let open Lwt in
+      Eliom_state.Ext.fold_sub_states ~state:volatile_state 
+        (fun l state ->
+          Eliom_reference.Ext.get state authentication_history
+          >>= fun h ->
+          return (h :: l))
+        []
+    end
 
   
 let set_state s =
@@ -158,6 +192,7 @@ let set_state s =
       | `person_not_unique s -> sprintf "person_not_unique: %S" s)
   end
   >>= fun () ->
+  Eliom_state.set_volatile_data_session_group "authentication_group";
   let on_exn e = `auth_state_exn e in
   wrap_io ~on_exn ~f:Eliom_reference.get authentication_history
   >>= fun ah ->

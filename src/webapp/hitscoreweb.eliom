@@ -56,11 +56,21 @@ module Log = struct
           >>| List.map ~f:(fun (t, l) -> sprintf "%s\n%s" (Time.to_string t) l)
           >>| String.concat ~sep:"\n\n"
           >>= fun layout_log ->
+          Authentication.get_all_sessions ()
+          >>| List.mapi ~f:(fun i authhist ->
+            div [
+              h2 [pcdataf "Session %d" i];
+              ul (List.map authhist (fun s ->
+                li [codef "[%s]" (Authentication.authentication_state_to_string s)]))
+            ])
+          >>= fun divs ->
           return [
             h1 [pcdata "Hitscoreweb Log:"];
             display_output_box (stdout ^ stderr);
             h1 [pcdata "Layout  Log:"];
             display_output_box (layout_log);
+            h1 [pcdata "Sessions"];
+            div divs
           ]
         | false ->
           let configuration = state.Hitscoreweb_state.configuration in
