@@ -113,6 +113,12 @@ let find_person id =
   | None -> error (`person_not_found id)
   end
 
+let get_person_by_id id =
+  classy_persons ()
+  >>= fun classy_persons_info ->
+  return (List.find classy_persons_info#persons (fun p -> p#t#g_id = id))
+
+  
 let person_by_pointer p =
   let open Layout.Record_person in
   broker ()
