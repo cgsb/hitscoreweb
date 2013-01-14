@@ -28,6 +28,7 @@ type capability = [
            | `benchmarks
            | `phix_details
            | `test_service
+           | `all_uploads
            | `libraries_detailed_fastq_information
            | `facility_statistics
            | `error_details

@@ -116,6 +116,49 @@ module Log = struct
       in
       Template.default ~title:"Log" content)
 end
+module Uploads_service = struct
+
+
+  let make ~state =
+    (fun () () ->
+      let open Html5 in
+      let configuration = state.Hitscoreweb_state.configuration in
+      let content =
+        Authentication.authorizes (`view `all_uploads)
+        >>= begin function
+        | true ->
+          Authentication.spy_userf "Visit /uploads" >>= fun () ->
+          with_database configuration (fun ~dbh ->
+            Access.Person.get_all ~dbh >>= fun all_persons ->
+            while_sequential all_persons (fun p ->
+              let person_id, gn, fn =
+                let open Layout.Record_person in
+                p.g_id, p.g_value.given_name, p.g_value.family_name in
+              User_data.all_uploads ~dbh ~person_id
+              >>= begin function
+              | [] -> return []
+              | some_uploads ->
+                return [
+                  h2 [pcdataf "%d (%s, %s)" person_id fn gn];
+                  ul (List.map some_uploads ~f:(fun p ->
+                    li [codef "%s" p]));
+                ]
+              end)
+            >>| List.concat
+            >>= fun sections ->
+            return [
+              h1 [pcdata "People's Uploads"];
+              div sections;
+            ])
+        | false ->
+          Authentication.spy_userf "Authentication error in /uploads" >>= fun () ->
+          Template.make_authentication_error ~configuration ~main_title:"Uploads"
+            (return [pcdataf "You may not view the Uploads."])
+        end
+      in
+      Template.default ~title:"Uploads" content)
+
+end
 
 module Flowcell_service = struct
 
@@ -1106,6 +1149,8 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register person) One_person_service.(make_person ~state);
 
       Services.(register log) Log.(make ~state);
+
+      Services.(register uploads) Uploads_service.(make ~state);
 
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);

@@ -33,6 +33,10 @@ let persons =
       ~get_params:Eliom_parameter.(opt (bool "transpose")
                                     ** set string "email"))
 
+let uploads =
+  make
+    (Eliom_service.service ~path:["uploads"] ~get_params:Eliom_parameter.unit)
+
 let test =
   make (
     Eliom_service.service ~path:["test"] ~get_params:Eliom_parameter.(unit))
