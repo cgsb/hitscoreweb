@@ -273,16 +273,26 @@ let check = function
       if person.g_value.password_hash =
         Some (Communication.Authentication.hash_password person.g_id password)
       then
-        set_state (`user_logged (make_user person))
+        begin
+          spy_userf "Log-in (gencore password)" >>= fun () ->
+          set_state (`user_logged (make_user person))
+        end
       else
         begin
           map_option person.g_value.login (fun user -> pam_auth ~user ~password ())
           >>= fun pammed ->
           if pammed = Some ()
           then
-            set_state (`user_logged (make_user person))
+            begin
+              set_state (`user_logged (make_user person))
+              >>= fun () ->
+              spy_userf "Log-in (PAM)"
+            end
           else 
-            set_state (`insufficient_credentials identifier)
+            begin
+              spy_userf "Log-in failed" >>= fun () ->
+              set_state (`insufficient_credentials identifier)
+            end
         end
     in
     double_bind checking_m
@@ -290,6 +300,7 @@ let check = function
       ~error:(fun e -> set_state (`error (identifier, e)))
 
 let logout () =
+  spy_userf "Log-out" >>= fun () ->
   set_state `nothing
 
 let authorizes (cap:capability) =
@@ -546,3 +557,6 @@ let display_state () =
                pcdata "."]
              
           ))
+
+    
+  
