@@ -226,6 +226,35 @@ let make_user u =
   { roles = Array.to_list u.P.g_value.P.roles;
     person = P.unsafe_cast u.P.g_id}
 
+let global_user_spying_log: (int option * Time.t * string) list Int.Map.t ref =
+  ref Int.Map.empty
+(* map user_id to  potential-impersonation, log *)
+
+let add_spying_log: int -> int option -> string -> unit =
+  begin fun user imp log ->
+    let data = (imp, Time.now (), log) in
+    global_user_spying_log :=
+      Int.Map.add_multi !global_user_spying_log user data;
+  end
+
+let spy_user s =
+ get_state ()
+ >>= begin function
+ | `insufficient_credentials _
+ | `error _
+ | `nothing -> return (-1, None)
+ | `user_logged u ->
+   return (u.person.Layout.Record_person.id, None)
+ | `user_impersonating (u, i) ->
+   return (u.person.Layout.Record_person.id,
+           Some i.person.Layout.Record_person.id)
+ end
+ >>= fun (key, imp) ->
+  add_spying_log key imp s;
+  return ()
+
+let spy_userf fmt = ksprintf spy_user fmt
+
 let pam_auth ?service ~user ~password () =
   let service =
     Option.value ~default:!global_pam_service service in
