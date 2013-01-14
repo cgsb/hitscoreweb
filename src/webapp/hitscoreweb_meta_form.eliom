@@ -690,18 +690,7 @@ let add_todo_after_draw ~state f =
 
     
 let make_upload ~state ~question ~store ~multiple =
-  let hu_host, hu_port =
-    let open Url in
-    begin match Current.get () with
-    | Some (Https { hu_host; hu_port; hu_arguments })
-    | Some (Http { hu_host; hu_port; hu_arguments }) ->
-      dbg "Args:";
-      LL.iter  hu_arguments ~f:(fun (a,b) -> dbg " * %s %s" a  b);
-      (hu_host, hu_port)
-    | Some u ->
-      dbg "URL: %s" (Url.string_of_url u); failwith "no URL"
-    | None -> dbg "NO URL" ; failwith "no URL"
-    end in
+  let hu_host, hu_port = get_current_host_port () in
   let current_store = ref store in
   let already_there_files = div [] in
   let input =

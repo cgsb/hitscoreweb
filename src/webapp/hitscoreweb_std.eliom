@@ -225,5 +225,18 @@ let unique_id: string -> string =
 let reload () =
   Eliom_client.change_page ~service: Eliom_service.void_coservice' () ()
 
+
+let get_current_host_port () =
+  let open Url in
+  begin match Current.get () with
+  | Some (Https { hu_host; hu_port; hu_arguments })
+  | Some (Http { hu_host; hu_port; hu_arguments }) ->
+    (* dbg "Args:"; *)
+    (* List.iter  hu_arguments (fun (a,b) -> dbg " * %s %s" a  b); *)
+    (hu_host, hu_port)
+  | Some u ->
+    dbg "URL: %s" (Url.string_of_url u); failwith "no URL"
+  | None -> dbg "NO URL" ; failwith "no URL"
+  end
 }}
 
