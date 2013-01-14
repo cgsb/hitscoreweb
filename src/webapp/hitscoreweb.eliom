@@ -123,6 +123,8 @@ module Uploads_service = struct
     (fun () () ->
       let open Html5 in
       let configuration = state.Hitscoreweb_state.configuration in
+      let (post, get, remove) =
+        Hitscoreweb_meta_form.Upload.init ~configuration () in
       let content =
         Authentication.authorizes (`view `all_uploads)
         >>= begin function
@@ -141,7 +143,31 @@ module Uploads_service = struct
                 return [
                   h2 [pcdataf "%d (%s, %s)" person_id fn gn];
                   ul (List.map some_uploads ~f:(fun p ->
-                    li [codef "%s" p]));
+                    li [
+                      Template.a_link (fun () -> get) [codef "%s" p] p;
+                      pcdata " (";
+                      span ~a:[ a_class ["like_link"];
+                                a_onclick {{ fun _ ->
+                                  Lwt.ignore_result begin
+                                    let open Lwt in
+                                    let hu_host, hu_port = get_current_host_port () in
+                                    let url =
+                                      Printf.sprintf "https://%s:%d/%s/%s" hu_host hu_port
+                                        (String.concat "/"
+                                           Hitscoreweb_meta_form.Upload.remove_path)
+                                        (%p) in
+                                    XmlHttpRequest.perform_raw_url url
+                                    >>= fun result ->
+                                    dbg "XmlHttpRequest.perform_raw_url -> %S"
+                                      result.XmlHttpRequest.content;
+                                    Eliom_client.change_page
+                                      ~service:Eliom_service.void_hidden_coservice'
+                                      () ()
+                                  end
+                                               }}
+                              ] [pcdata "Remove"];
+                      pcdata ")";
+                    ]));
                 ]
               end)
             >>| List.concat
