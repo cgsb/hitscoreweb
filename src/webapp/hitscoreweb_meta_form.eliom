@@ -246,7 +246,8 @@ module Upload = struct
                   Lwt.bind (Template.default ~title:"File Error" (error_content e))
                     (fun html ->
                       Eliom_registration.Html5.send ~content_type:"text/html" html)
-                end)
+                end);
+          service
         in
         let remove =
           let service =
@@ -271,7 +272,8 @@ module Upload = struct
                     (logf "Error in Meta_form's remove service: %s" s);
                   dbg "error in remove service";
                   Lwt.return ("ERROR", "")
-                end)
+                end);
+          service
         in
         is_done := Some (post, get, remove);
         (post, get, remove)
