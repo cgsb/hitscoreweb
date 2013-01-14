@@ -274,8 +274,9 @@ let check = function
         Some (Communication.Authentication.hash_password person.g_id password)
       then
         begin
-          spy_userf "Log-in (gencore password)" >>= fun () ->
           set_state (`user_logged (make_user person))
+          >>= fun () ->
+          spy_userf "Log-in (gencore password)"
         end
       else
         begin
