@@ -383,8 +383,8 @@ let menu_ul () =
      [a_link Services.evaluations [pcdata "Function evaluations"] ()]);
     (`view `layout,
      [a_link Services.layout [ pcdata "Layout Navigaditor" ] ([], [])]);
-    (`view `log,
-     [a_link Services.log [ pcdata "Log" ] ()]);
+    (`view `log, [a_link Services.log [ pcdata "Log" ] ()]);
+    (`view `test_service, [a_link Services.test [ pcdata "Test" ] ()]);
   ]
   >>= fun ul_opt ->
   match List.filter_opt ul_opt with
