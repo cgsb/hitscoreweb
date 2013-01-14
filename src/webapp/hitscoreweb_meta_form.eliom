@@ -97,20 +97,17 @@ module Upload = struct
     make_delayed
       (Eliom_service.service ~path:post_path ~get_params:Eliom_parameter.unit)
 
-  let _ownership: int String.Table.t = String.Table.create ()
-  let test_non_ownership = -1
   let set_ownership ~configuration file =
     Authentication.user_logged ()
     >>= begin function
     | Some u ->
       dbg "user: %d" u.Authentication.person.Layout.Record_person.id;
-      String.Table.set _ownership ~key:file
-        ~data:u.Authentication.person.Layout.Record_person.id;
-      return ()
+      with_database configuration (fun ~dbh ->
+        User_data.add_upload ~dbh
+          ~person_id:u.Authentication.person.Layout.Record_person.id
+          ~filename:file)
     | None ->
-      dbg "no user %s, %d" file test_non_ownership;
-      String.Table.set _ownership file test_non_ownership;
-      return ()
+      error (`no_user_logged)
     end
 
   let move_posted_file ~configuration file =
@@ -134,6 +131,9 @@ module Upload = struct
       >>= fun () ->
       set_ownership ~configuration (Filename.basename newname)
       >>= fun () ->
+      Authentication.spy_userf "Upload file %s (was %s)" newname
+        (Eliom_request_info.get_original_filename file)
+      >>= fun () ->
       return newname
     | false ->
       logf "`wrong_credentials in move_posted_file" >>= fun () ->
@@ -141,28 +141,29 @@ module Upload = struct
     end
     
   let check_access_rights ~configuration path =
-    begin match String.Table.find _ownership path with
-    | Some expected_id ->
-      Authentication.user_logged ()
+    Authentication.user_logged ()
+    >>= begin function
+    | Some u ->
+      let person_id = u.Authentication.person.Layout.Record_person.id in
+      with_database configuration
+        (User_data.find_upload ~person_id ~filename:path)
       >>= begin function
-      | Some u ->
-        dbg "user: %d, expected: %d"
-          u.Authentication.person.Layout.Record_person.id expected_id;
-        return u.Authentication.person.Layout.Record_person.id
-      | None ->
-        return test_non_ownership
+      | true ->
+        return person_id
+      | false ->
+        Authentication.spy_userf "Try to access %S without owning it" path
+        >>= fun () ->
+        error (`wrong_credentials)
       end
-      >>= fun user_id ->
-      if user_id = expected_id then return ()
-      else error (`wrong_credentials)
     | None ->
-      dbg "not found %s" path;
-      error (`file_not_found path)
+        Authentication.spy_userf "Try to access %S while not logged" path
+        >>= fun () ->
+        error (`wrong_credentials)
     end
     
   let identify_and_verify ~configuration path =
     dbg "identify_and_verify %s" path;
-    check_access_rights ~configuration path >>= fun () ->
+    check_access_rights ~configuration path >>= fun _ ->
     let content_type =
       let mime_assoc = Ocsigen_charset_mime.default_mime_assoc () in
       Ocsigen_charset_mime.find_mime path mime_assoc in
@@ -175,10 +176,14 @@ module Upload = struct
     end
       
   let check_and_remove_file ~configuration path =
-    check_access_rights ~configuration path >>= fun () ->
+    check_access_rights ~configuration path >>= fun person_id ->
     let real_path = Filename.concat (uploads_dir ~configuration) path in
     wrap_io Lwt_unix.unlink real_path >>= fun () ->
-    dbg "removed %s" real_path;
+    with_database configuration
+      (User_data.remove_upload ~person_id ~filename:path)
+    >>= fun () ->
+    logf "Remove %s (owner: %d)" real_path person_id >>= fun () ->
+    Authentication.spy_userf "Remove file %s" path >>= fun () ->
     return ()
     
   let init =
@@ -232,6 +237,9 @@ module Upload = struct
                     | `wrong_credentials -> "wrong_credentials"
                     | `path_not_right_volume s ->
                       sprintf "path_not_right_volume: %s" s
+                    | `db_backend_error _
+                    | `user_data _ | `auth_state_exn _ as e ->
+                      Template.string_of_error e
                   in
                   Lwt.ignore_result
                     (logf "Error in Meta_form's get service: %s" s);
@@ -254,8 +262,10 @@ module Upload = struct
                   let s =
                     match e with
                     | `io_exn e -> sprintf "io_exn %s" Exn.(to_string e)
-                    | `file_not_found f -> sprintf "file_not_found: %s" f
                     | `wrong_credentials -> "wrong_credentials"
+                    | `db_backend_error _
+                    | `user_data _ | `auth_state_exn _ as e ->
+                      Template.string_of_error e
                   in
                   Lwt.ignore_result
                     (logf "Error in Meta_form's remove service: %s" s);

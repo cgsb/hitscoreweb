@@ -317,6 +317,7 @@ let string_of_error_sublevel poly_error =
     [sprintf "%s" (string_of_layout_error e)]
   | `broker_error _ -> []
   | `Layout_service _ -> []
+  | `user_data _ -> []
   | `cannot_find_secondary_email
   | `email_verification_in_progress _
   | `sendmail _
@@ -337,12 +338,16 @@ let string_of_error_sublevel poly_error =
         | `exn e -> sprintf "Exn %s" Exn.(to_string e)
         | `signaled i -> sprintf "Got signal %d" i
         | `stopped i -> sprintf "Got stopped (%d)" i)]
+  | `no_user_logged -> ["no_user_logged"]
+  | `sexp_parsing_error e -> [sprintf "sexp_parsing_error: %s" Exn.(to_string e)]
   )
 
 let string_of_error  poly_error = 
   match poly_error with
   | `broker_error e -> string_of_error_sublevel e
   | `Layout_service e -> string_of_error_sublevel e
+  | `user_data (s, e) ->
+    sprintf "User-data: %s, %s" s (string_of_error_sublevel e)
   | e -> string_of_error_sublevel e
 
 let a_link ?(a=[]) ?fragment service content args =
