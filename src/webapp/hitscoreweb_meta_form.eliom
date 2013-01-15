@@ -97,7 +97,7 @@ module Upload = struct
     make_delayed
       (Eliom_service.service ~path:post_path ~get_params:Eliom_parameter.unit)
 
-  let set_ownership ~configuration file =
+  let set_ownership ~configuration file orig =
     Authentication.user_logged ()
     >>= begin function
     | Some u ->
@@ -105,7 +105,7 @@ module Upload = struct
       with_database configuration (fun ~dbh ->
         User_data.add_upload ~dbh
           ~person_id:u.Authentication.person.Layout.Record_person.id
-          ~filename:file)
+          ~filename:file ~original:orig)
     | None ->
       error (`no_user_logged)
     end
@@ -130,6 +130,7 @@ module Upload = struct
         (Eliom_request_info.get_tmp_filename file) newname
       >>= fun () ->
       set_ownership ~configuration (Filename.basename newname)
+        (Eliom_request_info.get_original_filename file)
       >>= fun () ->
       Authentication.spy_userf "Upload file %s (was %s)" newname
         (Eliom_request_info.get_original_filename file)
@@ -148,9 +149,9 @@ module Upload = struct
       with_database configuration
         (User_data.find_upload ~person_id ~filename:path)
       >>= begin function
-      | true ->
+      | Some _ ->
         return person_id
-      | false ->
+      | None ->
         Authentication.spy_userf "Try to access %S without owning it" path
         >>= fun () ->
         error (`wrong_credentials)

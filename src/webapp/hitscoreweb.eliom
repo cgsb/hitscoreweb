@@ -125,12 +125,12 @@ module Uploads_service = struct
     >>= fun files ->
     return files
 
-  let link_to_upload ~configuration ~and_remove file =
+  let link_to_upload ~configuration ~and_remove (file, orig, date) =
     let open Html5 in
     let (post, get, remove) =
       Hitscoreweb_meta_form.Upload.init ~configuration () in
-    (Template.a_link (fun () -> get) [codef "%s" file] file)
-    ::
+    (codef "[%s]" (Time.to_string date)) ::
+      (Template.a_link (fun () -> get) [codef "%s" orig] file) ::
       (if and_remove then [ 
         pcdata " (";
         span ~a:[ a_class ["like_link"];
@@ -171,8 +171,9 @@ module Uploads_service = struct
           >>| List.filter ~f:(fun f -> f <> "." && f <> "..")
           >>= fun all_files_in_uploads ->
           let check_list = ref all_files_in_uploads in
-          let check f =
-            check_list := List.filter !check_list ((<>) f) in
+          let check (f, _, _) =
+            check_list := List.filter !check_list ((<>) f)
+          in
           with_database configuration (fun ~dbh ->
             Access.Person.get_all ~dbh >>= fun all_persons ->
             while_sequential all_persons (fun p ->
@@ -194,7 +195,7 @@ module Uploads_service = struct
             >>= fun sections ->
             let orphans =
               ul (List.map !check_list (fun p ->
-                li (link_to_upload ~configuration ~and_remove:false p))) in
+                li [codef "%s" (Filename.concat dir p)])) in
             return [
               h1 [pcdata "People's Uploads"];
               div sections;
