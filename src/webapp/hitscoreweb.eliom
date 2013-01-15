@@ -172,7 +172,9 @@ module Uploads_service = struct
           >>= fun all_files_in_uploads ->
           let check_list = ref all_files_in_uploads in
           let check (f, _, _) =
-            check_list := List.filter !check_list ((<>) f)
+            let is_there = List.exists !check_list ((=) f) in
+            check_list := List.filter !check_list ((<>) f);
+            is_there
           in
           with_database configuration (fun ~dbh ->
             Access.Person.get_all ~dbh >>= fun all_persons ->
@@ -187,8 +189,16 @@ module Uploads_service = struct
                 return [
                   h2 [pcdataf "%d (%s, %s)" person_id fn gn];
                   ul (List.map some_uploads ~f:(fun p ->
-                    check p;
-                    li (link_to_upload ~configuration ~and_remove:true p)));
+                    let is_there = check p in
+                    let file, _, _ =  p in
+                    li (link_to_upload ~configuration ~and_remove:true p @
+                          (if is_there then []
+                           else [
+                             br ();
+                             strong [pcdataf "But ";
+                                     codef "%s/%s" dir file;
+                                     pcdata " is missing!"]
+                           ]))));
                 ]
               end)
             >>| List.concat
