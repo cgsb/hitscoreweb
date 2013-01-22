@@ -411,7 +411,7 @@ let default ?(title) content =
                                  ["hitscoreweb.css"])
                      ()) ();
         ])
-        (body [
+        (body ~a:[ a_style "cursor: wait" ] [
           div ~a:[ a_class ["wrapper"] ] [
             div ~a:[ a_class ["top_banner"] ] [
               div ~a:[ a_class ["top_menu"] ] [
@@ -458,6 +458,9 @@ let default ?(title) content =
   in
   Lwt.bind html_result (function
   | Ok html -> 
+    ignore {unit{
+      dbg "Last thing of the onload";
+      Dom_html.document##body##style##cursor <- Js.string "auto" }};
     Lwt.return html
   | Error e ->
     let error_string = string_of_error e in
@@ -470,6 +473,9 @@ let default ?(title) content =
         (Eliom_request_info.get_remote_ip ())
         (Eliom_request_info.get_request_id ())
       >>= fun _ ->
+      ignore {unit{
+        dbg "Last thing of the onload (error page)";
+        Dom_html.document##body##style##cursor <- Js.string "auto" }};
       error_page ()))
 
 type table_cell_html5 = Html5_types.flow5 Html5.elt list
