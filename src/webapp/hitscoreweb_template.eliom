@@ -864,7 +864,7 @@ module Highchart = struct
      tooltip:{
          formatter: function(){
              var s = '<b>'+this.x+'</b><br>';
-             for(var i=this.points.length-1;i>-1;i--){
+             for(var i = this.points.length - 1; i > -1 ; i-- ){
                  colors = ['red','#444', 'green', '#444', 'blue'];
     s = s + ['<br>','<span style=\"color:' + colors[i] + '\">',
              this.points[i].series.name, '</span>: ',
@@ -935,11 +935,17 @@ module Highchart = struct
         series_string
         more_code
     in
-    let to_run = sprintf "(%s_fun ());" plot_id in
-    make_unsafe_eval_string_onload (highchart_script ^ to_run);
-    [div ~a:[ a_id container_id;
-              ksprintf a_style "display: block; width: %dpx; height: 500px" !width ]
-        []]
+    let to_run = sprintf "
+%s_fun();
+" plot_id in
+    dbg "dealing with %s" plot_id;
+    make_unsafe_eval_string_onload ( to_run);
+    [ script (cdata_script highchart_script);
+      div ~a:[
+        a_id container_id;
+        (* a_onload {{ fun _ -> (Js.Unsafe.eval_string %to_run : unit);}}; *)
+        ksprintf a_style "display: block; width: %dpx; height: 500px" !width
+      ] []]
 
 
   let make ?with_legend ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
