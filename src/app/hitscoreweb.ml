@@ -529,7 +529,9 @@ let () =
     let ssl_dir = ref None in
     let pam_service = ref "gencore" in
     let session_timeout = ref 172800 in
+    let debug = ref false in
     let options = [
+      (`run, "-debug", Arg.Set debug, "run in debug mode (no Authentication)");
       (`run, "-port", Arg.Set_int port,
        sprintf "p\n\tPort number (default: %d), \
               the HTTPS port is !port - 80 + 443 ;)" !port);
@@ -576,7 +578,7 @@ let () =
       testing ~port:!port ~session_timeout
         ?ssl ?ssl_dir:!ssl_dir ~authentication ~debug:true `Ocsigen
     | "static" ->
-      testing ~port:!port ?ssl ~session_timeout
+      testing ~port:!port ?ssl ~session_timeout ~debug:!debug
         ?ssl_dir:!ssl_dir ~authentication `Static
     | "rpm" ->
       rpm_build ~release:!rpm_release ~session_timeout
