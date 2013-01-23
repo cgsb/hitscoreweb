@@ -545,8 +545,9 @@ module Form = struct
       match buttons with
       | Some b -> b
       | None -> LL.map text_buttons ~f:(fun t -> [Markup.text t]) in
-    { form_content; form_buttons; form_choice = None }
+    `form { form_content; form_buttons; form_choice = None }
 
+  let reload = `reload
 end
     
 {shared{
@@ -556,6 +557,7 @@ type up_message =
 deriving (Json)
 type down_message =
 | Make_form of form
+| Reload
 | Form_saved
 | Server_error of phrase
 deriving (Json)
@@ -642,7 +644,8 @@ let create_reply_function ~state ~form_content =
       form_content to_handle
       >>= fun res ->
       begin match res with
-      | Ok f -> return (Make_form f)
+      | Ok (`form f) -> return (Make_form f)
+      | Ok (`reload) -> return (Reload)
       | Error m -> return (Server_error m)
       end)
 
@@ -1200,6 +1203,9 @@ let create ~state ?(and_reload=false) form_content =
               let l = after_draw_todo_list ~state in
               LL.iter !l ~f:(fun f -> f ());
               return ()
+            | Reload ->
+              Eliom_client.change_page
+                ~service:Eliom_service.void_hidden_coservice' () ()
             | Server_error s ->
               hook##innerHTML <- ksprintf Js.string "Server Error: %s"
                 (Markup.phrase_to_html_string s);
