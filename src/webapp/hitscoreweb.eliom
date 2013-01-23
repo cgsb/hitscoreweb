@@ -735,115 +735,304 @@ end
 
 module Test_service = struct
 
+  let test_form ~state =
+    let open Hitscoreweb_meta_form in
+    let upload_many_files_store = Upload.fresh_store [] in
+    let upload_one_file_store = Upload.fresh_store [] in
+    let services_form =
+      ref (
+        let identifier_friendly =
+          ("non-empty string of letters, numbers, underscores, and dashes",
+           "[a-zA-Z0-9_-]+") in
+        let strictly_positive = Range.(make (exclusive 0.) infinity) in
+        let percentage = Range.(make (inclusive 1.) (inclusive 100.)) in
+        let open Form in
+        make ~text_buttons:["Submit …"; "Cancel"; "Trigger Error"]
+          (section Markup.([text "First Section"]) [
+            integer ~question:[Markup.text "Pick an integer"] ~value:42 ();
+            (let question =
+               Markup.([text "Pick a string "; italic "(regular expression)"]) in
+             string ~regexp:identifier_friendly ~question ());
+            section Markup.([text "Subsection"]) [
+              string
+                ~help:Markup.(par [text "HHEEEELLLPPP"])
+                ~text_question:"Pick a string" ~value:"sldk jskd" ();
+              date ~text_question:"A date:" ~value:"21/12/2012" ();
+              date ~text_question:"Another date:" ();
+              upload ~store:upload_many_files_store
+                Markup.([text "Upload many FILEs ! "; italic "pleaaase"]);
+              upload ~store:upload_one_file_store  ~multiple:false
+                Markup.([text "Upload one FILE ! "; italic "pleaaase"]);
+              float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
+              float  ~text_question:"percent float" ~range:percentage ();
+              float  ~text_question:"float > 0." ~range:strictly_positive ();
+              integer ~text_question:"int > 0" ~range:strictly_positive (); 
+              string_enumeration ~question:Markup.([text "Many strings?"])
+                ~value:"one" ["zero"; "one"; "two"; "three"];
+              open_string_enumeration ~question:Markup.([text "Many strings?"])
+                ~value:"one" ~other:"Make up another one …"
+                ["zero"; "one"; "two"; "three"];
+              begin
+                let make_sub ?name ?age () =
+                  section Markup.([text "Create a new person"]) [
+                    string  ~text_question:"person's name" ?value:name ();
+                    integer ~text_question:"person's age" ?value:age ();
+                  ] in
+                meta_enumeration
+                  ~help:Markup.(list [par [text "some help"]; par [italic "more help"]])
+                  ~overall_question:Markup.([text "Please choose or create a person"])
+                  ~creation_cases:[
+                    ("Create person …", make_sub ());
+                    ("Create ageless person …",
+                     section Markup.([text "Create an ageless person"]) [
+                       string  ~text_question:"person's name" ~value:"LA Woman" ();
+                     ]);
+                  ]
+                  ~choice:"the first"
+                  [("the first", make_sub ~name:"The First" ~age:42 ());
+                   ("anotherone", make_sub ~name:"Another One" ~age:45 ());
+                   ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
+              end;
+              section Markup.([text "Extensible List:"]) [begin
+                let make_model sec =
+                  section Markup.([ text sec ]) [
+                    string ~text_question:"Pick a name" ();
+                    string_enumeration ~question:Markup.([text "Pick a ";
+                                                          italic "type:"])
+                      ["int"; "float"];
+                  ] in
+                extensible_list ~question:Markup.([italic "Add a thing"])
+                  ~model:(make_model "New thing")
+                  (List.init 2 (ksprintf make_model "%d one"))
+              end];
+            ];
+          ])
+      ) in 
+    create ~state
+      Form.(function
+      | None ->
+        return (make ~text_buttons:["Start the form"] empty)
+      | Some {form_content = Empty; _} ->
+        return (!services_form)
+      | Some ({form_content = (Section (title, modified_form));} as form)
+          when title = [Markup.text "First Section"] ->
+        begin match form.form_choice with
+        | Some 0 ->
+          services_form := `form form;
+          dbg "Modified form : %s"
+            Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
+          dbg "Files:[\n TODO \n]";
+          return (make ~text_buttons:["Would you like to restart?"] empty)
+        | Some 1 ->
+          dbg "User clicked Cancel";
+          return (make ~text_buttons:["Send"]
+                    (string ~text_question:"Why did you cancel???" ()))
+        | Some 2 ->
+          dbg "User clicked to trigger an error";
+          error [Markup.text "TRIGGERED ERROR !!"]
+        | _ ->
+          dbg "unexpected input";
+          error [Markup.text "UNEXPECTED ERROR !!"]
+        end
+      | Some _ ->
+        return (make ~text_buttons:["Nothing to save?"] empty)
+      )
+
+      (*
+  type new_person = {
+    name: string * string option * string;
+    email: string;
+    net_id: string option;
+  } 
+  deriving (Json)
+
+    let look_for_new_persons = Form.(function
+      | List (
+        Section (msg_contacts_section, List [Extensible_list el])
+        :: _) ->
+        List.filter_map el.el_list (function
+        | Meta_enumeration {choice = Some chosen; creation_cases} ->
+          List.Assoc.find creation_cases chosen
+        | _ -> None)
+      | _ -> assert false
+        )
+      *)
+  type user_submission_form = {
+    whole_form: Hitscoreweb_meta_form.form;
+    created: Time.t;
+    last_modified: Time.t;
+  }
+
+  let _temporary_form_store = (ref [] : (int * int * user_submission_form) list ref)
+
+  let forms_of_user id =
+    List.filter_map !_temporary_form_store
+      (fun (u, k, f) -> if u = id then Some (k, f) else None)
+    |! return
+
+  let find_form form_list ~key = List.Assoc.find form_list key
+
+  let save_form user key_opt form =
+    match List.find !_temporary_form_store (fun (u, k, _) -> u = user && Some k = key_opt) with
+    | Some (u, k, f) ->
+      dbg "Saving form %d for user: %d" k u;
+      let to_save =
+        { f with whole_form = form; last_modified = Time.now () } in
+      _temporary_form_store :=
+        List.map !_temporary_form_store (fun (uu, kk, f) ->
+          if u = uu && k = kk then (u, k, to_save) else (uu, kk, f));
+      return ()
+    | None ->
+      let new_key =
+        (List.fold !_temporary_form_store ~init:0 ~f:(fun m (_,k,_) -> max m k))
+        + 1 in
+      let to_save = { whole_form = form;
+                      created = Time.now ();
+                      last_modified = Time.now () } in
+      dbg "Adding form %d for user: %d" new_key user;
+      _temporary_form_store := (user, new_key, to_save) :: !_temporary_form_store;
+      return ()
+
+  let delete_form user key  =
+    logf "Deleting form %d of user %d" key user >>= fun () ->
+    _temporary_form_store :=
+      List.filter !_temporary_form_store (fun (u, k, _) ->
+        not (u = user && k = key));
+    return ()
+      
+    
+  let submission_form ~state user_id form_key_opt =
+    let open Hitscoreweb_meta_form in
+    (* let identifier_friendly =
+      ("non-empty string of letters, numbers, underscores, and dashes",
+       "[a-zA-Z0-9_-]+") in *)
+    let mandatory_string = ("non-empty string", ".+") in
+    let mandatory_email =
+      ("valid email address", "[a-zA-Z0-9_-@\\.\\+]+") in
+    let optional_net_id = ("NYU Net ID", "[a-z0-9]*") in
+    let msg_start_a_new_submission = [Markup.text "Start a new submission"] in
+    let msg_edit_submission = [Markup.text "Edit this submission"] in
+    let msg_delete_submission = [Markup.text "Delete this submission"] in
+    (* let msg_TODO = [Markup.text "TODO"] in *)
+    let msg_SAVE = [Markup.text "Save"] in
+    let msg_CANCEL = [Markup.text "Cancel"] in
+    let msg_error s = [ksprintf Markup.text "UNEXPECTED ERROR: %s !!" s] in
+    let msg_contacts_section = [Markup.text "Contacts"] in
+    let msg_add_contact = [Markup.text "Add a contact"] in
+    let msg_choose_contact = [Markup.text "Pick a user or create a new one:"] in
+    let msg_create_new_user =  "Create a new user …" in
+    let msg_given_name = "Given name (mandatory)" in
+    let msg_middle_name = "Middle name" in
+    let msg_family_name = "Family name (mandatory)" in
+    let msg_net_id = "Net ID" in
+    let msg_email = "Email address (mandatory)" in
+    let open Form in
+    let start () =
+      match form_key_opt with
+      | None -> return (make ~buttons:[msg_start_a_new_submission] empty)
+      | Some _ ->
+        return (make ~buttons:[msg_edit_submission; msg_delete_submission] empty)
+    in
+    let new_empty () =
+      Hitscoreweb_state.persons_info state
+      >>= fun persons_info ->
+      let all_contacts =
+        List.map persons_info#persons (fun p ->
+          (sprintf "%s, %s &lt;<code>%s</code>&gt;"
+             p#t#family_name p#t#given_name p#t#email,
+           string ~value:p#t#email ())) in
+      let contacts_section =
+        let make_model v = 
+          let choice = Option.value ~default:"" v in
+          meta_enumeration 
+            ~overall_question:msg_choose_contact
+            ~creation_cases:[
+              (msg_create_new_user, list [
+                string ~text_question:msg_given_name ~regexp:mandatory_string ();
+                string ~text_question:msg_middle_name ();
+                string ~text_question:msg_family_name ~regexp:mandatory_string ();
+                string ~text_question:msg_email ~regexp:mandatory_email ();
+                string ~text_question:msg_net_id ~regexp:optional_net_id ();
+              ]);
+            ]
+            ~choice
+            (("", empty) :: all_contacts)
+        in
+        section msg_contacts_section [
+          extensible_list ~question:msg_add_contact
+            ~model:(make_model None) []
+        ] in
+      return (make ~buttons:[msg_SAVE; msg_CANCEL] (list [
+        contacts_section;
+      ]))
+    in
+    create ~state (function
+    | None -> start ()
+    | Some ({form_content = Empty; _} as form) ->
+      begin match form.form_choice with
+      | Some 0 ->
+        begin match form_key_opt with
+        | Some key ->
+          forms_of_user user_id >>= fun forms ->
+          begin match (find_form forms key) with
+          | Some { whole_form } -> return (`form whole_form)
+          | _ -> error (msg_error "CANNOT FIND FORM !!")
+          end
+        | None ->
+          new_empty ()
+          >>< begin function
+          | Ok o -> return o
+          | Error (_) ->
+            error (msg_error "STATE/DATABASE ERROR")
+          end
+        end
+      | Some 1 ->
+        let key = Option.value_exn form_key_opt in
+        begin
+          delete_form user_id key >>= fun () ->
+          return reload
+        end
+        >>< begin function
+        | Ok o -> return o
+        | Error (_) ->
+          error (msg_error "STATE/DATABASE ERROR")
+        end
+      | _ -> 
+        dbg "unexpected form.form_choice";
+        error (msg_error "?")
+      end
+    | Some form ->
+      begin match form.form_choice with
+      | Some 0 ->
+        dbg "Clicked the first one";
+        save_form user_id form_key_opt form
+        >>= fun () ->
+        return reload
+      | Some 1 -> start ()
+      | _ -> 
+        dbg "unexpected form.form_choice";
+        error (msg_error "?")
+      end)
+
+    
   let test ~state =
     let open Html5 in
+    let user_id = 0 in
+    forms_of_user user_id
+    >>| List.rev_map ~f:(fun (k, f) ->
+      li [p [span [pcdataf "Created on %s, last modified on %s "
+                      (Time.to_string f.created)
+                      (Time.to_string f.last_modified)];
+             submission_form ~state user_id (Some k)]])
+    >>= fun forms ->
     let content =
-      let test_form =
-        let open Hitscoreweb_meta_form in
-        let upload_many_files_store = Upload.fresh_store [] in
-        let upload_one_file_store = Upload.fresh_store [] in
-        let services_form =
-          ref (
-            let identifier_friendly =
-              ("non-empty string of letters, numbers, underscores, and dashes",
-               "[a-zA-Z0-9_-]+") in
-            let strictly_positive = Range.(make (exclusive 0.) infinity) in
-            let percentage = Range.(make (inclusive 1.) (inclusive 100.)) in
-            let open Form in
-            make ~text_buttons:["Submit …"; "Cancel"; "Trigger Error"]
-              (section Markup.([text "First Section"]) [
-                integer ~question:[Markup.text "Pick an integer"] ~value:42 ();
-                (let question =
-                   Markup.([text "Pick a string "; italic "(regular expression)"]) in
-                 string ~regexp:identifier_friendly ~question ());
-                section Markup.([text "Subsection"]) [
-                  string
-                    ~help:Markup.(par [text "HHEEEELLLPPP"])
-                    ~text_question:"Pick a string" ~value:"sldk jskd" ();
-                  date ~text_question:"A date:" ~value:"21/12/2012" ();
-                  date ~text_question:"Another date:" ();
-                  upload ~store:upload_many_files_store
-                    Markup.([text "Upload many FILEs ! "; italic "pleaaase"]);
-                  upload ~store:upload_one_file_store  ~multiple:false
-                    Markup.([text "Upload one FILE ! "; italic "pleaaase"]);
-                  float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
-                  float  ~text_question:"percent float" ~range:percentage ();
-                  float  ~text_question:"float > 0." ~range:strictly_positive ();
-                  integer ~text_question:"int > 0" ~range:strictly_positive (); 
-                  string_enumeration ~question:Markup.([text "Many strings?"])
-                    ~value:"one" ["zero"; "one"; "two"; "three"];
-                  open_string_enumeration ~question:Markup.([text "Many strings?"])
-                    ~value:"one" ~other:"Make up another one …"
-                    ["zero"; "one"; "two"; "three"];
-                  begin
-                    let make_sub ?name ?age () =
-                      section Markup.([text "Create a new person"]) [
-                        string  ~text_question:"person's name" ?value:name ();
-                        integer ~text_question:"person's age" ?value:age ();
-                      ] in
-                    meta_enumeration
-                      ~help:Markup.(list [par [text "some help"]; par [italic "more help"]])
-                      ~overall_question:Markup.([text "Please choose or create a person"])
-                      ~creation_cases:[
-                        ("Create person …", make_sub ());
-                        ("Create ageless person …",
-                         section Markup.([text "Create an ageless person"]) [
-                           string  ~text_question:"person's name" ~value:"LA Woman" ();
-                         ]);
-                      ]
-                      ~choice:"the first"
-                      [("the first", make_sub ~name:"The First" ~age:42 ());
-                       ("anotherone", make_sub ~name:"Another One" ~age:45 ());
-                       ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
-                  end;
-                  section Markup.([text "Extensible List:"]) [begin
-                    let make_model sec =
-                      section Markup.([ text sec ]) [
-                        string ~text_question:"Pick a name" ();
-                        string_enumeration ~question:Markup.([text "Pick a ";
-                                                              italic "type:"])
-                          ["int"; "float"];
-                      ] in
-                    extensible_list ~question:Markup.([italic "Add a thing"])
-                      ~model:(make_model "New thing")
-                      (List.init 2 (ksprintf make_model "%d one"))
-                  end];
-                ];
-              ])
-          ) in 
-        create ~state
-          Form.(function
-          | None ->
-            return (make ~text_buttons:["Start the form"] empty)
-          | Some {form_content = Empty; _} ->
-            return (!services_form)
-          | Some ({form_content = (Section (title, modified_form));} as form)
-              when title = [Markup.text "First Section"] ->
-            begin match form.form_choice with
-            | Some 0 ->
-              services_form := form;
-              dbg "Modified form : %s"
-                Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
-              dbg "Files:[\n TODO \n]";
-              return (make ~text_buttons:["Would you like to restart?"] empty)
-            | Some 1 ->
-              dbg "User clicked Cancel";
-              return (make ~text_buttons:["Send"]
-                        (string ~text_question:"Why did you cancel???" ()))
-            | Some 2 ->
-              dbg "User clicked to trigger an error";
-              error [Markup.text "TRIGGERED ERROR !!"]
-            | _ ->
-              dbg "unexpected input";
-              error [Markup.text "UNEXPECTED ERROR !!"]
-            end
-          | Some _ ->
-            return (make ~text_buttons:["Nothing to save?"] empty)
-          )
-      in
       let welcome = [
         h2 [pcdata "Welcome"];
-        p [test_form]
+        h3 [pcdata "Test Form:"];
+        p [test_form ~state];
+        h3 [pcdata "Your Forms:"];
+        ul forms;
+        p [submission_form ~state user_id None];
       ] in
       return (welcome)
     in
@@ -861,7 +1050,7 @@ module Test_service = struct
          | false ->
            Template.make_authentication_error ~main_title
              ~configuration:state.Hitscoreweb_state.configuration
-             (return [Html5.pcdataf "You may not view he tests."])))
+             (return [Html5.pcdataf "You may not view the tests."])))
 end
 
 module Default_service = struct
