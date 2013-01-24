@@ -20,6 +20,7 @@ COMMON_FILES := \
   hitscoreweb_state.eliom	    \
   hitscoreweb_log.eliom	    \
   hitscoreweb_uploads_service.eliom	    \
+  hitscoreweb_flowcell_service.eliom	    \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_services.eliom	    \
   hitscoreweb_persons.eliom	   \
