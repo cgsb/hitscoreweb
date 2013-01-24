@@ -972,14 +972,14 @@ let rec make_meta_enumeration ~state me =
     );
     select##add(label, Js.null);
   in
-  List.iter me.default_cases ~f:(fun (choice, _) ->
-    let is_selected = Some choice = me.choice in
-    make_option ~is_selected choice
-  );
   LL.iter2 me.creation_cases div_funs ~f:(fun (choice, _) (d, _) ->
     let is_selected = Some choice = me.choice in
     make_option ~is_selected choice;
     set_creation_visibility d is_selected
+  );
+  List.iter me.default_cases ~f:(fun (choice, _) ->
+    let is_selected = Some choice = me.choice in
+    make_option ~is_selected choice
   );
   select##onchange <- Dom_html.handler (fun ev ->
     dbg "select changes: %S" (Js.to_string select##value);
