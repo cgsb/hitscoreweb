@@ -18,6 +18,7 @@ COMMON_FILES := \
   hitscoreweb_meta_form.eliom	    \
   hitscoreweb_data_access.eliom	    \
   hitscoreweb_state.eliom	    \
+  hitscoreweb_log.eliom	    \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_services.eliom	    \
   hitscoreweb_persons.eliom	   \
