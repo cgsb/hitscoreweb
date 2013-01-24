@@ -417,6 +417,7 @@ type form = {
   form_content: form_content;
   form_buttons: phrase list;
   form_choice: int option;
+  form_key: string option;
 }
 deriving (Json)
 
@@ -540,12 +541,12 @@ module Form = struct
 
   let empty = Empty
 
-  let make ?buttons ?(text_buttons=["[[Save]]"]) form_content =
+  let make ?buttons ?(text_buttons=["[[Save]]"]) ?key form_content =
     let form_buttons =
       match buttons with
       | Some b -> b
       | None -> LL.map text_buttons ~f:(fun t -> [Markup.text t]) in
-    `form { form_content; form_buttons; form_choice = None }
+    `form { form_content; form_buttons; form_choice = None; form_key = key }
 
   let reload = `reload
 end
