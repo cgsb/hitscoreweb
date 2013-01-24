@@ -244,25 +244,6 @@ module Test_service = struct
         return (make ~text_buttons:["Nothing to save?"] empty)
       )
 
-      (*
-  type new_person = {
-    name: string * string option * string;
-    email: string;
-    net_id: string option;
-  } 
-  deriving (Json)
-
-    let look_for_new_persons = Form.(function
-      | List (
-        Section (msg_contacts_section, List [Extensible_list el])
-        :: _) ->
-        List.filter_map el.el_list (function
-        | Meta_enumeration {choice = Some chosen; creation_cases} ->
-          List.Assoc.find creation_cases chosen
-        | _ -> None)
-      | _ -> assert false
-        )
-      *)
   type user_submission_form = {
     persons_form: Hitscoreweb_meta_form.form option;
     libraries_form: Hitscoreweb_meta_form.form option;
@@ -383,6 +364,10 @@ module Test_service = struct
     let optional_net_id = ("NYU Net ID", "[a-z0-9]*")
   end
 
+
+  let save_and_cancel, save_choice, cancel_choice =
+    ([Msg.save; Msg.cancel], Some 0, Some 1)
+    
   let contacts_form_key = "contacts"
   let new_contacts_form ~state =
     let open Hitscoreweb_meta_form in
@@ -416,9 +401,29 @@ module Test_service = struct
           extensible_list ~question:Msg.add_contact
             ~model:(make_model None) []
         ] in
-    return (make ~buttons:[Msg.save; Msg.cancel]
+    return (make ~buttons:save_and_cancel
               ~key:contacts_form_key contacts_section)
 
+  let list_of_contacts_div f =
+    let open Hitscoreweb_meta_form in
+    let open Html5 in
+    let errf smthelse =
+      Lwt.async (fun () ->
+        logf "list_of_contacts_div: Simplification of form error: %s"
+          (Simplification.to_string smthelse));
+      [] in
+    let lis =
+      match Simplification.perform f.form_content with
+      | `list contacts ->
+        List.map contacts (function
+        | `string known -> dbg "known: %s" known; [codef "%s" known]
+        | `list _ as n ->
+          [pcdataf "new: %s" (Simplification.to_string n)]
+        | smthelse -> errf smthelse)
+      | smthelse -> errf smthelse
+    in
+    div [pcdata "Contacts: "; ul (List.map lis li)]
+      
   let libraries_form_key = "libraries"
   let new_libraries_form ~state user_id =
     let open Hitscoreweb_meta_form in
@@ -454,7 +459,7 @@ module Test_service = struct
       section Msg.libraries_section [
         extensible_list ~question:Msg.add_library ~model []
       ] in
-    return (make ~buttons:[Msg.save; Msg.cancel]
+    return (make ~buttons:save_and_cancel
               ~key:libraries_form_key libraries_section)
 
   let submission_form ~state user_id form_key_opt =
@@ -513,17 +518,20 @@ module Test_service = struct
           let key = Option.value_exn form_key_opt in
           delete_submission user_id key >>= fun () ->
           return reload)
-    | Some ({form_choice = Some 0} as form) when form.form_key = Some contacts_form_key ->
+    | Some form when
+        form.form_choice = save_choice && form.form_key = Some contacts_form_key ->
       save_persons_form user_id form_key_opt form
       >>= fun () ->
       return reload
-    | Some ({form_choice = Some 0} as form) when form.form_key = Some libraries_form_key ->
+    | Some form when
+        form.form_choice = save_choice && form.form_key = Some libraries_form_key ->
       save_libraries_form user_id form_key_opt form
       >>= fun () ->
       return reload
-    | Some ({form_choice = Some 1}) -> start ()
+    | Some form when form.form_choice = cancel_choice -> start ()
     | _ -> 
-      dbg "unexpected choice?";
+      wrap_error (logf "submission_form: unexpected choice?")
+      >>= fun () ->
       error (Msg.error "?")
     end
 
@@ -580,10 +588,12 @@ module Test_service = struct
     let open Html5 in
     forms_of_user !test_user
     >>| List.rev_map ~f:(fun (k, f) ->
-      li [p [span [pcdataf "Created on %s, last modified on %s "
-                      (Time.to_string f.created)
-                      (Time.to_string f.last_modified)];
-             submission_form ~state !test_user (Some k)]])
+      li [div [div [pcdataf "Created on %s, last modified on %s "
+                       (Time.to_string f.created)
+                       (Time.to_string f.last_modified)];
+               Option.value_map ~f:list_of_contacts_div f.persons_form
+                 ~default:(div [pcdata "No contacts yet"]);
+               submission_form ~state !test_user (Some k)]])
     >>= fun forms ->
     let content =
       let welcome = [
