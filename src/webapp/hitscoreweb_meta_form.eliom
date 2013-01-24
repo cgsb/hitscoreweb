@@ -551,6 +551,89 @@ module Form = struct
   let reload = `reload
 end
     
+module Simplification = struct
+
+  open Core.Std
+
+  type simplified = [
+  | `date of string
+  | `date_error of string
+  | `date_none
+  | `empty
+  | `float of float
+  | `float_error of string
+  | `float_none
+  | `integer of int
+  | `integer_error of string
+  | `integer_none
+  | `list of simplified list
+  | `string of string
+  | `string_error of string
+  | `string_none
+  | `upload of Upload.store
+  ]
+  let rec to_string = function
+  | `date x          -> sprintf "date %s" x
+  | `date_error x    -> sprintf "date_error %s" x
+  | `date_none       -> sprintf "date_none"
+  | `empty           -> sprintf "empty"
+  | `float x         -> sprintf "float %f" x
+  | `float_error x   -> sprintf "float_error %s" x
+  | `float_none      -> sprintf "float_none"
+  | `integer x       -> sprintf "integer %d" x
+  | `integer_error x -> sprintf "integer_error %s" x
+  | `integer_none    -> sprintf "integer_none"
+  | `list x          -> sprintf "[list %s]" (String.concat ~sep:"; " (List.map x ~f:to_string))
+  | `string x        -> sprintf "string %s" x
+  | `string_error x  -> sprintf "string_error %s" x
+  | `string_none     -> sprintf "string_none"
+  | `upload x        -> sprintf "upload"
+
+  let rec perform form_content : simplified =
+    match form_content with
+    | String {value = V_some v} ->                      `string v
+    | String {value = V_none} ->                        `string_none
+    | String {value = V_wrong (e, _)} ->                `string_error e
+    | String_regexp (_, _, {value = V_some v}) ->       `string v
+    | String_regexp (_, _, {value = V_none}) ->         `string_none
+    | String_regexp (_, _, {value = V_wrong (e, _)}) -> `string_error e
+    | Integer {value = V_some v} ->                     `integer v
+    | Integer {value = V_none} ->                       `integer_none
+    | Integer {value = V_wrong (e, _)} ->               `integer_error e
+    | Integer_range (_, {value = V_some v}) ->          `integer v
+    | Integer_range (_, {value = V_none}) ->            `integer_none
+    | Integer_range (_, {value = V_wrong (e, _)}) ->    `integer_error e
+    | Float {value = V_some v} ->                       `float v
+    | Float {value = V_none} ->                         `float_none
+    | Float {value = V_wrong (e, _)} ->                 `float_error e
+    | Float_range (_, {value = V_some v}) ->            `float v
+    | Float_range (_, {value = V_none}) ->              `float_none
+    | Float_range (_, {value = V_wrong (e, _)}) ->      `float_error e
+    | Date {value = V_some v} ->                        `date v
+    | Date {value = V_none} ->                          `date_none
+    | Date {value = V_wrong (e, _)} ->                  `date_error e
+    | Upload (_, store, _) ->                           `upload store
+    | Meta_enumeration {choice; default_cases; creation_cases}  ->
+      let content = 
+        Option.bind choice (fun c ->
+          match List.Assoc.find default_cases c with
+          | Some s -> Some s
+          | None ->
+            List.Assoc.find creation_cases c)
+      in
+      begin match content with
+      | Some s -> perform s
+      | None -> `empty
+      end
+    | Extensible_list { el_list } -> `list (List.map el_list perform)
+    | List l -> `list (List.map l perform)
+    | Section (_, c) -> perform c
+    | Help (_, c) -> perform c
+    | Empty -> `empty
+      
+      
+end
+
 {shared{
 type up_message =
 | Form_changed of form
