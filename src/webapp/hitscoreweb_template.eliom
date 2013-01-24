@@ -222,6 +222,7 @@ let string_of_error_sublevel poly_error =
   | `eliom_wrong_parameter -> [sprintf "Error 404 (wrong parameter)."]
   | `eliom_typing_error _ -> [sprintf "Error 404 (wrong parameter types)."]
   | `io_exn e -> [sprintf "Generic I/O exception: %s" (Exn.to_string e)]
+  | `string s -> [s]
   | `auth_state_exn e ->
     [sprintf "Authentication-state exception: %s" (Exn.to_string e)]
   | `pg_exn e -> [sprintf "PGOCaml exception: %s" (Exn.to_string e)]

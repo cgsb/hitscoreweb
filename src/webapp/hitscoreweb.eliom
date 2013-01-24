@@ -858,7 +858,8 @@ module Test_service = struct
         )
       *)
   type user_submission_form = {
-    whole_form: Hitscoreweb_meta_form.form;
+    persons_form: Hitscoreweb_meta_form.form option;
+    libraries_form: Hitscoreweb_meta_form.form option;
     created: Time.t;
     last_modified: Time.t;
   }
@@ -872,12 +873,37 @@ module Test_service = struct
 
   let find_form form_list ~key = List.Assoc.find form_list key
 
-  let save_form user key_opt form =
+  let user_persons_form user_id key_opt = 
+    match key_opt with
+    | Some key ->
+      forms_of_user user_id >>= fun forms ->
+      begin match (find_form forms key) with
+      | Some { persons_form  } -> return (persons_form)
+      | _ -> return None
+      end
+    | None -> return None
+
+  let user_libraries_form user_id key_opt = 
+    match key_opt with
+    | Some key ->
+      forms_of_user user_id >>= fun forms ->
+      begin match (find_form forms key) with
+      | Some { libraries_form  } -> return (libraries_form)
+      | _ -> return None
+      end
+    | None -> return None
+
+  let save_forms user key_opt form_to_save  =
     match List.find !_temporary_form_store (fun (u, k, _) -> u = user && Some k = key_opt) with
-    | Some (u, k, f) ->
+    | Some (u, k, sub) ->
       dbg "Saving form %d for user: %d" k u;
       let to_save =
-        { f with whole_form = form; last_modified = Time.now () } in
+        match form_to_save with
+        | `persons f ->
+          { sub with persons_form = Some f; last_modified = Time.now () }
+        | `libraries f ->
+          { sub with libraries_form = Some f; last_modified = Time.now () }
+      in
       _temporary_form_store :=
         List.map !_temporary_form_store (fun (uu, kk, f) ->
           if u = uu && k = kk then (u, k, to_save) else (uu, kk, f));
@@ -886,153 +912,283 @@ module Test_service = struct
       let new_key =
         (List.fold !_temporary_form_store ~init:0 ~f:(fun m (_,k,_) -> max m k))
         + 1 in
-      let to_save = { whole_form = form;
-                      created = Time.now ();
-                      last_modified = Time.now () } in
-      dbg "Adding form %d for user: %d" new_key user;
+      let persons_form, libraries_form =
+        match form_to_save with
+        | `persons p -> Some p, None
+        | `libraries l -> None, Some l in
+      let to_save = { persons_form; libraries_form;
+                      created = Time.now (); last_modified = Time.now () } in
+      dbg "Adding submission %d (for persons) for user: %d" new_key user;
       _temporary_form_store := (user, new_key, to_save) :: !_temporary_form_store;
       return ()
 
-  let delete_form user key  =
-    logf "Deleting form %d of user %d" key user >>= fun () ->
+  let save_persons_form user key_opt form =
+    save_forms user key_opt (`persons form)
+  let save_libraries_form user key_opt form =
+    save_forms user key_opt (`libraries form)
+
+  let delete_submission user key  =
+    logf "Deleting submission %d of user %d" key user >>= fun () ->
     _temporary_form_store :=
       List.filter !_temporary_form_store (fun (u, k, _) ->
         not (u = user && k = key));
     return ()
       
+  module Msg = struct
+
+    open Hitscoreweb_meta_form
+
+    let start_a_new_submission = [Markup.text "Start a new submission"]
+    let edit_contacts = [Markup.text "Edit contacts"]
+    let edit_libraries = [Markup.text "Edit libraries"]
+    let delete_submission = [Markup.text "Delete this submission"]
+
+    (* let TODO = [Markup.text "TODO"] *)
+    let save = [Markup.text "Save"]
+    let cancel = [Markup.text "Cancel"]
+    let error s = [ksprintf Markup.text "UNEXPECTED ERROR: %s !!" s]
+
+    let contacts_section = [Markup.text "Contacts"]
+    let add_contact = [Markup.text "Add a contact"]
+    let choose_contact = [Markup.text "Pick a user or create a new one:"]
+    let create_new_user =  "Create a new user …"
+    let given_name = "Given name (mandatory)"
+    let middle_name = "Middle name"
+    let family_name = "Family name (mandatory)"
+    let net_id = "Net ID"
+    let email = "Email address (mandatory)"
+
+    let libraries_section = [Markup.text "Libraries"]
+    let add_library = [Markup.text "Add a library"]
+    let choose_or_create_library = 
+      [Markup.text "Pick an existing library (of yours) or define a new one:"]
+    let create_new_library = "Create a new library …"
+    let library_name = "Library Name (mandatory)"
+
+  end
     
-  let submission_form ~state user_id form_key_opt =
-    let open Hitscoreweb_meta_form in
-    (* let identifier_friendly =
+  module Regexp = struct
+    let mandatory_identifier =
       ("non-empty string of letters, numbers, underscores, and dashes",
-       "[a-zA-Z0-9_-]+") in *)
-    let mandatory_string = ("non-empty string", ".+") in
+       "[a-zA-Z0-9_-]+")
+    let mandatory_string = ("non-empty string", ".+")
     let mandatory_email =
-      ("valid email address", "[a-zA-Z0-9_-@\\.\\+]+") in
-    let optional_net_id = ("NYU Net ID", "[a-z0-9]*") in
-    let msg_start_a_new_submission = [Markup.text "Start a new submission"] in
-    let msg_edit_submission = [Markup.text "Edit this submission"] in
-    let msg_delete_submission = [Markup.text "Delete this submission"] in
-    (* let msg_TODO = [Markup.text "TODO"] in *)
-    let msg_SAVE = [Markup.text "Save"] in
-    let msg_CANCEL = [Markup.text "Cancel"] in
-    let msg_error s = [ksprintf Markup.text "UNEXPECTED ERROR: %s !!" s] in
-    let msg_contacts_section = [Markup.text "Contacts"] in
-    let msg_add_contact = [Markup.text "Add a contact"] in
-    let msg_choose_contact = [Markup.text "Pick a user or create a new one:"] in
-    let msg_create_new_user =  "Create a new user …" in
-    let msg_given_name = "Given name (mandatory)" in
-    let msg_middle_name = "Middle name" in
-    let msg_family_name = "Family name (mandatory)" in
-    let msg_net_id = "Net ID" in
-    let msg_email = "Email address (mandatory)" in
+      ("valid email address", "[a-zA-Z0-9_-@\\.\\+]+")
+    let optional_net_id = ("NYU Net ID", "[a-z0-9]*")
+  end
+
+  let contacts_form_key = "contacts"
+  let new_contacts_form ~state =
+    let open Hitscoreweb_meta_form in
     let open Form in
-    let start () =
-      match form_key_opt with
-      | None -> return (make ~buttons:[msg_start_a_new_submission] empty)
-      | Some _ ->
-        return (make ~buttons:[msg_edit_submission; msg_delete_submission] empty)
-    in
-    let new_empty () =
-      Hitscoreweb_state.persons_info state
-      >>= fun persons_info ->
-      let all_contacts =
-        List.map persons_info#persons (fun p ->
-          (sprintf "%s, %s &lt;<code>%s</code>&gt;"
-             p#t#family_name p#t#given_name p#t#email,
-           string ~value:p#t#email ())) in
-      let contacts_section =
-        let make_model v = 
-          let choice = Option.value ~default:"" v in
-          meta_enumeration 
-            ~overall_question:msg_choose_contact
-            ~creation_cases:[
-              (msg_create_new_user, list [
-                string ~text_question:msg_given_name ~regexp:mandatory_string ();
-                string ~text_question:msg_middle_name ();
-                string ~text_question:msg_family_name ~regexp:mandatory_string ();
-                string ~text_question:msg_email ~regexp:mandatory_email ();
-                string ~text_question:msg_net_id ~regexp:optional_net_id ();
-              ]);
-            ]
-            ~choice
+    Hitscoreweb_state.persons_info state
+    >>= fun persons_info ->
+    let all_contacts =
+      List.map persons_info#persons (fun p ->
+        (sprintf "%s, %s &lt;<code>%s</code>&gt;"
+           p#t#family_name p#t#given_name p#t#email,
+         string ~value:p#t#email ())) in
+    let contacts_section =
+      let make_model v = 
+        let choice = Option.value ~default:"" v in
+        let open Regexp in
+        meta_enumeration 
+          ~overall_question:Msg.choose_contact
+          ~creation_cases:[
+            (Msg.create_new_user, list [
+              string ~text_question:Msg.given_name ~regexp:mandatory_string ();
+              string ~text_question:Msg.middle_name ();
+              string ~text_question:Msg.family_name ~regexp:mandatory_string ();
+              string ~text_question:Msg.email ~regexp:mandatory_email ();
+              string ~text_question:Msg.net_id ~regexp:optional_net_id ();
+            ]);
+          ]
+          ~choice
             (("", empty) :: all_contacts)
         in
-        section msg_contacts_section [
-          extensible_list ~question:msg_add_contact
+        section Msg.contacts_section [
+          extensible_list ~question:Msg.add_contact
             ~model:(make_model None) []
         ] in
-      return (make ~buttons:[msg_SAVE; msg_CANCEL] (list [
-        contacts_section;
-      ]))
+    return (make ~buttons:[Msg.save; Msg.cancel]
+              ~key:contacts_form_key contacts_section)
+
+  let libraries_form_key = "libraries"
+  let new_libraries_form ~state user_id =
+    let open Hitscoreweb_meta_form in
+    let open Form in
+    Hitscoreweb_state.persons_info state
+    >>= fun persons_info ->
+    let all_libraries =
+      List.find_map persons_info#persons (fun p ->
+        if p#t#g_id = user_id
+        then Some (List.map p#libraries (fun l ->
+          let qn = 
+            sprintf "%s%s"
+              (Option.value_map l#project ~default:"" ~f:(sprintf "%s."))
+              l#name in
+          (sprintf "<code>%s</code>" qn, string ~value:qn ()))
+          |! List.dedup |! List.sort ~cmp:compare)
+        else None)
+      |! Option.value ~default:[]
     in
-    create ~state (function
+    let libraries_section =
+      let model =
+        meta_enumeration 
+          ~overall_question:Msg.choose_or_create_library
+          ~creation_cases:[
+            (Msg.create_new_library, list [
+              string ~text_question:Msg.library_name
+                ~regexp:Regexp.mandatory_identifier ();
+            ]);
+          ]
+          ~choice:""
+          (("", empty) :: all_libraries)
+      in
+      section Msg.libraries_section [
+        extensible_list ~question:Msg.add_library ~model []
+      ] in
+    return (make ~buttons:[Msg.save; Msg.cancel]
+              ~key:libraries_form_key libraries_section)
+
+  let submission_form ~state user_id form_key_opt =
+    let open Hitscoreweb_meta_form in
+    let open Form in
+    let wrap_error m =
+      m >>< begin function
+      | Ok o -> return o
+      | Error (_) ->
+        error (Msg.error "STATE/DATABASE ERROR")
+      end in
+    let initial_action_buttons, initial_action_buttons_handler =
+      let buttons =
+        [Msg.edit_contacts; Msg.edit_libraries; Msg.delete_submission] in
+      let handler ~when_contacts ~when_libraries ~when_delete choice =
+        wrap_error
+          begin match choice with
+          | Some 0 -> when_contacts ()
+          | Some 1 -> when_libraries ()
+          | Some 2 -> when_delete ()
+          | c ->
+            logf "submission_form: Unexpected initial_action_button choice: \
+                %s (user: %d, form-key: %s)"
+              (Option.value_map ~default:"None" c ~f:(sprintf "%d"))
+              user_id
+              (Option.value_map ~default:"None" form_key_opt ~f:(sprintf "%d"))
+            >>= fun () ->
+            error (`string "wrong choice")
+          end
+      in
+      (buttons, handler)
+    in
+    let start () =
+      match form_key_opt with
+      | None -> return (make ~buttons:[Msg.start_a_new_submission] empty)
+      | Some _ ->
+        return (make ~buttons:initial_action_buttons empty)
+    in
+    create ~state begin function
     | None -> start ()
     | Some ({form_content = Empty; _} as form) ->
-      begin match form.form_choice with
-      | Some 0 ->
-        begin match form_key_opt with
-        | Some key ->
-          forms_of_user user_id >>= fun forms ->
-          begin match (find_form forms key) with
-          | Some { whole_form } -> return (`form whole_form)
-          | _ -> error (msg_error "CANNOT FIND FORM !!")
-          end
-        | None ->
-          new_empty ()
-          >>< begin function
-          | Ok o -> return o
-          | Error (_) ->
-            error (msg_error "STATE/DATABASE ERROR")
-          end
-        end
-      | Some 1 ->
-        let key = Option.value_exn form_key_opt in
-        begin
-          delete_form user_id key >>= fun () ->
-          return reload
-        end
-        >>< begin function
-        | Ok o -> return o
-        | Error (_) ->
-          error (msg_error "STATE/DATABASE ERROR")
-        end
-      | _ -> 
-        dbg "unexpected form.form_choice";
-        error (msg_error "?")
-      end
-    | Some form ->
-      begin match form.form_choice with
-      | Some 0 ->
-        dbg "Clicked the first one";
-        save_form user_id form_key_opt form
-        >>= fun () ->
-        return reload
-      | Some 1 -> start ()
-      | _ -> 
-        dbg "unexpected form.form_choice";
-        error (msg_error "?")
-      end)
+      initial_action_buttons_handler form.form_choice
+        ~when_contacts:(fun () ->
+          user_persons_form user_id form_key_opt
+          >>= begin function 
+          | Some f -> return (`form f)
+          | None -> new_contacts_form ~state
+          end)
+        ~when_libraries:(fun () ->
+          user_libraries_form user_id form_key_opt
+          >>= begin function 
+          | Some f -> return (`form f)
+            | None -> new_libraries_form ~state user_id
+          end)
+        ~when_delete:(fun () ->
+          let key = Option.value_exn form_key_opt in
+          delete_submission user_id key >>= fun () ->
+          return reload)
+    | Some ({form_choice = Some 0} as form) when form.form_key = Some contacts_form_key ->
+      save_persons_form user_id form_key_opt form
+      >>= fun () ->
+      return reload
+    | Some ({form_choice = Some 0} as form) when form.form_key = Some libraries_form_key ->
+      save_libraries_form user_id form_key_opt form
+      >>= fun () ->
+      return reload
+    | Some ({form_choice = Some 1}) -> start ()
+    | _ -> 
+      dbg "unexpected choice?";
+      error (Msg.error "?")
+    end
 
     
+  let test_user = ref 0
+  let pick_test_user_form ~state =
+    let open Hitscoreweb_meta_form in
+    let open Form in
+    let contacts = ref [] in
+    let simple_form reply =
+      begin
+        Hitscoreweb_state.persons_info state
+        >>= fun persons_info ->
+        let all_contacts =
+          List.map persons_info#persons (fun p ->
+            let choice =
+              sprintf "%s, %s &lt;<code>%s</code>&gt;"
+                p#t#family_name p#t#given_name p#t#email in
+            contacts := (choice, p#t#g_id) :: !contacts;
+            (choice, integer ~value:p#t#g_id ())) in
+        return (make ~buttons:[ [Markup.text "Go"] ]
+                  (section [Markup.text "Set the “test” user"] [
+                    meta_enumeration ~choice:"" (("", empty) :: all_contacts);
+                  ]))
+      end
+      >>< begin function
+      | Ok o -> return o
+      | Error (_) ->
+        error (Msg.error "STATE/DATABASE ERROR")
+      end
+    in
+    create ~state (function
+    | None ->
+      simple_form None
+    | Some form ->
+      begin match form.form_content with
+      | Section (_, Meta_enumeration {choice; _}) ->
+        dbg "Choice: %s" (Option.value ~default:"NONE" choice);
+        test_user :=
+          Option.(
+            (choice >>= fun c ->
+             List.Assoc.find !contacts c) |! value  ~default:0);
+        return reload
+      | f ->
+        dbg " cannot parse form answer: %s"
+          Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> f);
+        error [
+          ksprintf Markup.text " cannot parse form answer: %s"
+            Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> f);
+        ]
+      end)
+      
   let test ~state =
     let open Html5 in
-    let user_id = 0 in
-    forms_of_user user_id
+    forms_of_user !test_user
     >>| List.rev_map ~f:(fun (k, f) ->
       li [p [span [pcdataf "Created on %s, last modified on %s "
                       (Time.to_string f.created)
                       (Time.to_string f.last_modified)];
-             submission_form ~state user_id (Some k)]])
+             submission_form ~state !test_user (Some k)]])
     >>= fun forms ->
     let content =
       let welcome = [
         h2 [pcdata "Welcome"];
         h3 [pcdata "Test Form:"];
         p [test_form ~state];
-        h3 [pcdata "Your Forms:"];
+        h3 [pcdata "Submission Forms:"];
+        p [pick_test_user_form ~state];
+        p [pcdataf "Submission forms as %d:" !test_user];
         ul forms;
-        p [submission_form ~state user_id None];
+        p [submission_form ~state !test_user None];
       ] in
       return (welcome)
     in
