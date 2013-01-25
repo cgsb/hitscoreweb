@@ -462,15 +462,16 @@ module Test_service = struct
     return (make ~buttons:save_and_cancel
               ~key:libraries_form_key libraries_section)
 
+  let wrap_error m =
+    m >>< begin function
+    | Ok o -> return o
+    | Error (_) ->
+      error (Msg.error "STATE/DATABASE ERROR")
+    end
+
   let submission_form ~state user_id form_key_opt =
     let open Hitscoreweb_meta_form in
     let open Form in
-    let wrap_error m =
-      m >>< begin function
-      | Ok o -> return o
-      | Error (_) ->
-        error (Msg.error "STATE/DATABASE ERROR")
-      end in
     let initial_action_buttons, initial_action_buttons_handler =
       let buttons =
         [Msg.edit_contacts; Msg.edit_libraries; Msg.delete_submission] in
@@ -567,21 +568,20 @@ module Test_service = struct
     | None ->
       simple_form None
     | Some form ->
-      begin match form.form_content with
-      | Section (_, Meta_enumeration {choice; _}) ->
-        dbg "Choice: %s" (Option.value ~default:"NONE" choice);
-        test_user :=
-          Option.(
-            (choice >>= fun c ->
-             List.Assoc.find !contacts c) |! value  ~default:0);
+      begin match Simplification.perform form.form_content with
+      | `integer new_user ->
+        test_user := new_user;
+        return reload
+      | `empty ->
+        test_user := 0;
         return reload
       | f ->
-        dbg " cannot parse form answer: %s"
-          Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> f);
-        error [
-          ksprintf Markup.text " cannot parse form answer: %s"
-            Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> f);
-        ]
+        wrap_error begin
+          logf "pick_test_user_form: wrong form: %s" (Simplification.to_string f)
+        end
+        >>= fun () ->
+        dbg " cannot parse form answer: %s" (Simplification.to_string f);
+        error [Markup.text " cannot parse form answer"]
       end)
       
   let test ~state =
