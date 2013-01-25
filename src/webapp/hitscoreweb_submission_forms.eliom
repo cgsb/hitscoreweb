@@ -230,16 +230,17 @@ let list_of_contacts_div f =
   let open Html5 in
   let error_span l = Template.error_span l in
   let email s = codef "%s" s in
-  let display_tested_string ts how =
+  let none = (i [pcdata "<none>"]) in
+  let display_tested_string ?(optional=false) ts how =
     match ts with
     | Ok o -> how o
     | Error ((msg, rex), None) ->
-      error_span [pcdataf "Expecting: %s but got nothing" msg]
+      if optional then none
+      else error_span [pcdataf "Expecting: %s but got nothing" msg]
     | Error ((msg, rex), Some s) ->
       error_span [pcdataf "Expecting: %s but got " msg; ksprintf how "%S "s]
   in
-  let optional_string s how =
-    Option.value_map s ~default:(i [pcdata "<none>"]) ~f:how in
+  let optional_string s how = Option.value_map s ~default:none ~f:how in
   let new_one (gn, mn, fn, em, ni) add =
     return [pcdata "New contact: ";
             ul [
@@ -247,7 +248,8 @@ let list_of_contacts_div f =
               li [pcdata "Middle name: "; optional_string mn pcdata];
               li [pcdata "Family name: ";  display_tested_string fn pcdata];
               li [pcdata "Email: ";  display_tested_string em email];
-              li [pcdata "Net ID: ";  display_tested_string ni email];
+              li [pcdata "Net ID: ";
+                  display_tested_string ~optional:true ni email];
             ];
             add] in
   validate_contacts f
