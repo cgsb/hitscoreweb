@@ -34,6 +34,7 @@ type capability = [
            | `error_details
            | `flowcell
            | `submission_forms
+           | `all_submission_forms
            ]
 | `upload_files
 | `edit of [
@@ -41,6 +42,8 @@ type capability = [
   | `names_of_person of Layout.Record_person.t
   | `emails_of_person of Layout.Record_person.t
   | `facility_statistics
+  | `own_submission_forms
+  | `all_submission_forms
   | `layout]
 | `impersonate of [`person of Layout.Record_person.t | `users]
 ]

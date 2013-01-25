@@ -431,7 +431,7 @@ let pick_test_user_form ~state =
       error [Markup.text " cannot parse form answer"]
     end)
  
-let test ~state =
+let all_submissions ~state ~can_edit_own ~can_edit_all =
   let open Html5 in
   begin 
     forms_of_user !test_user
@@ -445,7 +445,11 @@ let test ~state =
                          (Time.to_string f.created)
                          (Time.to_string f.last_modified)];
                  contacts_display;
-                 submission_form ~state !test_user (Some k)]]))
+                 begin if can_edit_all
+                   then submission_form ~state !test_user (Some k)
+                   else div [strongf "(cannot edit)"]
+                 end;
+                ]]))
     >>= fun forms_display ->
     let welcome = [
       h2 [pcdata "Welcome"];
@@ -453,7 +457,10 @@ let test ~state =
       p [pick_test_user_form ~state];
       p [pcdataf "Submission forms as %d:" !test_user];
       ul forms_display;
-      p [submission_form ~state !test_user None];
+      begin if can_edit_all
+        then p [submission_form ~state !test_user None]
+        else p [strongf "(cannot create a new form)"]
+      end;
     ] in
     return (welcome)
   end
@@ -469,6 +476,23 @@ let test ~state =
     end
   end
     
+let own_submissions ~state ~can_edit =
+  error (`string "NOT IMPLEMENTED")
+
+let dispatch ~state =
+  Authentication.authorizes (`view `submission_forms)
+  >>= fun can_view_own ->
+  Authentication.authorizes (`view `all_submission_forms)
+  >>= fun can_view_all ->
+  Authentication.authorizes (`edit `own_submission_forms)
+  >>= fun can_edit_own ->
+  Authentication.authorizes (`edit `all_submission_forms)
+  >>= fun can_edit_all ->
+  begin match can_view_all with
+  | true -> all_submissions ~state ~can_edit_all ~can_edit_own
+  | false -> own_submissions ~state ~can_edit:can_edit_own
+  end
+  
 let make ~state =
   (fun () () ->
     let main_title = "Submission Forms" in
@@ -476,7 +500,7 @@ let make ~state =
       (Authentication.authorizes (`view `submission_forms)
        >>= function
        | true ->
-         test ~state >>= fun c ->
+         dispatch ~state >>= fun c ->
          return c
        | false ->
          Template.make_authentication_error ~main_title
