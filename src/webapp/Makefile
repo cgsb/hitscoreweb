@@ -27,6 +27,7 @@ COMMON_FILES := \
   hitscoreweb_hiseq_runs.eliom	   \
   hitscoreweb_layout_service.eliom \
   hitscoreweb_std.eliom	    \
+  hitscoreweb_submission_forms.eliom	    \
   hitscoreweb_one_person_service.eliom \
   hitscoreweb_libraries.eliom \
   hitscoreweb_facility_stats.eliom \

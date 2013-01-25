@@ -387,6 +387,8 @@ let menu_ul () =
     (`view `log, [a_link Services.log [ pcdata "Log" ] ()]);
     (`view `test_service, [a_link Services.test [ pcdata "Test" ] ()]);
     (`view `all_uploads, [a_link Services.uploads [ pcdata "Uploads" ] ()]);
+    (`view `submission_forms,
+     [a_link Services.submission_forms [ pcdata "Submission forms" ] ()])
   ]
   >>= fun ul_opt ->
   match List.filter_opt ul_opt with

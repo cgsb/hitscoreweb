@@ -32,7 +32,9 @@ type capability = [
            | `libraries_detailed_fastq_information
            | `facility_statistics
            | `error_details
-           | `flowcell]
+           | `flowcell
+           | `submission_forms
+           ]
 | `upload_files
 | `edit of [
   | `password_of_person of Layout.Record_person.t
