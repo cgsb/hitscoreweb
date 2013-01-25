@@ -362,6 +362,17 @@ module Test_service = struct
     let mandatory_email =
       ("valid email address", "[a-zA-Z0-9_-@\\.\\+]+")
     let optional_net_id = ("NYU Net ID", "[a-z0-9]*")
+
+    let matches (_, rex) s =
+      let t = Re_posix.re (sprintf "^%s$" rex) in
+      let re = Re.compile t in
+      Re.execp re s
+
+    let check_simple_string r = function
+      | `string_error s
+      | `string s -> if matches r s then Ok s else Error (r, Some s)
+      | _ -> Error (r, None)
+        
   end
 
 
@@ -404,25 +415,99 @@ module Test_service = struct
     return (make ~buttons:save_and_cancel
               ~key:contacts_form_key contacts_section)
 
-  let list_of_contacts_div f =
+  let validate_contacts f =
     let open Hitscoreweb_meta_form in
     let open Html5 in
     let errf smthelse =
-      Lwt.async (fun () ->
-        logf "list_of_contacts_div: Simplification of form error: %s"
-          (Simplification.to_string smthelse));
-      [] in
-    let lis =
-      match Simplification.perform f.form_content with
-      | `list contacts ->
-        List.map contacts (function
-        | `string known -> dbg "known: %s" known; [codef "%s" known]
-        | `list _ as n ->
-          [pcdataf "new: %s" (Simplification.to_string n)]
-        | smthelse -> errf smthelse)
-      | smthelse -> errf smthelse
+      logf "validate_contacts: Simplification of form error: %s"
+        (Simplification.to_string smthelse)
+      >>= fun () ->
+      error (`submission_form
+                (`validate_contacts (Simplification.to_string smthelse))) in
+    begin match Simplification.perform f.form_content with
+    | `list contacts ->
+      while_sequential contacts (function
+      | `string known ->
+        Hitscoreweb_data_access.find_person_opt known
+        >>= begin function
+        | Some _ -> return (`known known)
+        | None -> return (`actually_not_known known)
+        end
+      | `list [given; middle; family; email; net_id] ->
+        let open Regexp in
+        let gn = check_simple_string mandatory_string given in
+        let mn =
+          match middle with `string "" -> None | `string s -> Some s | _ -> None in
+        let fn = check_simple_string mandatory_string family in
+        let em = check_simple_string mandatory_email email in
+        let ni = check_simple_string optional_net_id net_id in
+        let contact = (gn, mn, fn, em, ni) in
+        begin match em with
+        | Ok o -> Hitscoreweb_data_access.find_person_opt o
+        | _ -> return None
+        end
+        >>= fun found_by_email ->
+        begin match ni with
+        | Ok o -> Hitscoreweb_data_access.find_person_opt o
+        | _ -> return None
+        end
+        >>= fun found_by_net_id ->
+        begin match found_by_email, found_by_net_id with
+        | Some u, _ -> return (`redefined_known (contact, `found_by_email u))
+        | _, Some u -> return (`redefined_known (contact, `found_by_net_id u))
+        | _ -> return (`new_one contact)
+        end
+      | smthelse -> errf smthelse)
+    | smthelse -> errf smthelse
+    end
+
+  let list_of_contacts_div f =
+    let open Hitscoreweb_meta_form in
+    let open Html5 in
+    let error_span l = Template.error_span l in
+    let email s = codef "%s" s in
+    let display_tested_string ts how =
+      match ts with
+      | Ok o -> how o
+      | Error ((msg, rex), None) ->
+        error_span [pcdataf "Expecting: %s but got nothing" msg]
+      | Error ((msg, rex), Some s) ->
+        error_span [pcdataf "Expecting: %s but got " msg; ksprintf how "%S "s]
     in
-    div [pcdata "Contacts: "; ul (List.map lis li)]
+    let optional_string s how =
+      Option.value_map s ~default:(i [pcdata "<none>"]) ~f:how in
+    let new_one (gn, mn, fn, em, ni) add =
+      return [pcdata "New contact: ";
+              ul [
+                li [pcdata "Given name: ";  display_tested_string gn pcdata];
+                li [pcdata "Middle name: "; optional_string mn pcdata];
+                li [pcdata "Family name: ";  display_tested_string fn pcdata];
+                li [pcdata "Email: ";  display_tested_string em email];
+                li [pcdata "Net ID: ";  display_tested_string ni email];
+              ];
+              add] in
+    validate_contacts f
+    >>= fun validation_result ->
+    while_sequential validation_result begin function
+    | `known known -> return [email known]
+    | `actually_not_known k ->
+      return [error_span [pcdata "The contact "; email k;
+                          pcdata " was not found … what are you trying to do?"]]
+    | `new_one c -> new_one c (pcdata "")
+    | `redefined_known ((gn, mn, fn, em, ni), `found_by_email u) ->
+      new_one (gn, mn, fn, em, ni)
+        (error_span [pcdata "There is already a user using that email: ";
+                     display_tested_string em email])
+    | `redefined_known ((gn, mn, fn, em, ni), `found_by_net_id u) ->
+      new_one (gn, mn, fn, em, ni)
+        (error_span [pcdata "There is already a user using that NetID: ";
+                     display_tested_string ni email])
+    end
+    >>| List.map ~f:li
+    >>= fun li_s ->
+    return (div [pcdata "Contacts:"; ul li_s])
+
+
       
   let libraries_form_key = "libraries"
   let new_libraries_form ~state user_id =
@@ -586,16 +671,20 @@ module Test_service = struct
       
   let test ~state =
     let open Html5 in
-    forms_of_user !test_user
-    >>| List.rev_map ~f:(fun (k, f) ->
-      li [div [div [pcdataf "Created on %s, last modified on %s "
-                       (Time.to_string f.created)
-                       (Time.to_string f.last_modified)];
-               Option.value_map ~f:list_of_contacts_div f.persons_form
-                 ~default:(div [pcdata "No contacts yet"]);
-               submission_form ~state !test_user (Some k)]])
-    >>= fun forms ->
-    let content =
+    begin 
+      forms_of_user !test_user
+      >>= fun forms ->
+      while_sequential forms ~f:(fun (k, f) ->
+        map_option f.persons_form list_of_contacts_div
+        >>| Option.value ~default:(div [pcdata "No contacts yet"])
+        >>= fun contacts_display ->
+        return (
+          li [div [div [pcdataf "Created on %s, last modified on %s "
+                           (Time.to_string f.created)
+                           (Time.to_string f.last_modified)];
+                   contacts_display;
+                   submission_form ~state !test_user (Some k)]]))
+      >>= fun forms_display ->
       let welcome = [
         h2 [pcdata "Welcome"];
         h3 [pcdata "Test Form:"];
@@ -603,12 +692,22 @@ module Test_service = struct
         h3 [pcdata "Submission Forms:"];
         p [pick_test_user_form ~state];
         p [pcdataf "Submission forms as %d:" !test_user];
-        ul forms;
+        ul forms_display;
         p [submission_form ~state !test_user None];
       ] in
       return (welcome)
-    in
-    content
+    end
+    >>< begin function
+    | Ok o -> return o
+    | Error e ->
+      let stringify fmt = ksprintf (fun s -> `string s) fmt in
+      begin match e with
+      | `submission_form (`validate_contacts s) ->
+        error (stringify "Error while validating contacts: %S" s)
+      | `io_exn e ->
+        error (stringify "/test I/O error: %s" (Exn.to_string e))
+      end
+    end
 
   let make ~state =
     (fun () () ->
