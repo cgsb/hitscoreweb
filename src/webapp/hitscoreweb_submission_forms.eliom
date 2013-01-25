@@ -180,15 +180,17 @@ let new_contacts_form ~state =
 let validate_contacts f =
   let open Hitscoreweb_meta_form in
   let open Html5 in
+  let simple = Simplification.perform f.form_content in
   let errf smthelse =
-    logf "validate_contacts: Simplification of form error: %s"
-      (Simplification.to_string smthelse)
+    logf "validate_contacts: Simplification of form error:\n%S\nout of\n%S"
+      (Simplification.to_string smthelse) (Simplification.to_string simple)
     >>= fun () ->
     error (`submission_form
               (`validate_contacts (Simplification.to_string smthelse))) in
-  begin match Simplification.perform f.form_content with
+  begin match simple with
   | `list contacts ->
     while_sequential contacts (function
+    | `empty -> return `empty_contact
     | `string known ->
       Hitscoreweb_data_access.find_person_opt known
       >>= begin function
@@ -251,6 +253,7 @@ let list_of_contacts_div f =
   validate_contacts f
   >>= fun validation_result ->
   while_sequential validation_result begin function
+  | `empty_contact -> return [error_span [pcdata "Empty contact"]]
   | `known known -> return [email known]
   | `actually_not_known k ->
     return [error_span [pcdata "The contact "; email k;
