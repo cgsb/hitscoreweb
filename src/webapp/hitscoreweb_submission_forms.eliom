@@ -113,7 +113,16 @@ module Msg = struct
     [Markup.text "Pick an existing library (of yours) or define a new one:"]
   let create_new_library = "Create a new library …"
   let library_name = "Library Name (mandatory)"
-
+  let project_name = "Project Name (mandatory)"
+  let library_short_description = "Short Description (optional)"
+  let library_short_description_help =
+    Markup.(par [
+      text "Something to tell your collaborators/P.I. what's in there …"])
+  let application = [Markup.text "Application (mandatory)"]
+  let new_application =  "New application"
+  let is_stranded = [Markup.text "Is the library stranded? (mandatory)"]
+  let truseq_control = [Markup.text "TruSeq Control?"]
+  let rna_seq_control = [Markup.text "RNA-Seq Control?"]
 end
   
 module Regexp = struct
@@ -276,6 +285,16 @@ let list_of_contacts_div f =
 
 
     
+let standard_applications = [
+  "Amplicon-Seq";
+  "ChIP-seq";
+  "DNA-seq";
+  "IN-seq";
+  "MNase-seq";
+  "RNA-seq";
+  "Re-sequencing";
+  "de-novo";
+]
 let libraries_form_key = "libraries"
 let new_libraries_form ~state user_id =
   let open Hitscoreweb_meta_form in
@@ -295,6 +314,9 @@ let new_libraries_form ~state user_id =
       else None)
     |! Option.value ~default:[]
   in
+  let all_applications =
+    ("", empty) ::
+      List.map standard_applications ~f:(fun s -> (s, string ~value:s ())) in
   let libraries_section =
     let model =
       meta_enumeration 
@@ -303,6 +325,20 @@ let new_libraries_form ~state user_id =
             (Msg.create_new_library, list [
               string ~text_question:Msg.library_name
                 ~regexp:Regexp.mandatory_identifier ();
+              string ~text_question:Msg.project_name
+                ~regexp:Regexp.mandatory_identifier ();
+              string ~text_question:Msg.library_short_description
+                ~help:Msg.library_short_description_help ();
+              meta_enumeration ~overall_question:Msg.application
+                ~creation_cases:[Msg.new_application,
+                                 string ~regexp:Regexp.mandatory_string ();]
+                ~choice:""
+                all_applications;
+              string_enumeration ~question:Msg.is_stranded
+                ~value:"" [""; "Yes"; "No"];
+              string_enumeration ~question:Msg.truseq_control
+                ~value:"" [""; "Yes"; "No"];
+              string ~question:Msg.rna_seq_control ();
             ]);
           ]
         ~choice:""
