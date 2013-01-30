@@ -199,22 +199,28 @@ module Test_service = struct
                    ("anotherone", make_sub ~name:"Another One" ~age:45 ());
                    ("notthefirst", make_sub ~name:"Not The First" ~age:22 ());]
               end;
-              section Markup.([text "Extensible List:"]) [begin
-                let make_model sec =
-                  section Markup.([ text sec ]) [
-                    string ~text_question:"Pick a name" ();
-                    string_enumeration ~question:Markup.([text "Pick a ";
-                                                          italic "type:"])
-                      ["int"; "float"];
-                  ] in
-                extensible_list ~question:Markup.([italic "Add a thing"])
-                  ~model:(make_model "New thing")
-                  (List.init 2 (ksprintf make_model "%d one"))
-              end];
+              update_on_focus ~key:"extensible_list_01"
+                (section Markup.([text "Extensible List:"]) [begin
+                  let make_model sec =
+                    section Markup.([ text sec ]) [
+                      string ~text_question:"Pick a name" ();
+                      string_enumeration ~question:Markup.([text "Pick a ";
+                                                            italic "type:"])
+                        ["int"; "float"];
+                    ] in
+                  extensible_list ~question:Markup.([italic "Add a thing"])
+                    ~model:(make_model "New thing")
+                    (List.init 2 (ksprintf make_model "%d one"))
+                end]);
             ];
           ])
       ) in 
     create ~state
+      ~on_partial_updates:(fun ~key form ->
+        begin match key with
+        | "extensible_list_01" -> return (Some Empty)
+        | _ -> return None
+        end)
       Form.(function
       | None ->
         return (make ~text_buttons:["Start the form"] empty)

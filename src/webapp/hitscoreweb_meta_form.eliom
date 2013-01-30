@@ -410,6 +410,10 @@ and form_content =
 | List of form_content list
 | Section of phrase * form_content
 | Help of content * form_content
+| Update_on_focus of string * form_content
+    (* should be changed to
+       | Monitor_change of string * form_content
+       | Update_on_change of string * form_content *)
 | Empty
 deriving (Json)
 
@@ -539,6 +543,8 @@ module Form = struct
                      el_model = model;
                      el_list = l}
 
+  let update_on_focus ~key form = Update_on_focus (key, form)
+
   let empty = Empty
 
   let make ?buttons ?(text_buttons=["[[Save]]"]) ?key form_content =
@@ -625,6 +631,7 @@ module Simplification = struct
       | Some s -> perform s
       | None -> `empty
       end
+    | Update_on_focus (_, c) -> perform c
     | Extensible_list { el_list } -> `list (List.map el_list perform)
     | List l -> `list (List.map l perform)
     | Section (_, c) -> perform c
@@ -644,6 +651,14 @@ type down_message =
 | Reload
 | Form_saved
 | Server_error of phrase
+deriving (Json)
+
+type up_message_update =
+| Partial_update of string * form_content
+deriving (Json)
+type down_message_update =
+| Redraw of form_content
+| Nothing_to_change
 deriving (Json)
 
 
@@ -717,10 +732,10 @@ end
 
 }}
 
-let create_reply_function ~state ~form_content =
+let create_reply_function ~state ~form_content ~handle_partial_updates =
   let open Lwt in
-  server_function Json.t<up_message>
-    (fun param ->
+  let global_function =
+    server_function Json.t<up_message> (fun param ->
       let to_handle = 
         match param with
         | Ready -> None
@@ -732,6 +747,23 @@ let create_reply_function ~state ~form_content =
       | Ok (`reload) -> return (Reload)
       | Error m -> return (Server_error m)
       end)
+  in
+  let local_update_function =
+    server_function Json.t<up_message_update>
+      begin function Partial_update (key, form) ->
+        handle_partial_updates ~key form
+        >>= begin function
+        | Ok (Some s) -> return (Redraw s)
+        | Ok None -> return Nothing_to_change
+        | Error m ->
+          logf "Meta_form:local_update_function: Error: \n\
+                     %s\n(returning Nothing_to_change)" m
+          >>= fun _ ->
+          return Nothing_to_change
+        end
+      end
+  in
+  (global_function, local_update_function)
 
 {client{
 
@@ -739,10 +771,23 @@ open Html5
 open Lwt 
 
   
-(* State is a tuple with accessors (we did not want to write some
-   crazy Eliom types in a record …) *)
-let validation_button ~state = fst state
-let after_draw_todo_list ~state = snd state
+(* The state was a tuple with accessors
+   (we did not want to write some crazy Eliom types in a record …),
+   now let's try to avoid the problem in a different way: *)
+type ('a, 'b, 'c) client_meta_form_state = {
+  validation_buttons: 'a;
+  after_draw_todo_list: 'b;
+  partial_update_fun: 'c;
+}
+let client_meta_form_state ~validation_buttons ~partial_update =
+  {validation_buttons; after_draw_todo_list = ref [];
+   partial_update_fun = partial_update;
+  }
+  
+let validation_buttons ~state =  state.validation_buttons
+let after_draw_todo_list ~state =  state.after_draw_todo_list
+let call_partial_update ~state msg =
+  state.partial_update_fun msg
 
 let update_validation_button btn_elt msg_elt list_ref =
   match !list_ref with
@@ -758,14 +803,14 @@ let update_validation_button btn_elt msg_elt list_ref =
     ()
 
 let add_pending_thing ~state key value =
-  let btn_elts, msg_elt, list_ref = validation_button ~state in
+  let btn_elts, msg_elt, list_ref = validation_buttons ~state in
   list_ref := (key, value) :: !list_ref; 
   LL.iter btn_elts ~f:(fun btn_elt ->
     update_validation_button btn_elt msg_elt list_ref;
   );
   ()
 let remove_pending_thing ~state key =
-  let btn_elts, msg_elt, list_ref = validation_button ~state in
+  let btn_elts, msg_elt, list_ref = validation_buttons ~state in
   list_ref := LL.remove_assoc key !list_ref;
   LL.iter btn_elts ~f:(fun btn_elt ->
     update_validation_button btn_elt msg_elt list_ref;
@@ -1211,6 +1256,24 @@ and make_form ~state  f =
     make_extensible_list ~state el
     >>= fun (the_div, the_fun) ->
     return (the_div, fun () -> Extensible_list (the_fun ()))
+  | Update_on_focus (key, form) ->
+    make_form ~state form
+    >>= fun (the_div, the_fun) ->
+    let container =
+      div ~a:[ a_style "border: 4px green solid";
+               a_onfocus (fun _ -> dbg "Focus pocus !") ] [the_div] in
+    let container_elt = Html5_to_dom.of_div container in
+    container_elt##ondblclick <- Dom_html.handler (fun ev ->
+      Lwt.async begin fun () ->
+        dbg "Focus Js jandler";
+        call_partial_update ~state (Partial_update (key, the_fun ()))
+        >>= begin function
+        | Nothing_to_change -> dbg "Nothing to change !"; return ()
+        | Redraw _ -> dbg "Redraw order: TODO"; return ()
+        end
+      end;
+      Js._true);
+    return (container, fun () -> Update_on_focus (key, the_fun ()))
   | Empty ->
     return (div [], fun () -> Empty)
   end
@@ -1219,13 +1282,16 @@ and make_form ~state  f =
 
 }}
 
-let create ~state ?(and_reload=false) form_content =
+let create ~state ?(and_reload=false) ?on_partial_updates form_content =
   let hook_id = unique_id "meta_form_hook" in
   let the_link_like =
     let open Html5 in
     span ~a:[a_id hook_id; ] [pcdata "Meta-form Hook … Loading …"] in
   let _ = Upload.init ~configuration:state.Hitscoreweb_state.configuration () in
-  let call_server = create_reply_function ~state ~form_content in
+  let call_server, partial_update =
+    let handle_partial_updates =
+      Option.value ~default:(fun ~key _ -> return None) on_partial_updates in
+    create_reply_function ~state ~form_content ~handle_partial_updates in
 
   ignore {unit{
     let open Html5 in
@@ -1240,6 +1306,7 @@ let create ~state ?(and_reload=false) form_content =
 
         
         let call_server up = %call_server up in
+        let partial_update up = %partial_update up in
 
 
         let rec make_with_save_buttons send_to_server =
@@ -1257,7 +1324,11 @@ let create ~state ?(and_reload=false) form_content =
               let message = span [] in
               let save_section =
                 div (message :: (LL.map buttons ~f:(fun b -> span [b]))) in
-              let state = ( (buttons, message, ref []), ref []) in
+              let state =
+                client_meta_form_state
+                  ~validation_buttons:(buttons, message, ref [])
+                  ~partial_update
+              in
               make_form ~state f.form_content
               >>= fun (the_div, whole_function) ->
               let count = ref 0 in
