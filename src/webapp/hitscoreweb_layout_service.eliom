@@ -310,12 +310,11 @@ let sortable_link s t =
   `sortable (s, [self_link (`view_one_value (t, Int.of_string s))
                     (pcdataf "%s" s)])
 
-let find_in_sexp s field =
-  let open Sexp in
-  match s with
-  | List l ->
-    List.find_map l (function
-    | List [Atom a; v] when a = field -> Some v
+let find_in_sexp the_sexp field =
+  match the_sexp with
+  | Sexp.List l ->
+    List.find_map l ~f:(function
+    | Sexp.List [Sexp.Atom a; v] when a = field -> Some v
     | _ -> None)
   | _ -> None
     
