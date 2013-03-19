@@ -609,13 +609,13 @@ let per_lirbary_simple_details info =
                 >>| List.concat
                 >>= fun fastx_items ->
                 let details =
-                  if fastx_items = []
+                  let li_items =
+                    List.filter_map fastx_items
+                      (function [] -> None | l -> Some (li l)) in
+                  if li_items = []
                   then div [strongf "No Fastx information."]
-                  else
-                    let li_items =
-                      List.filter_map fastx_items
-                        (function [] -> None | l -> Some (li l)) in
-                    div [strongf "Fastx Quality Stats:"; div [ul li_items]] in
+                  else div [strongf "Fastx Quality Stats:"; div [ul li_items]]
+                in
                 return details)
               >>= fun stats ->
               let path =
