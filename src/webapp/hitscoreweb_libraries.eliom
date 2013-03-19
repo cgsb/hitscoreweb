@@ -408,12 +408,13 @@ let rendered_fastx_table path =
            ~show_message:"Show FASTX quality stats table"
            ~hide_message:"Hide FASTX quality stats table"
            [Template.html_of_content (content_table o)]) in
-      return [Template.pretty_box [msg; div]])
+      return (Some [Template.pretty_box [msg; div]]))
     ~error:(fun e ->
       let errf fmt =
         ksprintf (fun s ->
-          Template.error_box "No Fastx Stats" "%s" s >>= fun box ->
-          return [br(); box]) fmt in
+          Template.error_box "No Fastx Stats" "%s" s
+          >>= fun box ->
+          return (Some [br(); box])) fmt in
       begin match e with
       | `empty_fastx_quality_stats s ->
         (errf "file %s gave empty quality stats" s)
@@ -421,6 +422,10 @@ let rendered_fastx_table path =
         (errf "parsing file %s gave an error (%d)" s (List.length sll))
       | `read_file_timeout (f, t) ->
         (errf "I/O Error in with fastx (file %S): timeout %f\n%!" f t)
+      | `read_file_error (f, (Unix.Unix_error (_, "open", _) as e)) ->
+        logf "Fastx file (%S) cannot be opened\n%s\n%!" f (Exn.to_string e)
+        >>= fun () ->
+        return None
       | `read_file_error (f, e) ->
         (errf "I/O Error in with fastx (file %S): %s\n%!" f (Exn.to_string e))
       end)
@@ -511,22 +516,30 @@ let per_lirbary_details info =
                 |! List.concat
               in
               while_sequential (r1 @ r2) (fun fastx_read ->
-                rendered_fastx_table fastx_read#path >>= fun fastx_table ->
-                fastx_quality_plots fastx_read#path >>= fun fastx_qplot ->
-
-                return [
-                  strongf "%s: " fastx_read#kind;
-                  codef "%s" fastx_read#path;
-                  div fastx_table;
-                  div fastx_qplot;
-                ])
+                rendered_fastx_table fastx_read#path
+                >>= begin function
+                | Some fastx_table ->
+                  fastx_quality_plots fastx_read#path >>= fun fastx_qplot ->
+                  return [
+                      strongf "%s: " fastx_read#kind;
+                      codef "%s" fastx_read#path;
+                      div fastx_table;
+                      div fastx_qplot;
+                    ]
+                | None -> return []
+                end)
               >>= fun fastx_items ->
               let details =
-                div [strongf "Fastx Quality Stats:";
-                     ul [li origins; li rorigins; ];
-                     div [ul (List.map fastx_items li)];
-                    ] in
-              
+                if fastx_items = []
+                then div [strongf "No details for this one."]
+                else
+                  let li_items =
+                    List.filter_map fastx_items
+                      (function [] -> None | l -> Some (li l)) in
+                  div [strongf "Fastx Quality Stats:";
+                       ul [li origins; li rorigins; ];
+                       div [ul li_items];]
+              in
               return (details))
             >>= fun fastx_stuff ->
             let unaligned_par =
@@ -582,22 +595,30 @@ let per_lirbary_simple_details info =
                   Data_access.user_file_paths ~unaligned:un ~submission:sub lib in
                 while_sequential files#fastx (fun (r1, r2) ->
                   while_sequential (r1 @ r2) (fun fastx_read ->
-                    rendered_fastx_table fastx_read#path >>= fun fastx_table ->
-                    fastx_quality_plots fastx_read#path >>= fun fastx_qplot ->
-
-                    return [
-                      strongf "%s: " fastx_read#kind;
-                      div fastx_table;
-                      div fastx_qplot;
-                    ]))
+                    rendered_fastx_table fastx_read#path
+                    >>= begin function
+                    | Some fastx_table ->
+                      fastx_quality_plots fastx_read#path >>= fun fastx_qplot ->
+                      return [
+                        strongf "%s: " fastx_read#kind;
+                        div fastx_table;
+                        div fastx_qplot;
+                      ]
+                    | None -> return []
+                    end))
                 >>| List.concat
                 >>= fun fastx_items ->
                 let details =
-                  div [strongf "Fastx Quality Stats:";
-                       div [ul (List.map fastx_items li)];] in
+                  if fastx_items = []
+                  then div [strongf "No Fastx information."]
+                  else
+                    let li_items =
+                      List.filter_map fastx_items
+                        (function [] -> None | l -> Some (li l)) in
+                    div [strongf "Fastx Quality Stats:"; div [ul li_items]] in
                 return details)
               >>= fun stats ->
-              let path = 
+              let path =
                 Option.(value_map ~default:"NO-DIR"
                           ~f:(fun d-> d#directory) del#client_fastqs_dir) in
               return (content_paragraph [
