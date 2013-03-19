@@ -3,7 +3,7 @@ open Hitscoreweb_std
 open Hitscore
 
 module Msg = Hitscoreweb_messages
-  
+
 module Services = Hitscoreweb_services
 
 module Authentication = Hitscoreweb_authentication
@@ -19,11 +19,11 @@ let qualified_name po n =
 let qualified_link ~showing po n =
   let qn = qualified_name po n in
   [Template.a_link Services.libraries [Html5.pcdata n] (showing, [qn])]
-      
+
 let layout_id_link type_name id =
   let open Html5 in
   Template.a_link Services.layout [codef "%d" id] ([type_name], [id])
-      
+
 let intro_paragraph info =
   let open Html5 in
   let make_link (shwg, name) =
@@ -59,7 +59,7 @@ let html_detailed_dmux dmux =
             return a#kind
             >>| Layout.Enumeration_sample_sheet_kind.to_string)))
   ]
-                 
+
 let html_detailed_deliveries ?(append_path=false) subm dmux =
   let open Template in
   let open Html5 in
@@ -74,7 +74,7 @@ let html_detailed_deliveries ?(append_path=false) subm dmux =
   | l ->
     (interleave_map l ~sep:(br ())
        ~f:(fun (del, inv) ->
-         let path = 
+         let path =
            Option.(value_map ~default:"NO-DIR"
                      ~f:(fun d-> d#directory) del#client_fastqs_dir) in
          let path_part =
@@ -85,12 +85,12 @@ let html_detailed_deliveries ?(append_path=false) subm dmux =
          span ~a:[a_title path ]
            [strong [pcdata "Delivery "];
             layout_id_link "prepare_unaligned_delivery" del#oo#g_id;
-            strong [pcdata "; Invoice "]; 
+            strong [pcdata "; Invoice "];
             layout_id_link "invoicing" inv#g_id;
             path_part
            ]))
   end
-    
+
 let detailed_fastq_subtable lib =
   let open Template in
   let open Html5 in
@@ -120,12 +120,12 @@ let detailed_fastq_subtable lib =
               value_map fastq_stats ~default:[pcdata "—"]
                 ~f:(fun s ->
                   [codef "%.2f" (s.Bui.quality_score_sum /. s.Bui.yield)]));
-            
+
         ])) |! List.concat) |! List.concat in
   let empty_row = [List.init 6 (fun _ -> `text [pcdata ""])] in
   `subtable (if List.concat subtable = [] then empty_row else subtable)
 
-      
+
 let simple_fastq_subtable lib =
   let open Template in
   let open Html5 in
@@ -184,9 +184,9 @@ let make_file_links vol_id paths =
     | None ->
       b [Template.a_link Services.file [pcdata "???"] (vol_id, path)]
     end
-    else 
+    else
       i ~a:[ a_title path ] [pcdata "missing-file"]
-  end 
+  end
   |! interleave_list ~sep:(pcdata ", ")
 
 let libraries_table ~showing ~can_view_fastq_details info =
@@ -231,7 +231,7 @@ let libraries_table ~showing ~can_view_fastq_details info =
               Option.(value_map b#position_in_r2 ~default:"" ~f:(sprintf "-R2:%d"))
               Option.(value_map b#position_in_index ~default:"" ~f:(sprintf "-I:%d"))
           | `bioo     -> sprintf     "BIOO[%d]" (Option.value ~default:0 b#index)
-          | `bioo_96  -> sprintf  "BIOO-96[%d]" (Option.value ~default:0 b#index) 
+          | `bioo_96  -> sprintf  "BIOO-96[%d]" (Option.value ~default:0 b#index)
           | `illumina -> sprintf "Illumina[%d]" (Option.value ~default:0 b#index)
           | `nugen    -> sprintf    "NuGen[%d]" (Option.value ~default:0 b#index)
         in
@@ -287,7 +287,7 @@ let libraries_table ~showing ~can_view_fastq_details info =
                          ])
           ));
       stock (fun () -> cell_option lib#stock#note) ;
-              
+
       fastq (fun () ->
         if can_view_fastq_details then
           detailed_fastq_subtable lib
@@ -344,9 +344,9 @@ let libraries_table ~showing ~can_view_fastq_details info =
       List.filter_map row (fun (where, what) ->
         if List.exists where ~f:(fun w -> List.exists showing ((=) w))
         then Some (what ()) else None)) in
-  
+
   Template.content_table ~style:`alternate_colors table
-    
+
 let benchmarks work_started info_got table_generated info =
   let open Html5 in
   Authentication.authorizes (`view `benchmarks) >>= fun can_view ->
@@ -368,7 +368,7 @@ let benchmarks work_started info_got table_generated info =
                        ]))
   ) else
     return Template.(content_list [])
-      
+
 let fastx_table path =
   let open Html5 in
   let open Template in
@@ -380,8 +380,8 @@ let fastx_table path =
       bfxqs_Q3; bfxqs_IQR; bfxqs_lW; bfxqs_rW;
       bfxqs_A_Count; bfxqs_C_Count; bfxqs_G_Count; bfxqs_T_Count; bfxqs_N_Count;
       bfxqs_Max_count;} ->
-      let nb0 f = `number (sprintf "%.0f", f) in 
-      let nb2 f = `number (sprintf "%.2f", f) in 
+      let nb0 f = `number (sprintf "%.0f", f) in
+      let nb2 f = `number (sprintf "%.2f", f) in
       [nb0 bfxqs_column; nb0 bfxqs_count; nb0 bfxqs_min; nb0 bfxqs_max;
        nb0 bfxqs_sum; nb2 bfxqs_mean; nb0 bfxqs_Q1; nb0 bfxqs_med;
        nb0 bfxqs_Q3; nb0 bfxqs_IQR; nb0 bfxqs_lW; nb0 bfxqs_rW;
@@ -390,14 +390,14 @@ let fastx_table path =
        nb0 bfxqs_Max_count;]))
   >>= fun rows ->
   let h s = `head [pcdata s] in
-  return (  
+  return (
     [h "column"; h "count"; h "min"; h "max";
      h "sum"; h "mean"; h "Q1"; h "med";
      h "Q3"; h "IQR"; h "lW"; h "rW";
      h "A_Count"; h "C_Count"; h "G_Count"; h "T_Count"; h "N_Count";
      h "Max_count";]
     :: rows)
-    
+
 let rendered_fastx_table path =
   let open Html5 in
   let open Template in
@@ -469,7 +469,7 @@ let fastx_quality_plots path =
     >>= fun acgtnplot ->
     return (acgtnplot @ qplot)
   in
-  double_bind make_chart 
+  double_bind make_chart
     ~ok:(fun chart -> return chart)
     ~error:(fun _ -> (* error already `displayed' *) return [])
 
@@ -480,7 +480,7 @@ let per_lirbary_details info =
     while_sequential lib#submissions (fun sub ->
       while_sequential sub#flowcell#hiseq_raws (fun hr ->
         let fcid = sub#flowcell#oo#serial_name in
-        let section_title = 
+        let section_title =
           span [pcdata "Submission ";
                 a_link Services.flowcell [pcdata fcid] fcid;
                 pcdataf " (Lane %d)"  sub#lane_index;] in
@@ -571,7 +571,7 @@ let per_lirbary_simple_details info =
     while_sequential lib#submissions (fun sub ->
       while_sequential sub#flowcell#hiseq_raws (fun hr ->
           let fcid = sub#flowcell#oo#serial_name in
-          let section_title = 
+          let section_title =
             span [pcdata "Submission ";
                   a_link Services.flowcell [pcdata fcid] fcid;
                   pcdataf " (Lane %d)"  sub#lane_index;] in
@@ -616,9 +616,9 @@ let per_lirbary_simple_details info =
   >>= fun details_sections ->
   return (content_list details_sections)
 
-  
 
-    
+
+
 let libraries ~showing work_started info_got info =
   let open Html5 in
 
@@ -646,8 +646,8 @@ let libraries ~showing work_started info_got info =
            ]);
         details;
       ]))
-  
-let filter_classy_libraries_information  
+
+let filter_classy_libraries_information
     ~exclude ~qualified_names ~configuration ~people_filter info =
   while_sequential info#libraries ~f:(fun l ->
     let qualified = qualified_name l#stock#project l#stock#name in
