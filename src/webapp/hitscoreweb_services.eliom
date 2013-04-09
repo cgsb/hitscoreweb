@@ -45,7 +45,13 @@ let submission_forms =
   make (
     Eliom_service.service ~path:["submissions"]
       ~get_params:Eliom_parameter.(unit))
-    
+
+let fastx_results =
+  make (
+    Eliom_service.service
+      ~path:["fastx_results"]
+      ~get_params:Eliom_parameter.(opt (string "path")))
+
 type libraries_show = [ `basic | `stock | `fastq | `details ]
 let libraries_show_of_string = function
   | "basic" -> `basic

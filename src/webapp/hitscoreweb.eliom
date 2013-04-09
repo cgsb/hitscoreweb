@@ -138,6 +138,118 @@ module Evaluations_service = struct
 
 end
 
+module All_or_any_fastx_stats = struct
+
+  open Template
+
+  let all_paths_page ~configuration =
+    with_database ~configuration begin fun ~dbh ->
+      let layout = Classy.make dbh in
+      layout#fastx_quality_stats#all
+      >>| List.filter_map ~f:(fun fxqs ->
+        Option.map fxqs#g_result (fun pointer -> (fxqs, pointer)))
+      >>= fun successful_fxqss ->
+      while_sequential successful_fxqss ~f:(fun (fxqs, result) ->
+        result#get
+        >>= fun dir ->
+        Common.path_of_volume ~configuration ~dbh dir#directory#pointer
+        >>= fun path ->
+        let for_display_configuration =
+          Configuration.configure ~root_path:"root:/" () in
+        Common.path_of_volume ~configuration:for_display_configuration
+          ~dbh dir#directory#pointer
+        >>= fun display_path ->
+        (* eprintf "some path: %s\n%!" path; *)
+        ksprintf Sequme_flow_sys.get_system_command_output
+          "find %s -name '*.fxqs' -type f -print" (Filename.quote path)
+        >>< begin function
+        | Ok (out, err) ->
+          let files = String.split ~on:'\n' out |> List.map ~f:String.strip
+                      |> List.filter ~f:(fun s -> s <> "") in
+          return files
+        | Error (`system_command_error (s, status)) ->
+          ksprintf log "Find in %s error:\n%S\n%s" path s
+            (match status with
+            | `exited   i -> sprintf "exited   %d" i
+            | `exn      e -> sprintf "exn      %s" (Exn.to_string e)
+            | `signaled i -> sprintf "signaled %d" i
+            | `stopped  i -> sprintf "stopped  %d" i)
+          >>= fun () ->
+          return []
+        end
+        >>= fun paths ->
+        return (display_path, paths))
+      >>= fun result_paths ->
+      let open Template in
+      let sections =
+        List.map
+          (List.sort ~cmp:(fun (a, _) (b, _) -> String.compare b a) result_paths)
+          (fun (display_path, paths) ->
+            let open Html5 in
+            let paragraph =
+              List.map (List.sort ~cmp:String.compare paths) (fun path ->
+                li [Template.a_link Services.fastx_results
+                      [codef "%s" (Filename.basename path)] (Some path)]
+              ) in
+            content_section (Html5.pcdataf "In %s" display_path)
+              (content_paragraph [ul paragraph])) in
+      return Template.(content_list sections)
+    end
+
+  let one_path ~configuration path =
+    Hitscoreweb_libraries.rendered_fastx_table path
+    >>= fun table ->
+    Hitscoreweb_libraries.fastx_quality_plots path
+    >>= fun plots ->
+    let open Template in
+    let sections =
+      Option.value_map table
+        ~default:(content_section (Html5.pcdataf "No TABLE") (content_list []))
+        ~f:(fun tab ->
+          content_section (Html5.pcdataf "Table") (content_paragraph tab))
+      ::
+        List.map plots
+          ~f:(fun pl ->
+            content_section (Html5.pcdataf "Plots")
+              (content_paragraph [pl]))
+    in
+    return (content_list sections)
+
+
+  let display configuration = function
+  | Some path ->
+    one_path ~configuration path
+    >>= fun content ->
+    let page =
+      content_section
+        (Html5.pcdataf "Fastx Result %s" (Filename.basename path)) content
+    in
+    return page
+  | None ->
+    all_paths_page ~configuration
+    >>= fun content ->
+    let page = content_section (Html5.pcdataf "All Fastx Results") content in
+    return page
+
+  let make ~configuration =
+    (fun selection () ->
+      let main_title = "All Fastx Results" in
+      Template.default ~title:main_title (
+        Authentication.spy_userf "Visit fastx results (%s)"
+          (Option.value selection ~default:"<NONE>")
+        >>= fun () ->
+        Authentication.authorizes (`view `all_evaluations)
+        >>= function
+        | true ->
+          Template.make_content ~configuration ~main_title
+            (display configuration selection);
+        | false ->
+          Template.make_authentication_error ~configuration ~main_title
+            (return [Html5.pcdataf
+                       "You may not view the function evaluations."])))
+
+
+end
 
 module Test_service = struct
 
@@ -628,6 +740,9 @@ TODO: All exceptions in coservices should be handled in some other way
 
       Services.(register_file file)
         File_service.(make ~configuration:hitscore_configuration);
+
+      Services.(register fastx_results)
+        All_or_any_fastx_stats.(make ~configuration:hitscore_configuration);
 
       logf "All services are registered" |! Lwt.ignore_result;
 

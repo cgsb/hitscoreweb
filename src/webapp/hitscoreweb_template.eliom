@@ -382,6 +382,8 @@ let menu_ul () =
      [a_link Services.facility_statistics [pcdata "Stats"] (); ]);
     (`view `all_evaluations,
      [a_link Services.evaluations [pcdata "Function evaluations"] ()]);
+    (`view `all_evaluations,
+     [a_link Services.fastx_results [pcdata "Fastx Results"] None]);
     (`view `layout,
      [a_link Services.layout [ pcdata "Layout Navigaditor" ] ([], [])]);
     (`view `log, [a_link Services.log [ pcdata "Log" ] ()]);
