@@ -29,7 +29,7 @@ let flowcell =
 let persons =
   make (
     Eliom_service.service
-      ~path:["persons"] 
+      ~path:["persons"]
       ~get_params:Eliom_parameter.(opt (bool "transpose")
                                     ** set string "email"))
 
@@ -62,11 +62,11 @@ let libraries_show_eliom_type =
   Eliom_parameter.user_type
     ~of_string:libraries_show_of_string
     ~to_string:string_of_libraries_show
-  
+
 let libraries =
   make (
     Eliom_service.service
-      ~path:["libraries"] 
+      ~path:["libraries"]
       ~get_params:Eliom_parameter.(set libraries_show_eliom_type "show"
                                     ** set string "qualified_name"))
 
@@ -74,7 +74,7 @@ let evaluations =
   make (Eliom_service.service
           ~path:["evaluations"]
           ~get_params: Eliom_parameter.unit)
-          
+
 let layout =
   make (Eliom_service.service ~path:["layout"]
           ~get_params:Eliom_parameter.(set string "type" ** set int "value"))
@@ -83,7 +83,7 @@ let stylesheet =
   make (Eliom_service.service
           ~path:["gencore_stylesheet"]
           ~get_params: Eliom_parameter.unit)
-    
+
 let doc =
   make (Eliom_service.service
   ~path:["doc"]
@@ -98,27 +98,27 @@ let person =
   make (Eliom_service.service
           ~path:["person"]
           ~get_params:Eliom_parameter.(string "id" ** opt (string "action")))
-  
+
 let file =
   make (Eliom_service.service
           ~path:["file"]
           ~get_params:Eliom_parameter.(suffix (int "vol" ** string "path")))
 let register_file s =
   Eliom_registration.Any.register ~service:(s ())
-    
+
 let register f =
-  Output_app.register 
+  Output_app.register
     ~content_type:"text/html"
-    ~error_handler:(fun sel -> 
-      List.iter sel ~f:(fun (s, e) -> 
+    ~error_handler:(fun sel ->
+      List.iter sel ~f:(fun (s, e) ->
         eprintf "Errors: %S %S\n%!" s (Exn.to_string e));
-      Lwt.return 
+      Lwt.return
         Html5.(html
                  (head (title (ksprintf pcdata "Hitscoreweb: ERROR")) [])
                  (body [
                    div [
                      ksprintf pcdata "ERROR:";
-                     ul (List.map sel (fun (s, e) -> 
+                     ul (List.map sel (fun (s, e) ->
                        li [ksprintf pcdata "%S: %S" s (Exn.to_string e)]));
                    ];
                  ])))
@@ -126,5 +126,5 @@ let register f =
 
 
 let register_css f =
-  Eliom_registration.CssText.register 
+  Eliom_registration.CssText.register
     ~service:(f ())
