@@ -35,7 +35,7 @@ object
   method light_violet = "#ECD5F4"
   method nyu_violet = "#634283"
 end
-    
+
 let _local_styles = ref []
 
 module Local_style = struct
@@ -49,14 +49,14 @@ module Local_style = struct
     name
   let use (t: t) = _local_styles := !t :: !_local_styles
 end
-{client{ 
+{client{
 module Local_style = struct
   let create () = ()
   let add_class _ name _ = name
   let use _ = ()
 end
 }}
-  
+
 let css_service_handler ~configuration () () =
   let open Lwt in
   let css = Buffer.create 42 in
@@ -77,8 +77,8 @@ let css_service_handler ~configuration () () =
   let top_baner_max_height, main_margin_top = "5em", "7em" in
 
   out ".top_banner,.footer { \
-    right: 0%%; left: 0%%; width: 100%%; color: white; 
-    background-color: %s; background-opacity: 1; 
+    right: 0%%; left: 0%%; width: 100%%; color: white;
+    background-color: %s; background-opacity: 1;
     }" color_theme#nyu_violet;
   out ".top_banner {position: fixed; top:0px; \
                      z-index: 100; \
@@ -124,7 +124,7 @@ let css_service_handler ~configuration () () =
           background-color: %s; }\n" light_grey;
   out ".content_table_head,.content_table_text,.content_table_number {
           max-width: 40em;
-          border: 1px solid black; padding: 3px; }"; 
+          border: 1px solid black; padding: 3px; }";
   out ".content_table_number {text-align:right; font-family: monospace}\n";
   out ".odd_colored_row { background-color: %s }" color_theme#light_violet;
   out ".big_warning { background-color: #E03007; color: #D7E007; \
@@ -181,10 +181,10 @@ let string_of_backend_error e =
   | `exn e
   | `connection e
   | `disconnection e
-  | `query  (_, e) -> 
+  | `query  (_, e) ->
     sprintf "DB BACKEND ERROR: %s" (Exn.to_string e)
   end
-    
+
 let string_of_layout_error = function
   | `db_backend_error (`query (q, e)) ->
     sprintf "Query %S failed: %s" q (Exn.to_string e)
@@ -212,9 +212,9 @@ let string_of_layout_error = function
   | `wrong_version (v1, v2) ->
     sprintf "Wrong version: %s Vs %s" v1 v2
 
-    
-    
-let string_of_error_sublevel poly_error = 
+
+
+let string_of_error_sublevel poly_error =
   let open Html5 in
   String.concat ~sep:""
   (match poly_error with
@@ -268,7 +268,7 @@ let string_of_error_sublevel poly_error =
   | `unknown_layout_action s ->
     [sprintf "Cannot understand this action: %S." s;]
   | `did_not_get_one_row (name, not_one_row) ->
-    [sprintf "Getting a value did not return right: %s (%d rows)." 
+    [sprintf "Getting a value did not return right: %s (%d rows)."
         name (List.length not_one_row);]
   | `wrong_layout_typing name ->
     [sprintf "The record %S is not well typed w.r.t the official Layout." name;]
@@ -307,11 +307,11 @@ let string_of_error_sublevel poly_error =
       | `Identification -> "Identification"
       | `File_system -> "File-system"
       | `Function f -> sprintf  "function %S" f
-      | `Record r -> sprintf "record %S" r) 
+      | `Record r -> sprintf "record %S" r)
       (string_of_layout_error what)
   ]
   | `db_backend_error _
-  | `result_not_unique _ 
+  | `result_not_unique _
   | `parse_evaluation_error _
   | `parse_volume_error _
   | `parse_value_error _ as e->
@@ -343,7 +343,7 @@ let string_of_error_sublevel poly_error =
   | `sexp_parsing_error e -> [sprintf "sexp_parsing_error: %s" Exn.(to_string e)]
   )
 
-let string_of_error  poly_error = 
+let string_of_error  poly_error =
   match poly_error with
   | `broker_error e -> string_of_error_sublevel e
   | `Layout_service e -> string_of_error_sublevel e
@@ -365,14 +365,14 @@ let a_link ?(a=[]) ?fragment service content args =
 let menu_ul () =
   let open Html5 in
   let real_li s = return (Some (li ~a:[ a_class ["main_menu"]] s)) in
-  let potential_li (cap, s) = 
+  let potential_li (cap, s) =
     Authentication.authorizes cap
     >>= function
     | true ->  real_li s
     | false -> return None
   in
   while_sequential ~f:potential_li [
-    (`view `all_flowcells, 
+    (`view `all_flowcells,
      [a_link Services. hiseq_runs [pcdata "HiSeq 2000 Runs"] ()]);
     (`view `persons,
      [a_link Services.persons [pcdata "Persons"] (None, [])]);
@@ -396,7 +396,7 @@ let menu_ul () =
   | items -> return (Some (ul ~a:[ a_class ["main_menu"] ] items))
 
 
-    
+
 let default ?(title) content =
   let page page_title main_menu auth_state html_stuff =
     Html5.(
@@ -439,7 +439,7 @@ let default ?(title) content =
         ]))
   in
   let html_result =
-    let page_title = 
+    let page_title =
       Option.value_map title ~default:"Gencore" ~f:(sprintf "Gencore: %s")
     in
     Authentication.display_state ()
@@ -460,7 +460,7 @@ let default ?(title) content =
     |! Lwt.return
   in
   Lwt.bind html_result (function
-  | Ok html -> 
+  | Ok html ->
     ignore {unit{
       dbg "Last thing of the onload";
       Dom_html.document##body##style##cursor <- Js.string "auto" }};
@@ -492,15 +492,15 @@ type table_cell =
 | `subtable of table_cell list list
 | `with_geometry of int * int * table_cell
 ]
-  
+
 type content =
 | Description of
-    (Html5_types.phrasing Html5.elt * Html5_types.flow5 Html5.elt) list 
-| Section of Html5_types.phrasing Html5.elt * content 
+    (Html5_types.phrasing Html5.elt * Html5_types.flow5 Html5.elt) list
+| Section of Html5_types.phrasing Html5.elt * content
 | List of content list
 | Table of [`alternate_colors | `normal] * table_cell list list
 | Paragraph of Html5_types.flow5 Html5.elt list
-    
+
 let content_description l = Description l
 let content_description_opt l = Description (List.filter_opt l)
 let content_section t c = Section (t, c)
@@ -515,7 +515,7 @@ let content_table ?(transpose=false) ?(style=`normal) l =
           Option.value ~default:(`text []) (List.nth tl i))))
   in
   Table (style, if transpose then t l else l)
-    
+
 let cell_text s =
   let open Html5 in
   `sortable (s, [pcdataf "%s" s])
@@ -533,18 +533,18 @@ let cell_timestamp t =
   let s = Timestamp.to_string t in
   `sortable (s,
              [ span ~a:[a_title s]
-                 [pcdata 
+                 [pcdata
                      (Time.(t |! to_local_date) |! Date.to_string)]])
 let cell_timestamp_option = function
   | None -> cell_text "—"
   | Some t -> cell_timestamp t
-  
+
 let cell_int i =
   `sortable (sprintf "%d" i, [Html5.codef "%d" i])
 let cell_int_option = function
   | None -> cell_text "—"
   | Some i -> `sortable (sprintf "%d" i, [Html5.codef "%d" i])
-    
+
 let content_paragraph l = Paragraph l
 
 let _global_table_ids = ref 0
@@ -555,11 +555,11 @@ let td_on_click_to_sort do_something order cell_id idx id =
   {{fun ev ->
     if %do_something then (
       let tab =
-        Js.coerce_opt 
+        Js.coerce_opt
           (Dom_html.document##getElementById (Js.string %id))
           Dom_html.CoerceTo.table (fun _ -> assert false) in
       let rows = tab##rows in
-      let get_cell_title r c = 
+      let get_cell_title r c =
         Js.Opt.(
           let (>>=) = bind in
           let opt =
@@ -588,12 +588,12 @@ let td_on_click_to_sort do_something order cell_id idx id =
           tab##deleteRow(i);
           tab##insertRow(i)##innerHTML <- row##innerHTML);
       done;
-    )   
+    )
 }}
 
 let flatten_table l =
   let rec total_subtables_height row =
-    List.fold_left row ~init:0 ~f:(fun current cell -> 
+    List.fold_left row ~init:0 ~f:(fun current cell ->
       match cell with
       | `subtable l ->
         max current (List.fold_left l ~init:0
@@ -616,7 +616,7 @@ let flatten_table l =
       |! List.concat in
     (i, the_row :: !after_the_row)
   )
-    
+
 let rec html_of_content ?(section_level=2) content =
   let open Html5 in
   let h = function
@@ -667,11 +667,11 @@ let rec html_of_content ?(section_level=2) content =
                 []; ])
       in
       match cell with
-      | `head (c) -> 
+      | `head (c) ->
         td ~a:[a_id cell_id; a_class ["content_table_head"];
               a_rowspan rowspan; a_colspan colspan]
           ([span c] @ buttons)
-      | `head_cell c -> 
+      | `head_cell c ->
         td ~a:[a_id cell_id; a_title c#tooltip; a_class ["content_table_head"];
               a_rowspan rowspan; a_colspan colspan]
           ([span c#cell] @ buttons)
@@ -705,7 +705,7 @@ let rec html_of_content ?(section_level=2) content =
       then None
       else Some id in
     div [
-      table 
+      table
         ~a:[ a_id id;
              a_style "border: 3px  solid black; \
                         border-collapse: collapse; " ]
@@ -724,7 +724,7 @@ let make_content ~configuration ~main_title content =
   return [
     h1 [ksprintf pcdata "Gencore: %s" main_title];
     html_of_content content]
-    
+
 let make_authentication_error ~configuration ~main_title content =
   let open Html5 in
   content >>= fun content ->
@@ -746,7 +746,7 @@ module Highchart = struct
       sprintf "{type: 'spline', name: 'Mean', data: [%s]}"
         (List.map curve ~f:(sprintf "%.2f") |! String.concat ~sep:", ") in
     (categories, series, List.fold_left curve ~f:max ~init:0.)
-      
+
   let make_stack_series_exn stack =
     let categories =
       List.mapi stack ~f:(fun i _ -> sprintf "'%d'" (i + 1))
@@ -763,14 +763,14 @@ module Highchart = struct
       List.fold_left stack ~init:0. ~f:(fun prev n ->
         max prev (List.map n snd |! List.fold_left ~f:(+.) ~init:0.)) in
     (categories, stack_series, y_max)
-      
+
 
   let make_box_whisker_plot_exn by_5_list =
     let categories =
       List.mapi by_5_list ~f:(fun i _ -> sprintf "'%d'" (i + 1))
       |! String.concat ~sep:", " in
     let minimum      = List.map by_5_list (fun (x, _, _, _, _) -> x) in
-    let fst_quartile = List.map by_5_list (fun (_, x, _, _, _) -> x) in 
+    let fst_quartile = List.map by_5_list (fun (_, x, _, _, _) -> x) in
     let median       = List.map by_5_list (fun (_, _, x, _, _) -> x) in
     let trd_quartile = List.map by_5_list (fun (_, _, _, x, _) -> x) in
     let maximum      = List.map by_5_list (fun (_, _, _, _, x) -> x) in
@@ -804,7 +804,7 @@ module Highchart = struct
 
   for(i=0; i<quartile1.length; i++)
   {
-     
+
        chart.renderer.rect(quartile3[i].plotX-semiwidth+chart.plotLeft-translate,
                            quartile3[i].plotY+chart.plotTop,
                            fwidth,quartile1[i].plotY-quartile3[i].plotY, 0)
@@ -814,7 +814,7 @@ module Highchart = struct
           fill: '#ccc',
           zIndex:4
       })
-      .add();  
+      .add();
 
       chart.renderer.path(['M',max[i].plotX-semiwidth+chart.plotLeft-translate,
                           max[i].plotY+chart.plotTop,'L',
@@ -825,8 +825,8 @@ module Highchart = struct
           stroke: 'blue',
           zIndex:5
       })
-      .add();  
-      
+      .add();
+
      chart.renderer.path(['M',median[i].plotX-semiwidth+chart.plotLeft-translate,
                          median[i].plotY+chart.plotTop,'L',
                          median[i].plotX+semiwidth+chart.plotLeft-translate,
@@ -836,9 +836,9 @@ module Highchart = struct
           stroke: 'green',
           zIndex:5
       })
-      .add();  
-      
-      
+      .add();
+
+
      chart.renderer.path(['M',min[i].plotX-semiwidth+chart.plotLeft-translate,
                          min[i].plotY+chart.plotTop,'L',
                          min[i].plotX+semiwidth+chart.plotLeft-translate,
@@ -859,7 +859,7 @@ module Highchart = struct
           stroke: '#aaa',
           zIndex:3
       })
-      .add();          
+      .add();
   }
 }"
 
@@ -873,9 +873,9 @@ module Highchart = struct
              this.points[i].series.name, '</span>: ',
       '<b>', Highcharts.numberFormat(this.points[i].y, 0), '</b>'].join('');
              }
-             return s;    
+             return s;
          },
-         shared:true         
+         shared:true
      }
      "
   let standard_tooltip = "
@@ -884,7 +884,7 @@ module Highchart = struct
        \         return ''+ this.series.name +': '+ this.y;
        \       }
        \     }"
-      
+
   let make_exn
       ?(with_legend=false) ?categories ?(more_y=4.) ?y_axis_title ~plot_title spec =
     let open Html5 in
@@ -958,7 +958,7 @@ module Highchart = struct
     with
       e ->
         error (`error_while_preparing_highchart (e, plot_title))
-      
+
 end
 
 
@@ -1020,7 +1020,7 @@ let pretty_box content =
 }}
 let involution =
   String.map ~f:(fun char -> char_of_int ((int_of_char char + 128) mod 256))
-        
+
 let anti_spam_mailto ~id ~mailto =
   let (encoded:string) = (involution mailto : string) in
   ignore {unit{
