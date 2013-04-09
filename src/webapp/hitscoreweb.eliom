@@ -172,7 +172,7 @@ module Test_service = struct
               float  ~text_question:"Now a float:" ~value:(atan (-1.)) ();
               float  ~text_question:"percent float" ~range:percentage ();
               float  ~text_question:"float > 0." ~range:strictly_positive ();
-              integer ~text_question:"int > 0" ~range:strictly_positive (); 
+              integer ~text_question:"int > 0" ~range:strictly_positive ();
               string_enumeration ~question:Markup.([text "Many strings?"])
                 ~value:"one" ["zero"; "one"; "two"; "three"];
               open_string_enumeration ~question:Markup.([text "Many strings?"])
@@ -213,7 +213,7 @@ module Test_service = struct
               end];
             ];
           ])
-      ) in 
+      ) in
     create ~state
       Form.(function
       | None ->
@@ -244,10 +244,10 @@ module Test_service = struct
         return (make ~text_buttons:["Nothing to save?"] empty)
       )
 
-     
+
   let test ~state =
     let open Html5 in
-    begin 
+    begin
       let welcome = [
         h2 [pcdata "Welcome"];
         h3 [pcdata "Test Form:"];
@@ -255,7 +255,7 @@ module Test_service = struct
       ] in
       return (welcome)
     end
-      
+
   let make ~state =
     (fun () () ->
       let main_title = "Test" in
@@ -273,8 +273,8 @@ end
 
 module Default_service = struct
 
-    
-    
+
+
   let make ~state =
     (fun () () ->
       let open Html5 in
@@ -399,7 +399,7 @@ module File_service = struct
     >>| List.map ~f:(fun lane ->
       Array.(to_list (map lane#contacts ~f:(fun c -> c#pointer))))
     >>| List.concat
-    
+
   let indentify_and_verify ~configuration vol path =
     with_database ~configuration (fun ~dbh ->
       let vol_pointer = Layout.File_system.(unsafe_cast vol) in
@@ -448,12 +448,12 @@ module File_service = struct
         return (content_type, path)
       | false -> error (`path_not_right_volume path)
       end)
-    
+
   let error_content e =
     let open Template in
     let open Html5 in
     return ( [Html5.pcdata "Error: Cannot retrieve that file …"])
-      
+
   let make ~configuration =
     begin fun (vol, path) () ->
       let open Lwt  in
@@ -468,7 +468,7 @@ module File_service = struct
         Eliom_registration.Html5.send ~content_type:"text/html" html
       end
     end
-      
+
 end
 
 let () =
@@ -493,7 +493,7 @@ let () =
       Lwt_preemptive.init 1 500 (eprintf "LwtP:%s\n%!");
 
       Sequme_flow_sys.Timeout.set_global_default 10.;
-      
+
       let _ =
         (* From the doc: http://ocsigen.org/eliom/api/server/Eliom_output
            >   Note that you should not catch every exception here
@@ -573,7 +573,7 @@ TODO: All exceptions in coservices should be handled in some other way
           ~loop_time:(if !debug_mode then 90. else 600.)
           ~configuration:config ()
         |! Lwt.ignore_result;
-        let state = 
+        let state =
           Hitscoreweb_state.init_state ~configuration:config () in
         (state, config, debug_mode)
       in
