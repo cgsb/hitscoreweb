@@ -40,11 +40,11 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
       let email_field =
         let style = if is_vip then "color: green" else "" in
         if not full_view
-        then 
+        then
           `sortable (person#t#email,
                      [code ~a:[a_id person#t#email; a_style style]
                          [pcdata person#t#email]])
-        else 
+        else
           `sortable (person#t#email,
                      [Template.a_link Services.person
                          [code ~a:[a_id person#t#email; a_style style]
@@ -79,16 +79,6 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
                               error [Markup.text s]
                             end
                           ));
-                      (*
-                      Html5.post_form ~a:[ a_style "display: inline;" ]
-                        ~service:(
-                          Eliom_service.preapply
-                            ~service:(Authentication.start_impersonation_coservice ())
-                            () person#t#email)
-                        (fun () ->
-                          [Html5.string_input
-                              ~input_type:`Submit ~value:"Impersonate" ();]) 
-                      *)
                      ]
           )
       in
@@ -112,10 +102,10 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
         opttext person#t#login;
         `text applications;
       ] in
-      let supplement = 
+      let supplement =
         if not full_view then [] else [
           `text (array_to_list_intermap person#t#roles ~sep:(br ())
-                   ~f:(fun s -> pcdataf "%s" 
+                   ~f:(fun s -> pcdataf "%s"
                      (Layout.Enumeration_role.to_string s)));
           opttext person#t#note;]
       in
@@ -134,11 +124,11 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
       `head [pcdata "Secondary Emails"];
       `head [pcdata "Login"];
       `head [pcdata "Applications"] ] in
-    let supplement = 
+    let supplement =
       if not full_view then [] else [
 	`head [pcdata "Roles"];
 	`head [pcdata "Note"];] in
-    content_section 
+    content_section
       (ksprintf pcdata "Found %d Person%s" nrows
          (if nrows > 1 then "s" else ""))
       (content_table ~transpose ((normal_rows @ supplement) :: actual_rows))))
@@ -152,11 +142,11 @@ let make ~state =
          Authentication.authorizes (`view `full_persons)
          >>= fun full_view ->
          Template.make_content ~configuration:state.State.configuration
-           ~main_title:"People" 
+           ~main_title:"People"
            (persons ?transpose ~highlight ~full_view ~state)
        | false ->
          Template.make_authentication_error
            ~configuration:state.State.configuration
-           ~main_title:"Persons" 
+           ~main_title:"Persons"
            (return [Html5.pcdataf "You may not view any person."])))
 
