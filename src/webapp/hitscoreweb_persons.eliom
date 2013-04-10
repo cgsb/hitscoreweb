@@ -88,8 +88,8 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
         List.map person#libraries (fun l ->
           String.concat_array ~sep:"/" l#application)
         |! List.dedup
-        |! List.map ~f:pcdata
-        |! interleave_list ~sep:(br ()) in
+        |! List.map ~f:(codef "%s")
+        |! interleave_list ~sep:(pcdata ", ") in
       let default = [
         opttext person#t#print_name;
         text person#t#given_name;
