@@ -41,7 +41,7 @@ let flowcell_cell ~dbh fc_p =
           interleave_list ~sep:(pcdata ", ") links
       with e -> [] in
     let info_on_lanes =
-      interleave_list ~sep:[ br () ]
+      interleave_list ~sep:[ pcdata "; "; br () ]
         (List.map keys ~f:(fun k ->
           let vals = List.filter lanes_info ~f:(fun a -> fst a = k) in
           let plural = if List.length vals = 1 then "" else "s" in
