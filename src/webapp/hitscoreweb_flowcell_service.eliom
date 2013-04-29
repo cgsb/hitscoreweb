@@ -141,6 +141,115 @@ let flowcell_lanes_table hsc ~serial_name =
 	        `head_cell Msg.libraries_of_lane; ]
               :: lanes)))))
 
+let email_content ~pi_name ~flowcell_name =
+  sprintf "Dear %s Lab,\n\
+           \n\
+           Results for your recently sequenced \
+           libraries on flowcell %s are now available here:\n\
+           \n\
+           https://gencore.bio.nyu.edu/hiseq_runs\n\
+           \n\
+           Click on the links for each library to see additional details such as \
+           quality statistics and paths to the fastq files on the Bowery \
+           cluster.\n\
+           \n\
+           Please let us know if you have questions.\n\
+           \n\
+           Best,\n\
+           GenCore Team"  pi_name flowcell_name
+
+(* A section with the invoicing information and delivery draft emails. *)
+let invoicing_section ~serial_name configuration =
+  let open Html5 in
+  let open Template in
+  with_database configuration (fun ~dbh ->
+    let layout = Classy.make dbh in
+    layout#flowcell#all >>= fun all_flowcells ->
+    layout#invoicing#all >>= fun all_invoices ->
+    layout#lane#all >>= fun all_lanes ->
+    layout#person#all >>= fun all_persons ->
+    let this_flowcell =
+      List.find all_flowcells (fun fc -> fc#serial_name = serial_name) in
+    let lanes =
+      match this_flowcell with
+      | None -> [] (* if the flowcell is not found an error should
+                      have already happened in the previous section *)
+      | Some f ->
+        List.filter_map all_lanes (fun l ->
+          match Array.findi f#lanes (fun _ fl -> fl#id = l#g_id) with
+          | Some (idx, _) -> Some (idx, l)
+          | None -> None)
+    in
+    let invoices =
+      List.filter_map all_invoices (fun invoice ->
+        let idx_lanes =
+          List.filter lanes (fun (idx, lane) ->
+            Array.exists invoice#lanes (fun il -> il#id = lane#g_id)) in
+        match idx_lanes with
+        | [] -> None
+        | idx_lanes ->
+          let pi =
+            List.find all_persons (fun p -> p#g_id = invoice#pi#id) in
+          let pi_full_name =
+            Option.value_map ~default:(strongf "NOT FOUND !!!") pi
+              ~f:(fun p -> strongf "%s, %s" p#family_name p#given_name) in
+          let pi_name =
+            Option.value_map ~default:( "NOT FOUND !!!") pi
+              ~f:(fun p -> p#family_name) in
+          let opt = Option.value ~default:"—" in
+          let contacts =
+            List.map idx_lanes (fun (_, lane) ->
+              List.filter all_persons (fun p ->
+                Array.exists lane#contacts (fun c -> c#id = p #g_id)))
+            |> List.concat
+            |> List.dedup ~compare:(fun a b -> Int.compare a#g_id b#g_id) in
+          let email_contact_list =
+            List.map contacts (fun c ->
+              sprintf "\"%s, %s\" <%s>" c#family_name c#given_name c#email) in
+          let email_content =
+            email_content ~pi_name ~flowcell_name:serial_name in
+          let span_email, div_email =
+            hide_show_div ~start_hidden:true
+              ~show_message:"Show delivery draft email"
+              ~hide_message:"Hide delivery draft email"
+              [p [pcdataf "To: %s" (String.concat ~sep:", " email_contact_list)];
+               p [pcdataf "Subject: Data for %s" serial_name];
+               pre [pcdata email_content]] in
+          let gmail_link =
+            let params = Ocsigen_lib.Url.make_encoded_parameters [
+                ("to", (String.concat ~sep:", " email_contact_list));
+                ("su", sprintf "Subject: Data for %s" serial_name);
+                ("body", email_content);
+              ] in
+            sprintf "https://mail.google.com/mail/?view=cm&fs=1&tf=1&%s" params
+          in
+          Some (content_paragraph [
+              strongf "Invoice";
+              pcdataf " (%d) to " invoice#g_id;
+              pi_full_name;
+              ul [
+                li [pcdataf
+                      "Account: %s, Fund: %s, Org: %s, Program: %s, Project: %s"
+                      (opt invoice#account_number) (opt invoice#fund)
+                      (opt invoice#org) (opt invoice#program)
+                      (opt invoice#project)];
+                li [pcdataf "Takes %02.0f%% of lane%s %s"
+                      invoice#percentage
+                      (if List.length idx_lanes > 1 then "s" else "")
+                      (List.map idx_lanes (fun (i, _) -> sprintf "%d" (i + 1))
+                       |> String.concat ~sep:", ")];
+                li [
+                  pretty_box [span_email; div_email];
+                  core_a ~a:[ a_hreff "%s" gmail_link ]
+                    [pcdata "Open in Gmail-Compose"];
+                ];
+              ];
+            ])) in
+    return (content_list invoices))
+  >>= fun content ->
+  return (content_section (pcdata "Invoicing") content)
+
+
 let get_clusters_info ~configuration path =
   let make file =
     Data_access.File_cache.get_clusters_info file >>= fun ci_om ->
@@ -367,6 +476,8 @@ let make configuration =
        | true ->
          flowcell_lanes_table ~serial_name configuration
          >>= fun tab_section ->
+         invoicing_section ~serial_name configuration
+         >>= fun invoicing_sec ->
          Authentication.authorizes (`view `hiseq_raw_info)
          >>= fun hiseq_raw_authorization ->
          begin if hiseq_raw_authorization then
@@ -384,7 +495,8 @@ let make configuration =
          end
          >>= fun demux_info ->
          let content =
-           return (content_list [tab_section; hr_section; demux_info]) in
+           return (content_list [tab_section; invoicing_sec;
+                                 hr_section; demux_info]) in
          make_content ~configuration ~main_title content
        | false ->
          Template.make_authentication_error ~configuration ~main_title
