@@ -221,6 +221,8 @@ let person_flowcells ~configuration =
             span [
               pcdata "Delivery ";
               codef "%s" Layout.Record_client_fastqs_dir.(cfd.g_value.directory);
+              pcdata " on ";
+              html_of_cluster Layout.Record_client_fastqs_dir.(cfd.g_value.host);
             ] in
           List.map deliveries (fun (ddmux, delivp, dmux_sum) ->
             List.map delivp (fun (fpub, cfd) ->
