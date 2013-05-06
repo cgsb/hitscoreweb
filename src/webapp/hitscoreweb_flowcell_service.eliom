@@ -349,47 +349,86 @@ let apply_demux_stats_filter
           || only_one_in_the_lane) -> Some (f ())
   | _ -> None
 
+(*doc
+`get_demux_stats` returns two tables: the library stats table and the
+lane stats table.
+
+The lane-stats are computed while going through the libraries.
+
+The tables are returned as a tuple:
+`(libraries_first_row, libraries_other_rows, lane_first_row, lane_other_rows)`.
+
+*)
 let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
     (* eprintf "demux: %s\n%!" dmux_sum; *)
   let make dmux_sum =
     Data_access.File_cache.get_demux_summary dmux_sum >>= fun ls_la ->
     let open Html5 in
     let open Template in
-    let first_row = [
+    let nb2 f = `number (sprintf "%.2f", f) in
+    let nb0 f = `number (sprintf "%.0f", f) in
+    let lane_stats = ref [] in
+    (* \-> assoc list: lane-nb × (clust-count, yield_q30, yield, qscore_sum)*)
+    let libraries_first_row = [
       `head_cell Msg.lane;
       `head_cell Msg.library_name;
       `head_cell Msg.number_of_reads;
       `head_cell Msg.zero_mismatch;
       `head_cell Msg.percent_bases_over_q30;
       `head_cell Msg.mean_qs] in
-    let other_rows =
+    let libraries_other_rows =
       List.mapi (Array.to_list ls_la) (fun i ls_l ->
         let only_one_in_the_lane = List.length ls_l = 1 in
-        List.filter_map ls_l (fun ls ->
-          let open Hitscore_interfaces.B2F_unaligned_information in
-          let nb2 f = `number (sprintf "%.2f", f) in
-          let nb0 f = `number (sprintf "%.0f", f) in
-          let make_row () =
-            let name =
-              if ls.name = sprintf "lane%d" (i + 1)
-              then sprintf "Undetermined Lane %d" (i + 1)
-              else ls.name in
-            [
-              `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
-              `sortable (name, [ pcdata name ]);
-              nb0 ls.cluster_count;
-              nb2 (100. *. ls.cluster_count_m0 /. ls.cluster_count);
-              nb2 (100. *. ls.yield_q30 /. ls.yield);
-              nb2 (ls.quality_score_sum /. ls.yield);
-              (*   s ls.yield; s ls.yield_q30; s ls.cluster_count;
-                   s ls.cluster_count_m0; s ls.cluster_count_m1;
-                   s ls.quality_score_sum; *)
-            ] in
-          apply_demux_stats_filter
-            ~filter ~lane_index:(i + 1) ~library_name:ls.name
-            ~only_one_in_the_lane ~f:make_row))
+        let lane_clust_count = ref 0. in
+        let lane_yield_q30 = ref 0. in
+        let lane_yield = ref 0. in
+        let lane_qscore = ref 0. in
+        let rows =
+          List.filter_map ls_l (fun ls ->
+              let open Hitscore_interfaces.B2F_unaligned_information in
+              lane_clust_count := !lane_clust_count +. ls.cluster_count;
+              lane_yield_q30 := !lane_yield_q30 +. ls.yield_q30;
+              lane_yield := !lane_yield +. ls.yield;
+              lane_qscore := !lane_qscore +. ls.quality_score_sum;
+              let make_row () =
+                let name =
+                  if ls.name = sprintf "lane%d" (i + 1)
+                  then sprintf "Undetermined Lane %d" (i + 1)
+                  else ls.name in
+                [
+                  `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
+                  `sortable (name, [ pcdata name ]);
+                  nb0 ls.cluster_count;
+                  nb2 (100. *. ls.cluster_count_m0 /. ls.cluster_count);
+                  nb2 (100. *. ls.yield_q30 /. ls.yield);
+                  nb2 (ls.quality_score_sum /. ls.yield);
+                  (*   s ls.yield; s ls.yield_q30; s ls.cluster_count;
+                       s ls.cluster_count_m0; s ls.cluster_count_m1;
+                       s ls.quality_score_sum; *)
+                ] in
+              apply_demux_stats_filter
+                ~filter ~lane_index:(i + 1) ~library_name:ls.name
+                ~only_one_in_the_lane ~f:make_row) in
+        lane_stats := (i, (!lane_clust_count, !lane_yield_q30,
+                           !lane_yield, !lane_qscore)) :: !lane_stats;
+        rows)
     in
-    return (first_row, List.concat other_rows)
+    let lane_first_row = [
+      `head_cell Msg.lane;
+      `head_cell Msg.number_of_reads;
+      `head_cell Msg.percent_bases_over_q30;
+      `head_cell Msg.mean_qs] in
+    let lane_other_rows =
+      List.map (List.sort !lane_stats ~cmp:(fun (i, _) (j,_) -> Int.compare i j))
+        ~f:(fun (lane_index, (clusters, yq30, y, qs)) ->
+            [`sortable (Int.to_string (lane_index + 1),
+                        [codef "%d" (lane_index + 1)]);
+             nb0 clusters;
+             (* nb2 (100. *. ls.cluster_count_m0 /. ls.cluster_count); *)
+             nb2 (100. *. yq30 /. y);
+             nb2 (qs /. y); ]) in
+    return (libraries_first_row, List.concat libraries_other_rows,
+            lane_first_row, lane_other_rows)
   in
   let dmux_sum = Filename.concat path "Flowcell_demux_summary.xml" in
   make dmux_sum
@@ -428,9 +467,13 @@ let demux_info ~configuration ~serial_name =
           end
           >>= fun stat_path ->
           double_bind (get_demux_stats ~configuration stat_path)
-            ~ok:(fun (h, rs) ->
-              let tab = content_table (h :: rs) in
-              return (content_section (pcdataf "Stats") tab))
+            ~ok:(fun (head_libs, rows_libs, head_lanes, rows_lanes) ->
+              let libs_tab = content_table (head_libs :: rows_libs) in
+              let lanes_tab = content_table (head_lanes :: rows_lanes) in
+              return (content_list [
+                  content_section (pcdataf "Library Stats") libs_tab;
+                  content_section (pcdataf "Lane Stats") lanes_tab;
+                ]))
             ~error:(fun e ->
               return
                 (content_section (pcdataf "Stats Not Available")
