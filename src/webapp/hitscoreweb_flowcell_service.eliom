@@ -368,7 +368,8 @@ let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
     let nb2 f = `number (sprintf "%.2f", f) in
     let nb0 f = `number (sprintf "%.0f", f) in
     let lane_stats = ref [] in
-    (* \-> assoc list: lane-nb × (clust-count, yield_q30, yield, qscore_sum)*)
+    (* \-> list of
+       lane-nb × (clust-count × yield_q30 × yield × qscore_sum × undetermined)*)
     let libraries_first_row = [
       `head_cell Msg.lane;
       `head_cell Msg.library_name;
@@ -383,6 +384,7 @@ let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
         let lane_yield_q30 = ref 0. in
         let lane_yield = ref 0. in
         let lane_qscore = ref 0. in
+        let lane_undetermined = ref 0. in
         let rows =
           List.filter_map ls_l (fun ls ->
               let open Hitscore_interfaces.B2F_unaligned_information in
@@ -392,9 +394,12 @@ let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
               lane_qscore := !lane_qscore +. ls.quality_score_sum;
               let make_row () =
                 let name =
-                  if ls.name = sprintf "lane%d" (i + 1)
-                  then sprintf "Undetermined Lane %d" (i + 1)
-                  else ls.name in
+                  if (ls.name = sprintf "lane%d" (i + 1)
+                     || ls.name = sprintf "UndeterminedLane%d" (i + 1))
+                  then (
+                    lane_undetermined := ls.cluster_count;
+                    sprintf "Undetermined Lane %d" (i + 1)
+                  ) else ls.name in
                 [
                   `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
                   `sortable (name, [ pcdata name ]);
@@ -410,20 +415,23 @@ let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
                 ~filter ~lane_index:(i + 1) ~library_name:ls.name
                 ~only_one_in_the_lane ~f:make_row) in
         lane_stats := (i, (!lane_clust_count, !lane_yield_q30,
-                           !lane_yield, !lane_qscore)) :: !lane_stats;
+                           !lane_yield, !lane_qscore, !lane_undetermined))
+                      :: !lane_stats;
         rows)
     in
     let lane_first_row = [
       `head_cell Msg.lane;
       `head_cell Msg.number_of_reads;
+      `head_cell Msg.number_of_undetermined_reads;
       `head_cell Msg.percent_bases_over_q30;
       `head_cell Msg.mean_qs] in
     let lane_other_rows =
       List.map (List.sort !lane_stats ~cmp:(fun (i, _) (j,_) -> Int.compare i j))
-        ~f:(fun (lane_index, (clusters, yq30, y, qs)) ->
+        ~f:(fun (lane_index, (clusters, yq30, y, qs, undetermined)) ->
             [`sortable (Int.to_string (lane_index + 1),
                         [codef "%d" (lane_index + 1)]);
              nb0 clusters;
+             nb0 undetermined;
              (* nb2 (100. *. ls.cluster_count_m0 /. ls.cluster_count); *)
              nb2 (100. *. yq30 /. y);
              nb2 (qs /. y); ]) in
