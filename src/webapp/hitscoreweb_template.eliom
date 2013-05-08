@@ -1033,3 +1033,17 @@ let anti_spam_mailto ~id ~mailto =
     | _ -> ()
     end
   }}
+
+let html_of_cluster = function
+  | "bowery.es.its.nyu.edu" ->
+    Html5.(
+      core_a
+        ~a:[ a_hreff "https://wikis.nyu.edu/display/NYUHPC/Bowery" ]
+        [pcdata "Bowery"])
+  | "butinah.abudhabi.nyu.edu" ->
+    Html5.(
+      core_a
+        ~a:[ a_hreff "http://nyuad.nyu.edu/research/resources-support/\
+                      research-facilities/nyuad-hpc.html" ]
+        [pcdata "Butinah"]);
+  | other -> Html5.(codef "%S" other)

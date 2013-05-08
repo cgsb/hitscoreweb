@@ -141,6 +141,115 @@ let flowcell_lanes_table hsc ~serial_name =
 	        `head_cell Msg.libraries_of_lane; ]
               :: lanes)))))
 
+let email_content ~pi_name ~flowcell_name =
+  sprintf "Dear %s Lab,\n\
+           \n\
+           Results for your recently sequenced \
+           libraries on flowcell %s are now available here:\n\
+           \n\
+           https://gencore.bio.nyu.edu/hiseq_runs\n\
+           \n\
+           Click on the links for each library to see additional details such as \
+           quality statistics and paths to the fastq files on the Bowery \
+           cluster.\n\
+           \n\
+           Please let us know if you have questions.\n\
+           \n\
+           Best,\n\
+           GenCore Team"  pi_name flowcell_name
+
+(* A section with the invoicing information and delivery draft emails. *)
+let invoicing_section ~serial_name configuration =
+  let open Html5 in
+  let open Template in
+  with_database configuration (fun ~dbh ->
+    let layout = Classy.make dbh in
+    layout#flowcell#all >>= fun all_flowcells ->
+    layout#invoicing#all >>= fun all_invoices ->
+    layout#lane#all >>= fun all_lanes ->
+    layout#person#all >>= fun all_persons ->
+    let this_flowcell =
+      List.find all_flowcells (fun fc -> fc#serial_name = serial_name) in
+    let lanes =
+      match this_flowcell with
+      | None -> [] (* if the flowcell is not found an error should
+                      have already happened in the previous section *)
+      | Some f ->
+        List.filter_map all_lanes (fun l ->
+          match Array.findi f#lanes (fun _ fl -> fl#id = l#g_id) with
+          | Some (idx, _) -> Some (idx, l)
+          | None -> None)
+    in
+    let invoices =
+      List.filter_map all_invoices (fun invoice ->
+        let idx_lanes =
+          List.filter lanes (fun (idx, lane) ->
+            Array.exists invoice#lanes (fun il -> il#id = lane#g_id)) in
+        match idx_lanes with
+        | [] -> None
+        | idx_lanes ->
+          let pi =
+            List.find all_persons (fun p -> p#g_id = invoice#pi#id) in
+          let pi_full_name =
+            Option.value_map ~default:(strongf "NOT FOUND !!!") pi
+              ~f:(fun p -> strongf "%s, %s" p#family_name p#given_name) in
+          let pi_name =
+            Option.value_map ~default:( "NOT FOUND !!!") pi
+              ~f:(fun p -> p#family_name) in
+          let opt = Option.value ~default:"—" in
+          let contacts =
+            List.map idx_lanes (fun (_, lane) ->
+              List.filter all_persons (fun p ->
+                Array.exists lane#contacts (fun c -> c#id = p #g_id)))
+            |> List.concat
+            |> List.dedup ~compare:(fun a b -> Int.compare a#g_id b#g_id) in
+          let email_contact_list =
+            List.map contacts (fun c ->
+              sprintf "\"%s, %s\" <%s>" c#family_name c#given_name c#email) in
+          let email_content =
+            email_content ~pi_name ~flowcell_name:serial_name in
+          let span_email, div_email =
+            hide_show_div ~start_hidden:true
+              ~show_message:"Show delivery draft email"
+              ~hide_message:"Hide delivery draft email"
+              [p [pcdataf "To: %s" (String.concat ~sep:", " email_contact_list)];
+               p [pcdataf "Subject: Data for %s" serial_name];
+               pre [pcdata email_content]] in
+          let gmail_link =
+            let params = Ocsigen_lib.Url.make_encoded_parameters [
+                ("to", (String.concat ~sep:", " email_contact_list));
+                ("su", sprintf "Subject: Data for %s" serial_name);
+                ("body", email_content);
+              ] in
+            sprintf "https://mail.google.com/mail/?view=cm&fs=1&tf=1&%s" params
+          in
+          Some (content_paragraph [
+              strongf "Invoice";
+              pcdataf " (%d) to " invoice#g_id;
+              pi_full_name;
+              ul [
+                li [pcdataf
+                      "Account: %s, Fund: %s, Org: %s, Program: %s, Project: %s"
+                      (opt invoice#account_number) (opt invoice#fund)
+                      (opt invoice#org) (opt invoice#program)
+                      (opt invoice#project)];
+                li [pcdataf "Takes %02.0f%% of lane%s %s"
+                      invoice#percentage
+                      (if List.length idx_lanes > 1 then "s" else "")
+                      (List.map idx_lanes (fun (i, _) -> sprintf "%d" (i + 1))
+                       |> String.concat ~sep:", ")];
+                li [
+                  pretty_box [span_email; div_email];
+                  core_a ~a:[ a_hreff "%s" gmail_link ]
+                    [pcdata "Open in Gmail-Compose"];
+                ];
+              ];
+            ])) in
+    return (content_list invoices))
+  >>= fun content ->
+  return (content_section (pcdata "Invoicing") content)
+
+
 let get_clusters_info ~configuration path =
   let make file =
     Data_access.File_cache.get_clusters_info file >>= fun ci_om ->
@@ -240,47 +349,94 @@ let apply_demux_stats_filter
           || only_one_in_the_lane) -> Some (f ())
   | _ -> None
 
+(*doc
+`get_demux_stats` returns two tables: the library stats table and the
+lane stats table.
+
+The lane-stats are computed while going through the libraries.
+
+The tables are returned as a tuple:
+`(libraries_first_row, libraries_other_rows, lane_first_row, lane_other_rows)`.
+
+*)
 let get_demux_stats ?(filter:demux_stats_filter=`none) ~configuration path =
     (* eprintf "demux: %s\n%!" dmux_sum; *)
   let make dmux_sum =
     Data_access.File_cache.get_demux_summary dmux_sum >>= fun ls_la ->
     let open Html5 in
     let open Template in
-    let first_row = [
+    let nb2 f = `number (sprintf "%.2f", f) in
+    let nb0 f = `number (sprintf "%.0f", f) in
+    let lane_stats = ref [] in
+    (* \-> list of
+       lane-nb × (clust-count × yield_q30 × yield × qscore_sum × undetermined)*)
+    let libraries_first_row = [
       `head_cell Msg.lane;
       `head_cell Msg.library_name;
       `head_cell Msg.number_of_reads;
       `head_cell Msg.zero_mismatch;
       `head_cell Msg.percent_bases_over_q30;
       `head_cell Msg.mean_qs] in
-    let other_rows =
+    let libraries_other_rows =
       List.mapi (Array.to_list ls_la) (fun i ls_l ->
         let only_one_in_the_lane = List.length ls_l = 1 in
-        List.filter_map ls_l (fun ls ->
-          let open Hitscore_interfaces.B2F_unaligned_information in
-          let nb2 f = `number (sprintf "%.2f", f) in
-          let nb0 f = `number (sprintf "%.0f", f) in
-          let make_row () =
-            let name =
-              if ls.name = sprintf "lane%d" (i + 1)
-              then sprintf "Undetermined Lane %d" (i + 1)
-              else ls.name in
-            [
-              `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
-              `sortable (name, [ pcdata name ]);
-              nb0 ls.cluster_count;
-              nb2 (100. *. ls.cluster_count_m0 /. ls.cluster_count);
-              nb2 (100. *. ls.yield_q30 /. ls.yield);
-              nb2 (ls.quality_score_sum /. ls.yield);
-              (*   s ls.yield; s ls.yield_q30; s ls.cluster_count;
-                   s ls.cluster_count_m0; s ls.cluster_count_m1;
-                   s ls.quality_score_sum; *)
-            ] in
-          apply_demux_stats_filter
-            ~filter ~lane_index:(i + 1) ~library_name:ls.name
-            ~only_one_in_the_lane ~f:make_row))
+        let lane_clust_count = ref 0. in
+        let lane_yield_q30 = ref 0. in
+        let lane_yield = ref 0. in
+        let lane_qscore = ref 0. in
+        let lane_undetermined = ref 0. in
+        let rows =
+          List.filter_map ls_l (fun ls ->
+              let open Hitscore_interfaces.B2F_unaligned_information in
+              lane_clust_count := !lane_clust_count +. ls.cluster_count;
+              lane_yield_q30 := !lane_yield_q30 +. ls.yield_q30;
+              lane_yield := !lane_yield +. ls.yield;
+              lane_qscore := !lane_qscore +. ls.quality_score_sum;
+              let make_row () =
+                let name =
+                  if (ls.name = sprintf "lane%d" (i + 1)
+                     || ls.name = sprintf "UndeterminedLane%d" (i + 1))
+                  then (
+                    lane_undetermined := ls.cluster_count;
+                    sprintf "Undetermined Lane %d" (i + 1)
+                  ) else ls.name in
+                [
+                  `sortable (Int.to_string (i + 1), [codef "%d" (i + 1)]);
+                  `sortable (name, [ pcdata name ]);
+                  nb0 ls.cluster_count;
+                  nb2 (100. *. ls.cluster_count_m0 /. ls.cluster_count);
+                  nb2 (100. *. ls.yield_q30 /. ls.yield);
+                  nb2 (ls.quality_score_sum /. ls.yield);
+                  (*   s ls.yield; s ls.yield_q30; s ls.cluster_count;
+                       s ls.cluster_count_m0; s ls.cluster_count_m1;
+                       s ls.quality_score_sum; *)
+                ] in
+              apply_demux_stats_filter
+                ~filter ~lane_index:(i + 1) ~library_name:ls.name
+                ~only_one_in_the_lane ~f:make_row) in
+        lane_stats := (i, (!lane_clust_count, !lane_yield_q30,
+                           !lane_yield, !lane_qscore, !lane_undetermined))
+                      :: !lane_stats;
+        rows)
     in
-    return (first_row, List.concat other_rows)
+    let lane_first_row = [
+      `head_cell Msg.lane;
+      `head_cell Msg.number_of_reads;
+      `head_cell Msg.number_of_undetermined_reads;
+      `head_cell Msg.percent_bases_over_q30;
+      `head_cell Msg.mean_qs] in
+    let lane_other_rows =
+      List.map (List.sort !lane_stats ~cmp:(fun (i, _) (j,_) -> Int.compare i j))
+        ~f:(fun (lane_index, (clusters, yq30, y, qs, undetermined)) ->
+            [`sortable (Int.to_string (lane_index + 1),
+                        [codef "%d" (lane_index + 1)]);
+             nb0 clusters;
+             nb0 undetermined;
+             (* nb2 (100. *. ls.cluster_count_m0 /. ls.cluster_count); *)
+             nb2 (100. *. yq30 /. y);
+             nb2 (qs /. y); ]) in
+    return (libraries_first_row, List.concat libraries_other_rows,
+            lane_first_row, lane_other_rows)
   in
   let dmux_sum = Filename.concat path "Flowcell_demux_summary.xml" in
   make dmux_sum
@@ -319,9 +475,13 @@ let demux_info ~configuration ~serial_name =
           end
           >>= fun stat_path ->
           double_bind (get_demux_stats ~configuration stat_path)
-            ~ok:(fun (h, rs) ->
-              let tab = content_table (h :: rs) in
-              return (content_section (pcdataf "Stats") tab))
+            ~ok:(fun (head_libs, rows_libs, head_lanes, rows_lanes) ->
+              let libs_tab = content_table (head_libs :: rows_libs) in
+              let lanes_tab = content_table (head_lanes :: rows_lanes) in
+              return (content_list [
+                  content_section (pcdataf "Library Stats") libs_tab;
+                  content_section (pcdataf "Lane Stats") lanes_tab;
+                ]))
             ~error:(fun e ->
               return
                 (content_section (pcdataf "Stats Not Available")
@@ -367,6 +527,8 @@ let make configuration =
        | true ->
          flowcell_lanes_table ~serial_name configuration
          >>= fun tab_section ->
+         invoicing_section ~serial_name configuration
+         >>= fun invoicing_sec ->
          Authentication.authorizes (`view `hiseq_raw_info)
          >>= fun hiseq_raw_authorization ->
          begin if hiseq_raw_authorization then
@@ -384,7 +546,8 @@ let make configuration =
          end
          >>= fun demux_info ->
          let content =
-           return (content_list [tab_section; hr_section; demux_info]) in
+           return (content_list [tab_section; invoicing_sec;
+                                 hr_section; demux_info]) in
          make_content ~configuration ~main_title content
        | false ->
          Template.make_authentication_error ~configuration ~main_title

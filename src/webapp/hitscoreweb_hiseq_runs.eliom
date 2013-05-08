@@ -12,7 +12,7 @@ module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 
 module Persons_service = Hitscoreweb_persons
-    
+
 let flowcell_cell ~dbh fc_p =
   let open Html5 in
   Layout.Record_flowcell.(
@@ -29,9 +29,9 @@ let flowcell_cell ~dbh fc_p =
                 (!lane_nb, links,
                  lane.g_value.requested_read_length_1,
                  lane.g_value.requested_read_length_2))))
-    >>= fun lanes_info -> 
+    >>= fun lanes_info ->
     let keys =
-      List.filter lanes_info ~f:(fun x -> fst x <> []) 
+      List.filter lanes_info ~f:(fun x -> fst x <> [])
       |! List.map ~f:fst |! List.dedup in
     let lanes_of l =
       List.map l ~f:(fun (lane, _, _, _) -> sprintf "%d" lane)
@@ -41,7 +41,7 @@ let flowcell_cell ~dbh fc_p =
           interleave_list ~sep:(pcdata ", ") links
       with e -> [] in
     let info_on_lanes =
-      interleave_list ~sep:[ br () ]
+      interleave_list ~sep:[ pcdata "; "; br () ]
         (List.map keys ~f:(fun k ->
           let vals = List.filter lanes_info ~f:(fun a -> fst a = k) in
           let plural = if List.length vals = 1 then "" else "s" in
@@ -64,21 +64,22 @@ let flowcell_cell ~dbh fc_p =
     return (`sortable (fc.g_value.serial_name,
                        [link; pcdataf " — %s" run_type; br ()]
                        @ (List.concat info_on_lanes))))
-    
+
 let hiseq_runs ~configuration =
   let open Html5 in
   let open Template in
   with_database ~configuration (fun ~dbh ->
     let layout = Classy.make dbh in
     layout#hiseq_run#all >>= fun hiseq_runs ->
-    while_sequential hiseq_runs (fun hsr -> 
+    while_sequential hiseq_runs (fun hsr ->
       let sfc p =
         Option.value_map p ~default:(return (`text [pcdataf "—"]))
           ~f:(fun p -> flowcell_cell ~dbh p#pointer) in
       let date_cell =
         `sortable (Time.to_string hsr#date,
-                   [strong [
-                     pcdata (Time.to_local_date hsr#date |! Date.to_string)]]) in
+          [strong [
+             pcdata hsr#sequencer; pcdata ": "; br ();
+             pcdata (Time.to_local_date hsr#date |! Date.to_string)]]) in
       sfc hsr#flowcell_a >>= fun fca ->
       sfc hsr#flowcell_b >>= fun fcb ->
       return ([date_cell ; fca; fcb])))
@@ -86,8 +87,8 @@ let hiseq_runs ~configuration =
   let sorted =
     List.sort ~cmp:(fun l1 l2 ->
       compare (List.hd_exn l1) (List.hd_exn l2) * -1) rows in
-  return (content_table 
-            ([ `head [pcdata "Run date"];
+  return (content_table
+            ([ `head [pcdata "Run"];
                `head [pcdata "Flowcell A"];
                `head [pcdata "Flowcell B"]; ]
              :: sorted))
@@ -105,15 +106,15 @@ let lanes_table broker lanes dmux_sum_opt =
   let lib_link l =
     Template.a_link Services.libraries
       [pcdata l.lil_stock.SL.g_value.SL.name] ([`basic], [lib_name l]) in
-  let nb0 f = `number (sprintf "%.0f", f) in 
-  let nb2 f = `number (sprintf "%.2f", f) in 
+  let nb0 f = `number (sprintf "%.0f", f) in
+  let nb2 f = `number (sprintf "%.2f", f) in
   let one_lane l =
     let without_phix =
       List.filter l.lane_libraries ~f:(fun lib ->
         lib.lil_stock.SL.g_value.SL.name <> "PhiX_v3"
         && lib.lil_stock.SL.g_value.SL.name <> "PhiX_v2")
     in
-    `subtable 
+    `subtable
       (List.map without_phix (fun lib ->
         let stats =
           let module Bui = Hitscore_interfaces.B2F_unaligned_information in
@@ -131,8 +132,8 @@ let lanes_table broker lanes dmux_sum_opt =
         let proj = Option.value ~default:"" lib.lil_stock.SL.g_value.SL.project in
         [ `sortable (lib.lil_stock.SL.g_value.SL.name, [lib_link lib]);
           `sortable (proj, [pcdata proj]);
-          `sortable (desc, [pcdata desc]) ] 
-        @ (value ~default:[] stats))) 
+          `sortable (desc, [pcdata desc]) ]
+        @ (value ~default:[] stats)))
   in
   let base_head =
     [ `head_cell Msg.lane;
@@ -151,14 +152,14 @@ let lanes_table broker lanes dmux_sum_opt =
      (List.map lanes (fun l ->
        [ `text [pcdataf "Lane %d" l.lane_index];
          one_lane l ])))
-    
+
 let simple_lanes_table broker lanes =
   lanes_table broker lanes None
 
 let lanes_table_with_stats broker lanes dmux_sum =
   lanes_table broker lanes dmux_sum
-    
-    
+
+
 let person_flowcells ~configuration =
   let open Html5 in
   let open Template in
@@ -170,7 +171,7 @@ let person_flowcells ~configuration =
     match opt with
     | Some s -> return s
     | None -> error err in
-  
+
   Web_data_access.broker () >>= fun broker ->
   Authentication.user_logged () >>= fun user_opt ->
   flow_some user_opt (`hiseq_runs (`no_logged_user))
@@ -220,6 +221,8 @@ let person_flowcells ~configuration =
             span [
               pcdata "Delivery ";
               codef "%s" Layout.Record_client_fastqs_dir.(cfd.g_value.directory);
+              pcdata " on ";
+              html_of_cluster Layout.Record_client_fastqs_dir.(cfd.g_value.host);
             ] in
           List.map deliveries (fun (ddmux, delivp, dmux_sum) ->
             List.map delivp (fun (fpub, cfd) ->
@@ -229,7 +232,7 @@ let person_flowcells ~configuration =
           ) |! List.concat;
         in
         if deliveries = []
-        then 
+        then
           content_section run_title
             (simple_lanes_table broker fc.ff_lanes |! content_table)
         else
@@ -243,7 +246,7 @@ let person_flowcells ~configuration =
   return content
 
 
-    
+
 let make configuration =
   (fun () () ->
     Template.default ~title:"HiSeq 2000 Runs"
@@ -261,7 +264,7 @@ let make configuration =
            ~main_title:"HiSeq 2000 Runs" (person_flowcells ~configuration)
        else
          Template.make_authentication_error ~configuration
-           ~main_title:"HiSeq 2000 Runs" 
+           ~main_title:"HiSeq 2000 Runs"
            (return [Html5.pcdataf "You may not view anything here."])))
 
 

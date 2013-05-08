@@ -74,12 +74,14 @@ let html_detailed_deliveries ?(append_path=false) subm dmux =
   | l ->
     (interleave_map l ~sep:(br ())
        ~f:(fun (del, inv) ->
-         let path =
-           Option.(value_map ~default:"NO-DIR"
-                     ~f:(fun d-> d#directory) del#client_fastqs_dir) in
+         let path, host=
+           Option.value_map ~default:("NO-DIR", "NO-CLUSTER")
+             ~f:(fun d-> (d#directory, d#host)) del#client_fastqs_dir in
          let path_part =
            if append_path then
-             span [strong [pcdata ", Path: "]; codef "%s" path]
+             span [strong [pcdata ", Path: "];
+                   codef "%s" path;
+                   strong [pcdata ", Cluster: "; html_of_cluster host;]]
            else
              span [] in
          span ~a:[a_title path ]
@@ -618,12 +620,14 @@ let per_lirbary_simple_details info =
                 in
                 return details)
               >>= fun stats ->
-              let path =
-                Option.(value_map ~default:"NO-DIR"
-                          ~f:(fun d-> d#directory) del#client_fastqs_dir) in
+              let path, host=
+                Option.value_map ~default:("NO-DIR", "NO-CLUSTER")
+                  ~f:(fun d-> (d#directory, d#host)) del#client_fastqs_dir in
               return (content_paragraph [
-                strongf "Delivered in ";
-                codef "%s" path;
+                strong [pcdata "Delivered on ";
+                        html_of_cluster host;
+                        pcdata ": ";
+                        codef "%s" path];
                 div [Option.value ~default:(strongf "No stats available")
                         stats];
               ])))
