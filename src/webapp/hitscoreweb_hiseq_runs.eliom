@@ -149,9 +149,11 @@ let lanes_table broker lanes dmux_sum_opt =
         `head_cell Msg.mean_qs ] in
   ((base_head @ summary_head)
    ::
-     (List.map lanes (fun l ->
-       [ `text [pcdataf "Lane %d" l.lane_index];
-         one_lane l ])))
+     (List.map
+        (List.sort ~cmp:(fun la lb -> Int.compare la.lane_index lb.lane_index)
+           lanes)
+        (fun l ->
+           [ `text [pcdataf "Lane %d" l.lane_index]; one_lane l ])))
 
 let simple_lanes_table broker lanes =
   lanes_table broker lanes None
