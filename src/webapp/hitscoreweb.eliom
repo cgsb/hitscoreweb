@@ -572,7 +572,12 @@ module File_service = struct
       indentify_and_verify ~configuration vol path
       >>= begin function
       | Ok (content_type, path) ->
-        Eliom_registration.File.send ~content_type path
+        let headers =
+          Http_headers.(
+            add (name "Content-Disposition")
+              (sprintf "attachment; filename=%s" (Filename.basename path))
+              empty) in
+        Eliom_registration.File.send ~headers ~content_type path
       | Error e ->
           (* Lwt.fail Eliom_common.Eliom_404 *)
         Template.default ~title:"File Error" (error_content e)
@@ -747,4 +752,3 @@ TODO: All exceptions in coservices should be handled in some other way
       logf "All services are registered" |! Lwt.ignore_result;
 
     )
-
