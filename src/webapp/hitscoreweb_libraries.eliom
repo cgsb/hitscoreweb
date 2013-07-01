@@ -228,10 +228,12 @@ let libraries_table ~showing ~can_view_fastq_details info =
         let f b =
           match b#kind with
           | `custom ->
-            sprintf "Custom[%s%s%s%s]" (Option.value ~default:"None" b#sequence)
-              Option.(value_map b#position_in_r1 ~default:"" ~f:(sprintf "-R1:%d"))
-              Option.(value_map b#position_in_r2 ~default:"" ~f:(sprintf "-R2:%d"))
-              Option.(value_map b#position_in_index ~default:"" ~f:(sprintf "-I:%d"))
+            sprintf "Custom[%s%s%s]"
+              (Option.value ~default:"None" b#sequence)
+              Option.(value_map b#read ~default:"" ~f:(function
+                | 1 -> "-read1" | 2 -> "-index" | 3 -> "-read2"
+                | r -> sprintf "-R%d" r))
+              Option.(value_map b#position ~default:"" ~f:(sprintf ":%d"))
           | `bioo     -> sprintf     "BIOO[%d]" (Option.value ~default:0 b#index)
           | `bioo_96  -> sprintf  "BIOO-96[%d]" (Option.value ~default:0 b#index)
           | `illumina -> sprintf "Illumina[%d]" (Option.value ~default:0 b#index)
