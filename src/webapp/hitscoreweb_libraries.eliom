@@ -347,7 +347,7 @@ let libraries_table ~showing ~can_view_fastq_details info =
         if List.exists where ~f:(fun w -> List.exists showing ((=) w))
         then Some (what ()) else None)) in
 
-  Template.content_table ~style:`alternate_colors table
+  Template.content_table ~progressive:(4, `automatic) ~style:`alternate_colors table
 
 let benchmarks work_started info_got table_generated info =
   let open Html5 in

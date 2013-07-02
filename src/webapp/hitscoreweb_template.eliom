@@ -495,19 +495,25 @@ type table_cell =
 | `with_geometry of int * int * table_cell
 ]
 
+type sentence_html5 = Html5_types.phrasing Html5.elt
+type progressive_interaction = [`automatic | `more_button of sentence_html5 ]
 type content =
-| Description of
-    (Html5_types.phrasing Html5.elt * Html5_types.flow5 Html5.elt) list
-| Section of Html5_types.phrasing Html5.elt * content
+| Description of (sentence_html5 * Html5_types.flow5 Html5.elt) list
+| Section of sentence_html5 * content
 | List of content list
 | Table of [`alternate_colors | `normal] * table_cell list list
 | Paragraph of Html5_types.flow5 Html5.elt list
+| Progressive of progressive_interaction * content list
+  (* Progressive content *)
 
 let content_description l = Description l
 let content_description_opt l = Description (List.filter_opt l)
 let content_section t c = Section (t, c)
 let content_list l = List l
-let content_table ?(transpose=false) ?(style=`normal) l =
+
+let content_table ?(transpose=false)
+    ?(progressive: (int (* rows per download *) * progressive_interaction) option)
+    ?(style=`normal) l =
   let t = function
     | [] -> []
     | hl :: tll ->
@@ -516,7 +522,23 @@ let content_table ?(transpose=false) ?(style=`normal) l =
         h :: (List.map tll (fun tl ->
           Option.value ~default:(`text []) (List.nth tl i))))
   in
-  Table (style, if transpose then t l else l)
+  let rows = if transpose then t l else l in
+  begin match progressive with
+  | None -> Table (style, rows)
+  | Some (packing, interaction) ->
+    let rec loop n acc_content acc_prog =
+      let new_table () = Table (style, List.rev acc_content) in
+      function
+      | [] -> List.rev (new_table () :: acc_prog)
+      | h :: t ->
+        if n >= packing then
+          loop 0 [] (new_table () :: acc_prog) t
+        else
+          loop (n + 1) (h :: acc_content) acc_prog t
+    in
+    Progressive (interaction, loop 0 [] [] rows)
+  end
+
 
 let cell_text s =
   let open Html5 in
@@ -718,6 +740,21 @@ let rec html_of_content ?(section_level=2) content =
                       [if style = `alternate_colors && i mod 2 = 1 then
                           "odd_colored_row" else ""]]
               (List.mapi l (make_cell ?orderable:None)))) |! List.concat)
+    ]
+  | Progressive (interaction, []) -> div []
+  | Progressive (interaction, first_content :: delayed_content) ->
+    let the_first = html_of_content ~section_level first_content in
+    let h3_debug = h3 [
+        match interaction with
+        | `automatic -> pcdata "automatic"
+        | `more_button c -> c
+      ] in
+    let delayed_html =
+      List.map delayed_content (fun c -> div [h3_debug; html_of_content c]) in
+    div [
+      h3 [pcdata "First:"];
+      the_first;
+      div delayed_html;
     ]
 
 let make_content ~configuration ~main_title content =
