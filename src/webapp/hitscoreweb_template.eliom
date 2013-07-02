@@ -494,13 +494,17 @@ type table_cell =
 | `subtable of table_cell list list
 | `with_geometry of int * int * table_cell
 ]
+type table = {
+  table_style: [`alternate_colors | `normal];
+  table_cells: table_cell list list;
+}
 
 type content =
 | Description of
     (Html5_types.phrasing Html5.elt * Html5_types.flow5 Html5.elt) list
 | Section of Html5_types.phrasing Html5.elt * content
 | List of content list
-| Table of [`alternate_colors | `normal] * table_cell list list
+| Table of table
 | Paragraph of Html5_types.flow5 Html5.elt list
 
 let content_description l = Description l
@@ -516,7 +520,7 @@ let content_table ?(transpose=false) ?(style=`normal) l =
         h :: (List.map tll (fun tl ->
           Option.value ~default:(`text []) (List.nth tl i))))
   in
-  Table (style, if transpose then t l else l)
+  Table {table_style = style; table_cells = if transpose then t l else l}
 
 let cell_text s =
   let open Html5 in
@@ -638,8 +642,8 @@ let rec html_of_content ?(section_level=2) content =
          html_of_content ~section_level:(section_level + 1) content]
   | List cl ->
     div (List.map cl (html_of_content ~section_level))
-  | Table (_, []) -> div []
-  | Table (style, h :: t) ->
+  | Table { table_cells = []; _ } -> div []
+  | Table {table_style; table_cells = h :: t} ->
     let rec make_cell ?(colspan=1) ?(rowspan=1) ?orderable idx cell =
       let really_orderable =
         (* Really orderable: if there is more than one sortable
@@ -696,7 +700,8 @@ let rec html_of_content ?(section_level=2) content =
         td  ~a:[ a_class ["content_table_text"];
                  a_colspan (List.length h * colspan);
                  a_rowspan rowspan; ]
-          [div [html_of_content (Table (`normal, h :: t))]]
+          [div [html_of_content
+                  (Table { table_style = `normal; table_cells = h :: t})]]
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
     let flattened = flatten_table t in
@@ -715,8 +720,8 @@ let rec html_of_content ?(section_level=2) content =
         (List.map flattened (fun (i, subrows) ->
           List.map subrows (fun l ->
             tr ~a:[ a_class
-                      [if style = `alternate_colors && i mod 2 = 1 then
-                          "odd_colored_row" else ""]]
+                      [if table_style = `alternate_colors && i mod 2 = 1
+                       then "odd_colored_row" else ""]]
               (List.mapi l (make_cell ?orderable:None)))) |! List.concat)
     ]
 
