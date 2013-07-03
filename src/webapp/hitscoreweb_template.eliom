@@ -741,16 +741,7 @@ let rec html_of_content ?(section_level=2) content =
       server_function Json.t<unit> (fun () ->
           let next, delay = List.split_n !to_serve 30 in
           to_serve := delay;
-          (* to_serve := []; *)
-          let f elt = elt in
-          (*
-            let xml = Html5.toelt elt in
-            let b = Buffer.create 42 in
-            Tyxml.print_list ~output:(Buffer.add_string b) [Obj.magic xml];
-            let s = Buffer.contents b in
-            dbg "Sending: %S" s;
-            s in *)
-          return ((next |> List.concat |> List.map ~f): _ list)
+          return ((next |> List.concat): _ list)
         ) in
     let span_id = id ^ "message" in
     div [
@@ -764,7 +755,6 @@ let rec html_of_content ?(section_level=2) content =
                  let get_exn o = Js.Opt.get o (fun () -> failwith "get_exn") in
                  let getdef_exn o = Js.Optdef.get o (fun () -> failwith "getdef_exn") in
                  let table = get_exn (Dom_html.CoerceTo.table (get_element_exn %id)) in
-                 dbg "Table Loaded! bodies: %d" table##tBodies##length;
                  let tbody = table##tBodies##item(0) |> get_exn in
                  Lwt.ignore_result begin
                    let rec loop () =
@@ -778,32 +768,21 @@ let rec html_of_content ?(section_level=2) content =
                        return ()
                      | some ->
                        let nb_rows = tbody##rows##length in
-                       dbg "nb rows: %d" nb_rows;
                        List.iteri some ~f:(fun i e ->
                            let elrow = Html5_to_dom.of_tr e in
                            let new_row = tbody##insertRow(nb_rows + i) in
                            new_row##innerHTML <- elrow##innerHTML;
-
-                           (* Dom.appendChild tbody elrow; *)
-                           (* new_row##innerHTML <- Js.string e; *)
                            let length = new_row##cells##length in
-                           dbg "length: %d" length;
                            begin try
                              assert (length = elrow##cells##length);
                              for i = 0 to length - 1 do
                                let new_cell = get_exn (new_row##cells##item(i)) in
                                let old_cell = get_exn (elrow##cells##item(i)) in
-                               dbg "Old: %d, %d Vs New: %d, %d, classes: %d"
-                                 (old_cell##rowSpan) (old_cell##colSpan)
-                                 (new_cell##rowSpan) (new_cell##colSpan)
-                                 (new_cell##classList##length);
                                for j = 0 to (new_cell##classList##length) - 1 do
                                  let class_name = Js.to_string (getdef_exn new_cell##classList##item(j)) in
-                                 dbg "class: %s" class_name;
                                  begin try
                                    if String.sub class_name 0 8 = "geometry"
                                    then (
-                                     dbg "geometry class: %s" class_name;
                                      let (rowsp, colsp) =
                                        Scanf.sscanf class_name "geometry%dx%d"
                                          (fun x y -> (x, y)) in
@@ -814,16 +793,16 @@ let rec html_of_content ?(section_level=2) content =
                                  | e -> ()
                                  end
                                done;
-                               dbg "→ Old: %d, %d Vs New: %d, %d, classes: %d"
+                               (* dbg "→ Old: %d, %d Vs New: %d, %d, classes: %d"
                                  (old_cell##rowSpan) (old_cell##colSpan)
                                  (new_cell##rowSpan) (new_cell##colSpan)
-                                 (new_cell##classList##length);
+                                 (new_cell##classList##length); *)
                              done;
                            with
                            | e -> dbg "Exn: %s" (Printexc.to_string e)
                            end
                          );
-                       Lwt_js.sleep 0.03
+                       Lwt_js.sleep 0.1
                        >>= fun () ->
                        loop ()
                      end
