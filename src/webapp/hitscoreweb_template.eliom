@@ -738,7 +738,10 @@ let rec html_of_content ?(section_level=2) content =
     let to_serve = ref delayed in
     let next =
       let open Lwt in
-      server_function Json.t<unit> (fun () ->
+      server_function
+        ~scope:Eliom_common.default_process_scope
+        ~timeout:3600.
+        Json.t<unit> (fun () ->
           let next, delay = List.split_n !to_serve 30 in
           to_serve := delay;
           return ((next |> List.concat): _ list)
