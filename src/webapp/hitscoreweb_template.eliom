@@ -711,18 +711,97 @@ let rec html_of_content ?(section_level=2) content =
       | _ -> false))
       then None
       else Some id in
+    let rows =
+      List.map flattened (fun (i, subrows) ->
+          List.map subrows (fun l ->
+              tr ~a:[ a_class
+                        [if table_style = `alternate_colors && i mod 2 = 1
+                         then "odd_colored_row" else ""]]
+                (List.mapi l (make_cell ?orderable:None))))
+      (* At this point the flattened sub-rows have not been concatenated. *)
+    in
+    let progessivitiy = Some 40 in
+    let (first: Html5_types.tr  Hitscoreweb_std.Html5.elt list list),
+        (delayed: Html5_types.tr  Hitscoreweb_std.Html5.elt list list) =
+      match progessivitiy with
+      | Some n -> List.split_n rows n
+      | None -> (rows, []) in
+    let to_serve = ref delayed in
+    let next =
+      let open Lwt in
+      server_function Json.t<unit> (fun () ->
+          let next, delay = List.split_n !to_serve 30 in
+          to_serve := delay;
+          let f elt = elt in
+          (*
+            let xml = Html5.toelt elt in
+            let b = Buffer.create 42 in
+            Tyxml.print_list ~output:(Buffer.add_string b) [Obj.magic xml];
+            let s = Buffer.contents b in
+            dbg "Sending: %S" s;
+            s in *)
+          return ((next |> List.concat |> List.map ~f): _ list)
+        ) in
+    let span_id = id ^ "message" in
     div [
       table
         ~a:[ a_id id;
              a_style "border: 3px  solid black; \
-                        border-collapse: collapse; " ]
+                        border-collapse: collapse; ";
+             a_onload {{ fun ev ->
+                 let open Lwt in
+                 let (|>) f x = x f in
+                 let get_exn o = Js.Opt.get o (fun () -> failwith "get_exn") in
+                 let table = get_exn (Dom_html.CoerceTo.table (get_element_exn %id)) in
+                 dbg "Table Loaded! bodies: %d" table##tBodies##length;
+                 let tbody = table##tBodies##item(0) |> get_exn in
+                 Lwt.ignore_result begin
+                   let rec loop () =
+                     (%next ())
+                     >>= fun next_bunch ->
+                     begin match next_bunch with
+                     | [] ->
+                       dbg "loading table finished";
+                       let msg = get_element_exn %span_id in
+                       msg##style##display <- Js.string "none";
+                       return ()
+                     | some ->
+                       let nb_rows = tbody##rows##length in
+                       dbg "nb rows: %d" nb_rows;
+                       List.iteri some ~f:(fun i e ->
+                           let elrow = Html5_to_dom.of_tr e in
+                           (* let new_row = tbody##insertRow(nb_rows + i) in *)
+                           (* new_row##innerHTML <- elrow##innerHTML; *)
+
+                           Dom.appendChild tbody elrow;
+                           (* new_row##innerHTML <- Js.string e; *)
+                           (*
+                           let length = new_row##cells##length in
+                           dbg "length: %d" length;
+                           assert (length = elrow##cells##length);
+                           for i = 0 to length - 1 do
+                             let new_cell = get_exn (new_row##cells##item(i)) in
+                             let old_cell = get_exn (elrow##cells##item(i)) in
+                             dbg "Old: %d, %d Vs New: %d, %d"
+                               old_cell##rowSpan old_cell##colSpan
+                               new_cell##rowSpan new_cell##colSpan
+                           done;
+                           (* Dom.appendChild table elrow *)
+                           *)
+                         );
+                       Lwt_js.sleep 0.2
+                       >>= fun () ->
+                       loop ()
+                     end
+                   in
+                   loop ()
+                 end
+               }}
+           ]
         (tr (List.mapi h (make_cell ?orderable)))
-        (List.map flattened (fun (i, subrows) ->
-          List.map subrows (fun l ->
-            tr ~a:[ a_class
-                      [if table_style = `alternate_colors && i mod 2 = 1
-                       then "odd_colored_row" else ""]]
-              (List.mapi l (make_cell ?orderable:None)))) |! List.concat)
+        (first |> List.concat);
+      span ~a:[ a_class ["like_link"]; a_id span_id; ]
+        [pcdata "Downloading More …"];
     ]
 
 let make_content ~configuration ~main_title content =
