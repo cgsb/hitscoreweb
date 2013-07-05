@@ -497,6 +497,7 @@ type table_cell =
 type table = {
   table_style: [`alternate_colors | `normal];
   table_cells: table_cell list list;
+  table_progressivity: int option;
 }
 
 type content =
@@ -511,7 +512,7 @@ let content_description l = Description l
 let content_description_opt l = Description (List.filter_opt l)
 let content_section t c = Section (t, c)
 let content_list l = List l
-let content_table ?(transpose=false) ?(style=`normal) l =
+let content_table ?(transpose=false) ?progressive ?(style=`normal) l =
   let t = function
     | [] -> []
     | hl :: tll ->
@@ -520,7 +521,8 @@ let content_table ?(transpose=false) ?(style=`normal) l =
         h :: (List.map tll (fun tl ->
           Option.value ~default:(`text []) (List.nth tl i))))
   in
-  Table {table_style = style; table_cells = if transpose then t l else l}
+  Table {table_style = style; table_cells = if transpose then t l else l;
+         table_progressivity = progressive}
 
 let cell_text s =
   let open Html5 in
@@ -643,7 +645,7 @@ let rec html_of_content ?(section_level=2) content =
   | List cl ->
     div (List.map cl (html_of_content ~section_level))
   | Table { table_cells = []; _ } -> div []
-  | Table {table_style; table_cells = h :: t} ->
+  | Table {table_style; table_cells = h :: t; table_progressivity} ->
     let rec make_cell ?(colspan=1) ?(rowspan=1) ?orderable idx cell =
       let really_orderable =
         (* Really orderable: if there is more than one sortable
@@ -710,7 +712,9 @@ let rec html_of_content ?(section_level=2) content =
                  a_colspan (List.length h * colspan);
                  a_rowspan rowspan; ]
           [div [html_of_content
-                  (Table { table_style = `normal; table_cells = h :: t})]]
+                  (Table { table_style = `normal; table_cells = h :: t;
+                      (* Subtables don't get to be progressively downloaded *)
+                           table_progressivity = None})]]
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
     let flattened = flatten_table t in
@@ -729,95 +733,104 @@ let rec html_of_content ?(section_level=2) content =
                 (List.mapi l (make_cell ?orderable:None))))
       (* At this point the flattened sub-rows have not been concatenated. *)
     in
-    let progessivitiy = Some 40 in
     let (first: Html5_types.tr  Hitscoreweb_std.Html5.elt list list),
         (delayed: Html5_types.tr  Hitscoreweb_std.Html5.elt list list) =
-      match progessivitiy with
+      match table_progressivity with
       | Some n -> List.split_n rows n
       | None -> (rows, []) in
-    let to_serve = ref delayed in
-    let next =
-      let open Lwt in
-      server_function
-        ~scope:Eliom_common.default_process_scope
-        ~timeout:3600.
-        Json.t<unit> (fun () ->
-          let next, delay = List.split_n !to_serve 30 in
-          to_serve := delay;
-          return ((next |> List.concat): _ list)
-        ) in
-    let span_id = id ^ "message" in
+    let onload_for_progressivity, span_message =
+      match table_progressivity with
+      | Some p ->
+        let to_serve = ref delayed in
+        let next =
+          let open Lwt in
+          server_function
+            ~scope:Eliom_common.default_process_scope
+            ~timeout:3600.
+            Json.t<unit> (fun () ->
+                let next, delay = List.split_n !to_serve p in
+                to_serve := delay;
+                return ((next |> List.concat): _ list)
+              ) in
+        let span_id = id ^ "message" in
+        let onload_js = {{ fun ev ->
+            let open Lwt in
+            let (|>) f x = x f in
+            let get_exn o = Js.Opt.get o (fun () -> failwith "get_exn") in
+            let getdef_exn o = Js.Optdef.get o (fun () -> failwith "getdef_exn") in
+            let table = get_exn (Dom_html.CoerceTo.table (get_element_exn %id)) in
+            let tbody = table##tBodies##item(0) |> get_exn in
+            Lwt.ignore_result begin
+              let rec loop () =
+                (%next ())
+                >>= fun next_bunch ->
+                begin match next_bunch with
+                | [] ->
+                  dbg "loading table finished";
+                  let msg = get_element_exn %span_id in
+                  msg##style##display <- Js.string "none";
+                  return ()
+                | some ->
+                  let nb_rows = tbody##rows##length in
+                  List.iteri some ~f:(fun i e ->
+                      let elrow = Html5_to_dom.of_tr e in
+                      let new_row = tbody##insertRow(nb_rows + i) in
+                      new_row##innerHTML <- elrow##innerHTML;
+                      let length = new_row##cells##length in
+                      begin try
+                        assert (length = elrow##cells##length);
+                        for i = 0 to length - 1 do
+                          let new_cell = get_exn (new_row##cells##item(i)) in
+                          for j = 0 to (new_cell##classList##length) - 1 do
+                            let class_name = Js.to_string (getdef_exn new_cell##classList##item(j)) in
+                            begin try
+                              if String.sub class_name 0 8 = "geometry"
+                              then (
+                                let (rowsp, colsp) =
+                                  Scanf.sscanf class_name "geometry%dx%d"
+                                    (fun x y -> (x, y)) in
+                                new_cell##rowSpan <- rowsp;
+                                new_cell##colSpan <- colsp;
+                              );
+                            with
+                            | e -> ()
+                            end
+                          done;
+                          (* dbg "→ Old: %d, %d Vs New: %d, %d, classes: %d"
+                             (old_cell##rowSpan) (old_cell##colSpan)
+                             (new_cell##rowSpan) (new_cell##colSpan)
+                             (new_cell##classList##length); *)
+                        done;
+                        Lwt.ignore_result (Lwt_js.yield ())
+                      with
+                      | e -> dbg "Exn: %s" (Printexc.to_string e)
+                      end
+                    );
+                  Lwt_js.sleep 0.1
+                  >>= fun () ->
+                  loop ()
+                end
+              in
+              loop ()
+            end
+          }} in
+        let msg =
+          span ~a:[ a_class ["like_link"]; a_id span_id; ]
+            [pcdata "Downloading More …"]; in
+        (onload_js, msg)
+      | None ->
+        ({{ fun _ -> () }}, span [])
+    in
     div [
       table
         ~a:[ a_id id;
              a_style "border: 3px  solid black; \
                         border-collapse: collapse; ";
-             a_onload {{ fun ev ->
-                 let open Lwt in
-                 let (|>) f x = x f in
-                 let get_exn o = Js.Opt.get o (fun () -> failwith "get_exn") in
-                 let getdef_exn o = Js.Optdef.get o (fun () -> failwith "getdef_exn") in
-                 let table = get_exn (Dom_html.CoerceTo.table (get_element_exn %id)) in
-                 let tbody = table##tBodies##item(0) |> get_exn in
-                 Lwt.ignore_result begin
-                   let rec loop () =
-                     (%next ())
-                     >>= fun next_bunch ->
-                     begin match next_bunch with
-                     | [] ->
-                       dbg "loading table finished";
-                       let msg = get_element_exn %span_id in
-                       msg##style##display <- Js.string "none";
-                       return ()
-                     | some ->
-                       let nb_rows = tbody##rows##length in
-                       List.iteri some ~f:(fun i e ->
-                           let elrow = Html5_to_dom.of_tr e in
-                           let new_row = tbody##insertRow(nb_rows + i) in
-                           new_row##innerHTML <- elrow##innerHTML;
-                           let length = new_row##cells##length in
-                           begin try
-                             assert (length = elrow##cells##length);
-                             for i = 0 to length - 1 do
-                               let new_cell = get_exn (new_row##cells##item(i)) in
-                               let old_cell = get_exn (elrow##cells##item(i)) in
-                               for j = 0 to (new_cell##classList##length) - 1 do
-                                 let class_name = Js.to_string (getdef_exn new_cell##classList##item(j)) in
-                                 begin try
-                                   if String.sub class_name 0 8 = "geometry"
-                                   then (
-                                     let (rowsp, colsp) =
-                                       Scanf.sscanf class_name "geometry%dx%d"
-                                         (fun x y -> (x, y)) in
-                                     new_cell##rowSpan <- rowsp;
-                                     new_cell##colSpan <- colsp;
-                                   );
-                                 with
-                                 | e -> ()
-                                 end
-                               done;
-                               (* dbg "→ Old: %d, %d Vs New: %d, %d, classes: %d"
-                                 (old_cell##rowSpan) (old_cell##colSpan)
-                                 (new_cell##rowSpan) (new_cell##colSpan)
-                                 (new_cell##classList##length); *)
-                             done;
-                           with
-                           | e -> dbg "Exn: %s" (Printexc.to_string e)
-                           end
-                         );
-                       Lwt_js.sleep 0.1
-                       >>= fun () ->
-                       loop ()
-                     end
-                   in
-                   loop ()
-                 end
-               }}
+             a_onload onload_for_progressivity
            ]
         (tr (List.mapi h (make_cell ?orderable)))
         (first |> List.concat);
-      span ~a:[ a_class ["like_link"]; a_id span_id; ]
-        [pcdata "Downloading More …"];
+      span_message
     ]
 
 let make_content ~configuration ~main_title content =
