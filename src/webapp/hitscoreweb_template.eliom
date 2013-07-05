@@ -755,11 +755,12 @@ let rec html_of_content ?(section_level=2) content =
         let span_id = id ^ "message" in
         let onload_js = {{ fun ev ->
             let open Lwt in
+            let open Printf in
             let (|>) f x = x f in
-            let get_exn o = Js.Opt.get o (fun () -> failwith "get_exn") in
+            let get_exn s o = Js.Opt.get o (fun () -> failwith ("get_exn" ^ s)) in
             let getdef_exn o = Js.Optdef.get o (fun () -> failwith "getdef_exn") in
-            let table = get_exn (Dom_html.CoerceTo.table (get_element_exn %id)) in
-            let tbody = table##tBodies##item(0) |> get_exn in
+            let table =
+              get_exn "table" (Dom_html.CoerceTo.table (get_element_exn %id)) in
             Lwt.ignore_result begin
               let rec loop () =
                 (%next ())
@@ -771,18 +772,41 @@ let rec html_of_content ?(section_level=2) content =
                   msg##style##display <- Js.string "none";
                   return ()
                 | some ->
-                  let nb_rows = tbody##rows##length in
+                  let tbody =
+                    (* Sometimes the tables are created without a `tbody`
+                       C.f. the complain on the mailing list: [om13].
+
+                       [om13]: https://sympa.inria.fr/sympa/arc/ocsigen/2013-07/msg00013.html
+                    *)
+                    try
+                      let tbody = table##tBodies##item(0) |> get_exn "tbody" in
+                      let nb_rows = tbody##rows##length in
+                      Some (tbody, nb_rows)
+                    with
+                    | e ->
+                      dbg "Exn getting tbody: %s" (Printexc.to_string e);
+                      None
+                  in
                   List.iteri some ~f:(fun i e ->
                       let elrow = Html5_to_dom.of_tr e in
-                      let new_row = tbody##insertRow(nb_rows + i) in
-                      new_row##innerHTML <- elrow##innerHTML;
-                      let length = new_row##cells##length in
+                      let new_row (* add the row, whichever method works *) =
+                        match tbody with
+                        | Some (tbody, nb_rows) ->
+                          let new_row = tbody##insertRow(nb_rows + i) in
+                          new_row##innerHTML <- elrow##innerHTML;
+                          new_row
+                        | None ->
+                          Dom.appendChild table elrow;
+                          elrow
+                      in
                       begin try
-                        assert (length = elrow##cells##length);
+                        let length = elrow##cells##length in
                         for i = 0 to length - 1 do
-                          let new_cell = get_exn (new_row##cells##item(i)) in
+                          let new_cell =
+                            get_exn (sprintf "cell%d" i) (new_row##cells##item(i)) in
                           for j = 0 to (new_cell##classList##length) - 1 do
-                            let class_name = Js.to_string (getdef_exn new_cell##classList##item(j)) in
+                            let class_name =
+                              Js.to_string (getdef_exn new_cell##classList##item(j)) in
                             begin try
                               if String.sub class_name 0 8 = "geometry"
                               then (
