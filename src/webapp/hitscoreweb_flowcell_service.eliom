@@ -141,8 +141,8 @@ let flowcell_lanes_table hsc ~serial_name =
 	        `head_cell Msg.libraries_of_lane; ]
               :: lanes)))))
 
-let email_content ~pi_name ~flowcell_name =
-  sprintf "Dear %s Lab,\n\
+let email_content ~flowcell_name =
+  sprintf "Dear GenCore Users,\n\
            \n\
            Results for your recently sequenced \
            libraries on flowcell %s are now available here:\n\
@@ -156,7 +156,7 @@ let email_content ~pi_name ~flowcell_name =
            Please let us know if you have questions.\n\
            \n\
            Best,\n\
-           GenCore Team"  pi_name flowcell_name
+           GenCore Team" flowcell_name
 
 (* A section with the invoicing information and delivery draft emails. *)
 let invoicing_section ~serial_name configuration =
@@ -193,9 +193,9 @@ let invoicing_section ~serial_name configuration =
           let pi_full_name =
             Option.value_map ~default:(strongf "NOT FOUND !!!") pi
               ~f:(fun p -> strongf "%s, %s" p#family_name p#given_name) in
-          let pi_name =
-            Option.value_map ~default:( "NOT FOUND !!!") pi
-              ~f:(fun p -> p#family_name) in
+          (* let pi_name = *)
+          (* Option.value_map ~default:( "NOT FOUND !!!") pi *)
+          (* ~f:(fun p -> p#family_name) in *)
           let opt = Option.value ~default:"—" in
           let contacts =
             List.map idx_lanes (fun (_, lane) ->
@@ -207,7 +207,7 @@ let invoicing_section ~serial_name configuration =
             List.map contacts (fun c ->
               sprintf "\"%s, %s\" <%s>" c#family_name c#given_name c#email) in
           let email_content =
-            email_content ~pi_name ~flowcell_name:serial_name in
+            email_content ~flowcell_name:serial_name in
           let span_email, div_email =
             hide_show_div ~start_hidden:true
               ~show_message:"Show delivery draft email"
@@ -218,7 +218,7 @@ let invoicing_section ~serial_name configuration =
           let gmail_link =
             let params = Ocsigen_lib.Url.make_encoded_parameters [
                 ("to", (String.concat ~sep:", " email_contact_list));
-                ("su", sprintf "Subject: Data for %s" serial_name);
+                ("su", sprintf "Data for %s" serial_name);
                 ("body", email_content);
               ] in
             sprintf "https://mail.google.com/mail/?view=cm&fs=1&tf=1&%s" params
@@ -240,7 +240,7 @@ let invoicing_section ~serial_name configuration =
                        |> String.concat ~sep:", ")];
                 li [
                   pretty_box [span_email; div_email];
-                  core_a ~a:[ a_hreff "%s" gmail_link ]
+                  core_a ~a:[ a_hreff "%s" gmail_link; a_target "_blank"]
                     [pcdata "Open in Gmail-Compose"];
                 ];
               ];
@@ -554,4 +554,3 @@ let make configuration =
            (return [Html5.pcdataf
                        "You may not view the flowcell called %s."
                        serial_name])))
-
