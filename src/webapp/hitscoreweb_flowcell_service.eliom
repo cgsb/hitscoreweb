@@ -489,7 +489,13 @@ let demux_info ~configuration ~serial_name =
           >>= fun stats ->
           let optmap f x = Option.value_map ~default:"—" ~f x in
           let opt x = Option.value ~default:"—" x in
-          let title = codef "Bcl_to_fastq %d" b2f_eval#g_id in
+          let title =
+            let t = Re_posix.re ".*Bustard.*" in
+            let re = Re.compile t in
+            let is_olb = Re.execp re b2f_eval#basecalls_path in
+            codef "Bcl_to_fastq %d %s" b2f_eval#g_id
+              (if is_olb then "(With OLB)" else "")
+          in
           let intro = content_paragraph [
             pcdata "Ran from ";
             strong [codef "%s" (optmap Time.to_string b2f_eval#g_started)];
@@ -501,7 +507,9 @@ let demux_info ~configuration ~serial_name =
             strong [pcdataf "Version: "]; pcdataf "%s, " b2f_eval#version;
             strong [pcdataf "Tiles: "]; pcdataf "%s, " (opt b2f_eval#tiles);
             strong [pcdataf "Bases-Mask: "]; pcdataf "%s, "
-              (opt b2f_eval#bases_mask);
+              (opt b2f_eval#bases_mask); br ();
+            strong [pcdataf "Basecalls-Path: "];
+            codef "%s" b2f_eval#basecalls_path;
           ] in
           let section =
             content_section title (content_list (intro :: stats :: [])) in
