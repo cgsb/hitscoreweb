@@ -242,10 +242,11 @@ let libraries_table ~showing ~can_view_fastq_details info =
         cell_text (String.concat ~sep:" OR "
                      (List.map lib#barcoding (fun l ->
                        String.concat ~sep:" AND " (List.map l ~f)))));
-      stock (fun () -> cell_int_option lib#stock#p5_adapter_length);
-      stock (fun () -> cell_int_option lib#stock#p7_adapter_length);
+      stock (fun () -> cell_int_option lib#stock#x_adapter_length);
+      stock (fun () -> cell_int_option lib#stock#y_adapter_length);
       stock (fun () -> cell_text (Bool.to_string lib#stock#stranded));
-      stock (fun () -> cell_text (Bool.to_string lib#stock#truseq_control));
+      stock (fun () ->
+          cell_option (Option.map ~f:Bool.to_string lib#stock#truseq_control));
       stock (fun () -> cell_option lib#stock#rnaseq_control);
       stock (fun () ->
         Option.value_map lib#preparator ~default:(`text []) ~f:(fun p ->
