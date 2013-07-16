@@ -494,20 +494,25 @@ type table_cell =
 | `subtable of table_cell list list
 | `with_geometry of int * int * table_cell
 ]
+type table = {
+  table_style: [`alternate_colors | `normal];
+  table_cells: table_cell list list;
+  table_progressivity: int option;
+}
 
 type content =
 | Description of
     (Html5_types.phrasing Html5.elt * Html5_types.flow5 Html5.elt) list
 | Section of Html5_types.phrasing Html5.elt * content
 | List of content list
-| Table of [`alternate_colors | `normal] * table_cell list list
+| Table of table
 | Paragraph of Html5_types.flow5 Html5.elt list
 
 let content_description l = Description l
 let content_description_opt l = Description (List.filter_opt l)
 let content_section t c = Section (t, c)
 let content_list l = List l
-let content_table ?(transpose=false) ?(style=`normal) l =
+let content_table ?(transpose=false) ?progressive ?(style=`normal) l =
   let t = function
     | [] -> []
     | hl :: tll ->
@@ -516,7 +521,8 @@ let content_table ?(transpose=false) ?(style=`normal) l =
         h :: (List.map tll (fun tl ->
           Option.value ~default:(`text []) (List.nth tl i))))
   in
-  Table (style, if transpose then t l else l)
+  Table {table_style = style; table_cells = if transpose then t l else l;
+         table_progressivity = progressive}
 
 let cell_text s =
   let open Html5 in
@@ -638,8 +644,8 @@ let rec html_of_content ?(section_level=2) content =
          html_of_content ~section_level:(section_level + 1) content]
   | List cl ->
     div (List.map cl (html_of_content ~section_level))
-  | Table (_, []) -> div []
-  | Table (style, h :: t) ->
+  | Table { table_cells = []; _ } -> div []
+  | Table {table_style; table_cells = h :: t; table_progressivity} ->
     let rec make_cell ?(colspan=1) ?(rowspan=1) ?orderable idx cell =
       let really_orderable =
         (* Really orderable: if there is more than one sortable
@@ -668,25 +674,32 @@ let rec html_of_content ?(section_level=2) content =
                 a_onclick (td_onclick `reverse);]
                 []; ])
       in
+      let geometry_class rowspan colspan =
+        (* Ugly hack that encodes geometry into the class of an element. *)
+        sprintf "geometry%dx%d" rowspan colspan in
       match cell with
       | `head (c) ->
-        td ~a:[a_id cell_id; a_class ["content_table_head"];
+        td ~a:[a_id cell_id; a_class ["content_table_head";
+                                      geometry_class rowspan colspan];
               a_rowspan rowspan; a_colspan colspan]
           ([span c] @ buttons)
       | `head_cell c ->
-        td ~a:[a_id cell_id; a_title c#tooltip; a_class ["content_table_head"];
-              a_rowspan rowspan; a_colspan colspan]
+        td ~a:[a_id cell_id; a_title c#tooltip;
+               a_class ["content_table_head"; geometry_class rowspan colspan];
+               a_rowspan rowspan; a_colspan colspan]
           ([span c#cell] @ buttons)
       | `sortable (title, cell) ->
-        td  ~a:[ a_title title; a_class ["content_table_text"];
+        td  ~a:[ a_title title;
+                 a_class ["content_table_text"; geometry_class rowspan colspan];
                a_rowspan rowspan; a_colspan colspan] cell
       | `text cell ->
-        td  ~a:[ a_class ["content_table_text"];
-               a_rowspan rowspan; a_colspan colspan] cell
+        td  ~a:[a_class ["content_table_text"; geometry_class rowspan colspan];
+                a_rowspan rowspan; a_colspan colspan] cell
       | `number (sof, f) ->
         let s = sof f in
-        td  ~a:[ a_title s; a_class ["content_table_number"];
-               a_rowspan rowspan; a_colspan colspan]
+        td  ~a:[ a_title s;
+                 a_class ["content_table_number"; geometry_class rowspan colspan];
+                 a_rowspan rowspan; a_colspan colspan]
           [pcdataf "%s" (pretty_string_of_float ~sof f)]
       | `with_geometry (rowspan, colspan, cell) ->
         make_cell ~colspan ~rowspan ?orderable idx cell
@@ -694,9 +707,14 @@ let rec html_of_content ?(section_level=2) content =
         td  ~a:[ a_class ["content_table_text"] ] []
       | `subtable (h :: t) ->
         td  ~a:[ a_class ["content_table_text"];
+                 a_class ["content_table_text";
+                          geometry_class rowspan (List.length h * colspan)];
                  a_colspan (List.length h * colspan);
                  a_rowspan rowspan; ]
-          [div [html_of_content (Table (`normal, h :: t))]]
+          [div [html_of_content
+                  (Table { table_style = `normal; table_cells = h :: t;
+                      (* Subtables don't get to be progressively downloaded *)
+                           table_progressivity = None})]]
     in
     let id = incr _global_table_ids; sprintf "table%d" !_global_table_ids in
     let flattened = flatten_table t in
@@ -706,18 +724,137 @@ let rec html_of_content ?(section_level=2) content =
       | _ -> false))
       then None
       else Some id in
+    let rows =
+      List.map flattened (fun (i, subrows) ->
+          List.map subrows (fun l ->
+              tr ~a:[ a_class
+                        [if table_style = `alternate_colors && i mod 2 = 1
+                         then "odd_colored_row" else ""]]
+                (List.mapi l (make_cell ?orderable:None))))
+      (* At this point the flattened sub-rows have not been concatenated. *)
+    in
+    let (first: Html5_types.tr  Hitscoreweb_std.Html5.elt list list),
+        (delayed: Html5_types.tr  Hitscoreweb_std.Html5.elt list list) =
+      match table_progressivity with
+      | Some n -> List.split_n rows n
+      | None -> (rows, []) in
+    let onload_for_progressivity, span_message =
+      match table_progressivity with
+      | Some p ->
+        let to_serve = ref delayed in
+        let next =
+          let open Lwt in
+          server_function
+            ~scope:Eliom_common.default_process_scope
+            ~timeout:3600.
+            Json.t<unit> (fun () ->
+                let next, delay = List.split_n !to_serve p in
+                to_serve := delay;
+                return ((next |> List.concat): _ list)
+              ) in
+        let span_id = id ^ "message" in
+        let onload_js = {{ fun ev ->
+            let open Lwt in
+            let open Printf in
+            let (|>) f x = x f in
+            let get_exn s o = Js.Opt.get o (fun () -> failwith ("get_exn" ^ s)) in
+            let getdef_exn o = Js.Optdef.get o (fun () -> failwith "getdef_exn") in
+            let table =
+              get_exn "table" (Dom_html.CoerceTo.table (get_element_exn %id)) in
+            Lwt.ignore_result begin
+              let rec loop () =
+                (%next ())
+                >>= fun next_bunch ->
+                begin match next_bunch with
+                | [] ->
+                  dbg "loading table finished";
+                  let msg = get_element_exn %span_id in
+                  msg##style##display <- Js.string "none";
+                  return ()
+                | some ->
+                  let tbody =
+                    (* Sometimes the tables are created without a `tbody`
+                       C.f. the complain on the mailing list: [om13].
+
+                       [om13]: https://sympa.inria.fr/sympa/arc/ocsigen/2013-07/msg00013.html
+                    *)
+                    try
+                      let tbody = table##tBodies##item(0) |> get_exn "tbody" in
+                      let nb_rows = tbody##rows##length in
+                      Some (tbody, nb_rows)
+                    with
+                    | e ->
+                      dbg "Exn getting tbody: %s" (Printexc.to_string e);
+                      None
+                  in
+                  List.iteri some ~f:(fun i e ->
+                      let elrow = Html5_to_dom.of_tr e in
+                      let new_row (* add the row, whichever method works *) =
+                        match tbody with
+                        | Some (tbody, nb_rows) ->
+                          let new_row = tbody##insertRow(nb_rows + i) in
+                          new_row##innerHTML <- elrow##innerHTML;
+                          new_row
+                        | None ->
+                          Dom.appendChild table elrow;
+                          elrow
+                      in
+                      begin try
+                        let length = elrow##cells##length in
+                        for i = 0 to length - 1 do
+                          let new_cell =
+                            get_exn (sprintf "cell%d" i) (new_row##cells##item(i)) in
+                          for j = 0 to (new_cell##classList##length) - 1 do
+                            let class_name =
+                              Js.to_string (getdef_exn new_cell##classList##item(j)) in
+                            begin try
+                              if String.sub class_name 0 8 = "geometry"
+                              then (
+                                let (rowsp, colsp) =
+                                  Scanf.sscanf class_name "geometry%dx%d"
+                                    (fun x y -> (x, y)) in
+                                new_cell##rowSpan <- rowsp;
+                                new_cell##colSpan <- colsp;
+                              );
+                            with
+                            | e -> ()
+                            end
+                          done;
+                          (* dbg "→ Old: %d, %d Vs New: %d, %d, classes: %d"
+                             (old_cell##rowSpan) (old_cell##colSpan)
+                             (new_cell##rowSpan) (new_cell##colSpan)
+                             (new_cell##classList##length); *)
+                        done;
+                        Lwt.ignore_result (Lwt_js.yield ())
+                      with
+                      | e -> dbg "Exn: %s" (Printexc.to_string e)
+                      end
+                    );
+                  Lwt_js.sleep 0.1
+                  >>= fun () ->
+                  loop ()
+                end
+              in
+              loop ()
+            end
+          }} in
+        let msg =
+          span ~a:[ a_class ["like_link"]; a_id span_id; ]
+            [pcdata "Downloading More …"]; in
+        (onload_js, msg)
+      | None ->
+        ({{ fun _ -> () }}, span [])
+    in
     div [
       table
         ~a:[ a_id id;
              a_style "border: 3px  solid black; \
-                        border-collapse: collapse; " ]
+                        border-collapse: collapse; ";
+             a_onload onload_for_progressivity
+           ]
         (tr (List.mapi h (make_cell ?orderable)))
-        (List.map flattened (fun (i, subrows) ->
-          List.map subrows (fun l ->
-            tr ~a:[ a_class
-                      [if style = `alternate_colors && i mod 2 = 1 then
-                          "odd_colored_row" else ""]]
-              (List.mapi l (make_cell ?orderable:None)))) |! List.concat)
+        (first |> List.concat);
+      span_message
     ]
 
 let make_content ~configuration ~main_title content =
