@@ -374,8 +374,8 @@ let menu_ul () =
     | false -> return None
   in
   while_sequential ~f:potential_li [
-    (`view `all_flowcells,
-     [a_link Services. hiseq_runs [pcdata "HiSeq 2000 Runs"] ()]);
+    (`view `all_hiseq_runs,
+     [a_link Services. hiseq_runs [pcdata "HiSeq 2500 Runs"] ()]);
     (`view `persons,
      [a_link Services.persons [pcdata "Persons"] (None, [])]);
     (`view `libraries,

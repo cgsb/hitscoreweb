@@ -249,7 +249,7 @@ let person_flowcells ~configuration =
 
 let make configuration =
   (fun () () ->
-    Template.default ~title:"HiSeq 2000 Runs"
+    Template.default ~title:"HiSeq 2500 Runs"
       (Authentication.authorizes (`view `all_hiseq_runs)
        >>= fun can_view_hiseq_runs ->
        Authentication.authorizes (`view `all_flowcells)
@@ -257,12 +257,12 @@ let make configuration =
        if can_view_hiseq_runs
        then
          Template.make_content ~configuration
-           ~main_title:"HiSeq 2000 Runs" (hiseq_runs configuration)
+           ~main_title:"HiSeq 2500 Runs" (hiseq_runs configuration)
        else if can_view_all_flowcells
        then
          Template.make_content ~configuration
-           ~main_title:"HiSeq 2000 Runs" (person_flowcells ~configuration)
+           ~main_title:"HiSeq 2500 Runs" (person_flowcells ~configuration)
        else
          Template.make_authentication_error ~configuration
-           ~main_title:"HiSeq 2000 Runs"
+           ~main_title:"HiSeq 2500 Runs"
            (return [Html5.pcdataf "You may not view anything here."])))
