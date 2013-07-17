@@ -88,3 +88,15 @@ let processing_onclick_handler ~id_to_hide ~message_span_id =
           span##style##visibility  <- Js.string "visible";
           span##innerHTML <- Js.string "<b>Processing …</b>";);
     }}
+
+(*
+  Take a div and make it scroll to the bottom, while loading the page.
+
+  See for example the /log service, displaying the end of the logs.
+*)
+let make_div_scrolled_to_bottom box =
+  ignore {unit{
+    let elt = Html5_to_dom.of_div %box in
+    elt##scrollTop <- elt##scrollHeight;
+  }};
+  ()

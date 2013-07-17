@@ -16,10 +16,7 @@ let display_output_box content =
     ] [
       pre [pcdata content];
     ] in
-  ignore {unit{
-    let elt = Html5_to_dom.of_div %box in
-    elt##scrollTop <- elt##scrollHeight;
-  }};
+  make_div_scrolled_to_bottom box;
   box
 
 let user_spying () =
