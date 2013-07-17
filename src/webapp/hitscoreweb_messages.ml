@@ -52,8 +52,8 @@ let library_submissions =
 let library_application =
   head_text "Application" "Application (RNA-seq, DNA-seq, Chip-seq, …)"
 let library_barcode = head_text "Barcode(s)" "Barcoding of the library"
-let library_p5 = head_text "P5 Lgth" "P5 Adapter Length"
-let library_p7 = head_text "P7 Lgth" "P7 Adapter Length"
+let library_p5 = head_text "P5/A Lgth" "P5 (HiSeq) or A (PGM) Adapter Length"
+let library_p7 = head_text "P7/P1 Lgth" "P7 (HiSeq) or P1 (PGM) Adapter Length"
 
 let library_stranded = head_text "Stranded" "Stranded"
 let library_truseq_control = head_text "TruSeq Ctrl" "TruSeq Control"
