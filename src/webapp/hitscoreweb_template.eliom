@@ -374,7 +374,7 @@ let menu_ul () =
     | false -> return None
   in
   while_sequential ~f:potential_li [
-    (`view `all_hiseq_runs,
+    (`view `user_hiseq_runs,
      [a_link Services.hiseq_runs [pcdata "HiSeq 2500 Runs"] ()]);
     (`view `all_pgm_runs,
      [a_link Services.pgm_runs [pcdata "PGM Runs"] ()]);
