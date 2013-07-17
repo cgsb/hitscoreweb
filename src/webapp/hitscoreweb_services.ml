@@ -1,6 +1,4 @@
-{shared{
 open Hitscoreweb_std
-}}
 
 let make = make_delayed
 

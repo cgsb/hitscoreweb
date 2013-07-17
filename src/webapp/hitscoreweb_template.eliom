@@ -1,7 +1,8 @@
 {shared{
 open Hitscoreweb_std
-module Services = Hitscoreweb_services
 }}
+
+module Services = Hitscoreweb_services
 module Authentication = Hitscoreweb_authentication
 
 module Msg = Hitscoreweb_messages
