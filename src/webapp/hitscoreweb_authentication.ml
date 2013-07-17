@@ -11,6 +11,7 @@ type capability = [
            | `all_evaluations
            | `all_flowcells
            | `all_hiseq_runs
+           | `all_pgm_runs
            | `layout
            | `log
            | `persons

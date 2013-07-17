@@ -25,6 +25,7 @@ SERVER_FILES := $(COMMON_FILES) \
   hitscoreweb_authentication.ml \
   hitscoreweb_services.ml \
   hitscoreweb_hiseq_runs.ml \
+  hitscoreweb_pgm_runs.ml \
   hitscoreweb_persons.ml \
   hitscoreweb_messages.ml \
   hitscoreweb_data_access.ml \

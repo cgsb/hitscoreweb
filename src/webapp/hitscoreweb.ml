@@ -737,6 +737,8 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register log) Hitscoreweb_log.(make ~state);
 
       Services.(register uploads) Hitscoreweb_uploads_service.(make ~state);
+      Services.(register pgm_runs)
+        Hitscoreweb_pgm_runs.(make ~state);
 
       Services.(register_css stylesheet)
         Template.(css_service_handler ~configuration:hitscore_configuration);

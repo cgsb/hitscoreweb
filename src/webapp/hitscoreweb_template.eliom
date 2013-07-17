@@ -375,7 +375,9 @@ let menu_ul () =
   in
   while_sequential ~f:potential_li [
     (`view `all_hiseq_runs,
-     [a_link Services. hiseq_runs [pcdata "HiSeq 2500 Runs"] ()]);
+     [a_link Services.hiseq_runs [pcdata "HiSeq 2500 Runs"] ()]);
+    (`view `all_pgm_runs,
+     [a_link Services.pgm_runs [pcdata "PGM Runs"] ()]);
     (`view `persons,
      [a_link Services.persons [pcdata "Persons"] (None, [])]);
     (`view `libraries,
