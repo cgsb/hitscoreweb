@@ -25,14 +25,14 @@ COMMON_FILES := \
   hitscoreweb_submission_forms.eliom	    \
   hitscoreweb_one_person_service.eliom \
   hitscoreweb_libraries.eliom \
-  hitscoreweb_facility_stats.eliom \
-  hitscoreweb.eliom
+  hitscoreweb_facility_stats.eliom
 SERVER_FILES := $(COMMON_FILES) \
   hitscoreweb_persons.ml	   \
   hitscoreweb_messages.ml	    \
   hitscoreweb_data_access.ml	    \
   hitscoreweb_state.ml	    \
-  hitscoreweb_flowcell_service.ml
+  hitscoreweb_flowcell_service.ml \
+  hitscoreweb.ml
 CLIENT_FILES := $(COMMON_FILES)
 
 # CLOSURE_CSS_NAMES= common dialog datepicker

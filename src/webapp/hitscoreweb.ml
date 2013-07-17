@@ -1,6 +1,4 @@
-{shared{
 open Hitscoreweb_std
-}}
 
 module Msg = Hitscoreweb_messages
 
