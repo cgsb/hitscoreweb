@@ -14,12 +14,12 @@ CLIENT_PACKAGES := re.posix
 COMMON_FILES := \
   hitscoreweb_template.eliom \
   hitscoreweb_meta_form.eliom \
-  hitscoreweb_log.eliom \
   hitscoreweb_uploads_service.eliom \
   hitscoreweb_layout_service.eliom \
   hitscoreweb_std.eliom \
   hitscoreweb_one_person_service.eliom
 SERVER_FILES := $(COMMON_FILES) \
+  hitscoreweb_log.ml \
   hitscoreweb_std_server.ml \
   hitscoreweb_submission_forms.ml \
   hitscoreweb_authentication.ml \
