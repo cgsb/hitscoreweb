@@ -21,8 +21,7 @@ COMMON_FILES := \
   hitscoreweb_layout_service.eliom \
   hitscoreweb_std.eliom	    \
   hitscoreweb_submission_forms.eliom	    \
-  hitscoreweb_one_person_service.eliom \
-  hitscoreweb_libraries.eliom
+  hitscoreweb_one_person_service.eliom
 SERVER_FILES := $(COMMON_FILES) \
   hitscoreweb_hiseq_runs.ml	   \
   hitscoreweb_persons.ml	   \
@@ -31,6 +30,7 @@ SERVER_FILES := $(COMMON_FILES) \
   hitscoreweb_state.ml	    \
   hitscoreweb_flowcell_service.ml \
   hitscoreweb_facility_stats.ml \
+  hitscoreweb_libraries.ml \
   hitscoreweb.ml
 CLIENT_FILES := $(COMMON_FILES)
 
