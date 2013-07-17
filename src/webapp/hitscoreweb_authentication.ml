@@ -1,8 +1,5 @@
-{shared{
-
 open Hitscoreweb_std
 
-}}
 
 module Data_access = Hitscoreweb_data_access
 
