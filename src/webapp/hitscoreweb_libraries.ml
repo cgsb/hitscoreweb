@@ -1,5 +1,5 @@
 
-open Hitscoreweb_std
+open Hitscoreweb_std_server
 open Hitscore
 
 module Msg = Hitscoreweb_messages

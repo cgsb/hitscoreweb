@@ -1,7 +1,7 @@
-open Hitscoreweb_std
+open Hitscoreweb_std_server
 
 type 'error global_errorful_state = {
-  configuration: Configuration.local_configuration; 
+  configuration: Configuration.local_configuration;
   persons_info:
     unit ->
     ('error Hitscore_data_access_types.classy_persons_information, 'error) t;
@@ -25,7 +25,7 @@ let init_state ~configuration
 
 let configuration t = t.configuration
 let persons_info t = t.persons_info ()
-  
+
 let find_person_opt ~state id =
   persons_info state
   >>= fun classy_persons_info ->
@@ -35,7 +35,7 @@ let find_person_opt ~state id =
         Array.exists p#t#secondary_emails ((=) id)
       then Some p
       else None))
-    
+
 let find_person ~state id =
   find_person_opt ~state id
   >>= fun op ->
@@ -54,5 +54,3 @@ let person_by_pointer ~state p =
   | Some s -> return s
   | None -> error (`person_not_found (sprintf "%d" p.Layout.Record_person.id))
   end
-
-    

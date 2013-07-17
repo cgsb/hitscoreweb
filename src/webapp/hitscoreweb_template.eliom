@@ -1,3 +1,4 @@
+open Hitscoreweb_std_server
 {shared{
 open Hitscoreweb_std
 }}

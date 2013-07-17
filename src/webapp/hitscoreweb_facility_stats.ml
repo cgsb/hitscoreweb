@@ -1,4 +1,4 @@
-open Hitscoreweb_std
+open Hitscoreweb_std_server
 module Services = Hitscoreweb_services
 module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template

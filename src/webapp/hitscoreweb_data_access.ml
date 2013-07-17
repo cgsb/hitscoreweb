@@ -1,9 +1,9 @@
-open Hitscoreweb_std
+open Hitscoreweb_std_server
 
 type broker_error =
 [ `broker_not_initialized
 | `io_exn of exn
-| `db_backend_error of Hitscoreweb_std.Backend.error
+| `db_backend_error of Backend.error
 | `Layout of
         Hitscore_layout.Layout.error_location *
           Hitscore_layout.Layout.error_cause

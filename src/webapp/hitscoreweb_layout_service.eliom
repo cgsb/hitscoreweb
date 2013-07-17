@@ -1,4 +1,6 @@
-{shared{
+
+open Hitscoreweb_std_server
+{client{
 open Hitscoreweb_std
 }}
 

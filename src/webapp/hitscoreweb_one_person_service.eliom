@@ -1,4 +1,5 @@
 
+open Hitscoreweb_std_server
 {shared{
 open Hitscoreweb_std
 open Printf
@@ -248,8 +249,8 @@ let init_caml_service ~state =
           | Ok o -> Lwt.return (o : down_message)
           | Error e -> fail "unknown error")))
 
-let change_password_interface person_email =
-  let chgpwd_id = unique_id "change_password" in
+let change_password_interface (person_email : string) =
+  let (chgpwd_id: string) = (unique_id "change_password" : string) in
   let the_link_like =
     let open Html5 in
     [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
@@ -355,7 +356,7 @@ let change_password_interface person_email =
   the_link_like
 
 
-let change_emails_interface person_email secondary_emails =
+let change_emails_interface person_email (secondary_emails : string array) =
   let chgpwd_id = unique_id "change_emails" in
   let the_link_like =
     let open Html5 in

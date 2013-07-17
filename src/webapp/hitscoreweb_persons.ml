@@ -1,6 +1,6 @@
 
 
-open Hitscoreweb_std
+open Hitscoreweb_std_server
 
 module State = Hitscoreweb_state
 

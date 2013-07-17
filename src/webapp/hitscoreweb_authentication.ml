@@ -1,4 +1,4 @@
-open Hitscoreweb_std
+open Hitscoreweb_std_server
 
 
 module Data_access = Hitscoreweb_data_access

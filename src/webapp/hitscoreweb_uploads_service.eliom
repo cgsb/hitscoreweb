@@ -1,5 +1,6 @@
 
-{shared{
+open Hitscoreweb_std_server
+{client{
 open Hitscoreweb_std
 }}
 module Web_data_access = Hitscoreweb_data_access
@@ -19,7 +20,7 @@ let link_to_upload ~configuration ~and_remove (file, orig, date) =
     Hitscoreweb_meta_form.Upload.init ~configuration () in
   (codef "[%s]" (Time.to_string date)) ::
     (Template.a_link (fun () -> get) [codef "%s" orig] file) ::
-    (if and_remove then [ 
+    (if and_remove then [
       pcdata " (";
       span ~a:[ a_class ["like_link"];
                 a_onclick {{ fun _ ->

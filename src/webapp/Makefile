@@ -20,6 +20,7 @@ COMMON_FILES := \
   hitscoreweb_std.eliom \
   hitscoreweb_one_person_service.eliom
 SERVER_FILES := $(COMMON_FILES) \
+  hitscoreweb_std_server.ml \
   hitscoreweb_submission_forms.ml \
   hitscoreweb_authentication.ml \
   hitscoreweb_services.ml \

@@ -1,5 +1,6 @@
 (* The /log service implementation. *)
 
+open Hitscoreweb_std_server
 {shared{
 open Hitscoreweb_std
 }}
@@ -49,7 +50,7 @@ let user_spying () =
         ]))
       >>= fun content ->
       return (div [section; div [ul content]] :: acc))
-    
+
 
 let make ~state =
   (fun () () ->

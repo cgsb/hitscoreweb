@@ -1,4 +1,4 @@
-open Hitscoreweb_std
+open Hitscoreweb_std_server
 
 let make = make_delayed
 

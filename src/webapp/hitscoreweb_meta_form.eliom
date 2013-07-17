@@ -1,3 +1,4 @@
+open Hitscoreweb_std_server
 module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 
@@ -66,7 +67,7 @@ module Upload_shared = struct
   let is_empty store = !store.files = []
 
   let has_successes store =
-    List.exists (fun file ->
+    LL.exists ~f:(fun file ->
       match file.state with
       | Upload_error _ -> false
       | Uploading -> false
@@ -326,7 +327,7 @@ module Markup = struct
       | Text s -> s
       | Italic t -> sprintf "<i>%s</i>" (simple t)
     in
-    String.concat "" (LL.map simple t)
+    String.concat ~sep:"" (LL.map simple t)
 
   let to_html t =
     let open Eliom_content.Html5.D in
