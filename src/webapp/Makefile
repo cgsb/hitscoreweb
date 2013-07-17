@@ -12,11 +12,9 @@ CLIENT_PACKAGES := re.posix
 
 ## Source files for the server part
 COMMON_FILES := \
-  hitscoreweb_messages.eliom	    \
   hitscoreweb_authentication.eliom \
   hitscoreweb_template.eliom	   \
   hitscoreweb_meta_form.eliom	    \
-  hitscoreweb_state.eliom	    \
   hitscoreweb_log.eliom	    \
   hitscoreweb_uploads_service.eliom	    \
   hitscoreweb_queries.eliom	    \
@@ -31,7 +29,9 @@ COMMON_FILES := \
   hitscoreweb_facility_stats.eliom \
   hitscoreweb.eliom
 SERVER_FILES := $(COMMON_FILES) \
+  hitscoreweb_messages.ml	    \
   hitscoreweb_data_access.ml	    \
+  hitscoreweb_state.ml	    \
   hitscoreweb_flowcell_service.ml
 CLIENT_FILES := $(COMMON_FILES)
 
