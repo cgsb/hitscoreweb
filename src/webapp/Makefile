@@ -20,7 +20,6 @@ COMMON_FILES := \
   hitscoreweb_state.eliom	    \
   hitscoreweb_log.eliom	    \
   hitscoreweb_uploads_service.eliom	    \
-  hitscoreweb_flowcell_service.eliom	    \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_services.eliom	    \
   hitscoreweb_persons.eliom	   \
@@ -32,7 +31,8 @@ COMMON_FILES := \
   hitscoreweb_libraries.eliom \
   hitscoreweb_facility_stats.eliom \
   hitscoreweb.eliom
-SERVER_FILES := $(COMMON_FILES)
+SERVER_FILES := $(COMMON_FILES) \
+  hitscoreweb_flowcell_service.ml
 CLIENT_FILES := $(COMMON_FILES)
 
 # CLOSURE_CSS_NAMES= common dialog datepicker
@@ -93,7 +93,7 @@ endif
 SERVER_INC  := ${addprefix -package ,${SERVER_PACKAGES}}
 
 SERVER_OBJS := $(patsubst %.eliom,${ELIOM_SERVER_DIR}/%.cmo, ${SERVER_FILES})
-#SERVER_OBJS := $(patsubst %.ml,${ELIOM_SERVER_DIR}/%.cmo, ${SERVER_OBJS})
+SERVER_OBJS := $(patsubst %.ml,${ELIOM_SERVER_DIR}/%.cmo, ${SERVER_OBJS})
 
 ${APP_NAME}.cma: ${SERVER_OBJS}
 	${ELIOMC} -a -o $@ $(GENERATE_DEBUG) \

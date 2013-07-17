@@ -6,9 +6,11 @@ all: build
 _build/hitscoreweb:
 	mkdir -p _build/hitscoreweb
 _build/hitscoreweb/%.eliom: src/webapp/%.eliom
-	CC=$$PWD ; cd _build/hitscoreweb ; ln -s ../../$< ; cd $$CC 
+	CC=$$PWD ; cd _build/hitscoreweb ; ln -s ../../$< ; cd $$CC
+_build/hitscoreweb/%.ml: src/webapp/%.ml
+	CC=$$PWD ; cd _build/hitscoreweb ; ln -s ../../$< ; cd $$CC
 _build/hitscoreweb/Makefile: src/webapp/Makefile
-	CC=$$PWD ; cd _build/hitscoreweb ; ln -s ../../$< ; cd $$CC 
+	CC=$$PWD ; cd _build/hitscoreweb ; ln -s ../../$< ; cd $$CC
 
 TO_MOUNT=$(patsubst src/webapp/%,_build/hitscoreweb/%,${wildcard src/webapp/*})
 mount_hitscoreweb:: _build/hitscoreweb $(TO_MOUNT)
