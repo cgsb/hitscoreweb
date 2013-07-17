@@ -76,3 +76,14 @@ let protocol = head_text "Protocol" "Protocol Description (if available)"
 
 let demux_options =
   head_text "Demultiplexing Options" "Options used whie demultiplexing"
+
+let pgm_run_title =
+  head_text "PGM Run" "PGM Sequencer and run date"
+let pgm_run_pools =
+  head_text "Pools" "Library pools of the PGM Run"
+let pgm_run_libraries =
+  head_text "Libraries" "Libraries of the given pool"
+let pgm_run_contacts =
+  head_text "Contacts" "Persons associated with the pool"
+let pgm_run_invoicing =
+  head_text "Invoicing" "Invoicing: PI & Percentage"
