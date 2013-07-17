@@ -1,11 +1,32 @@
-include Core.Std
+(* include Core.Std *)
 (* include Lwt *)
 
+module List = Core.Std.List
+module Array = Core.Std.Array
+module Option = Core.Std.Option
+module Result = Core.Std.Result
+module String = Core.Std.String
+module Time = Core.Std.Time
+module Date = Core.Std.Date
+module Month = Core.Std.Month
+module Exn = Core.Std.Exn
+module Int = Core.Std.Int
+module Float = Core.Std.Float
+module Bool = Core.Std.Bool
+module Sexp = Core.Std.Sexp
+module Filename = Core.Std.Filename
+module Map = Core.Std.Map
+include Core.Std.Printf
+type ('a, 'b) result = ('a, 'b) Result.t =
+  | Ok of 'a
+  | Error of 'b
+
 let (|>) x f = f x
+
 {shared{
 module Html5 = struct
   include Eliom_content.Html5.D
-  open Printf 
+  open Printf
   let pcdataf fmt = ksprintf pcdata fmt
 
   let codef fmt = ksprintf (fun s -> code [pcdata s]) fmt
@@ -42,13 +63,13 @@ include Sequme_flow_sys
 
 module Xml_tree = struct
   include Xmlm
-  let in_tree i = 
+  let in_tree i =
     let el tag childs = `E (tag, childs)  in
     let data d = `D d in
     input_doc_tree ~el ~data i
 end
 
-  
+
 let log_session_info =
   Eliom_reference.eref ~scope:Eliom_common.default_session_scope "NO-SESSION"
 
@@ -62,7 +83,7 @@ let log_file_path () =
 
 let log s =
   begin match !log_function with
-  | None -> 
+  | None ->
     let open Lwt in
     let file_name = log_file_path () in
     (* eprintf "logging to %s\n%!" file_name; *)
@@ -73,7 +94,7 @@ let log s =
     let lwt_log s = Lwt_log.notice ~logger:file_logger s in
     log_function := Some lwt_log;
     return (Ok lwt_log)
-  | Some f -> return f 
+  | Some f -> return f
   end
   >>= fun lwt_log ->
   begin
@@ -83,19 +104,19 @@ let log s =
         = Alive_state)
       then
         wrap_io Eliom_reference.get log_session_info
-      else 
+      else
         return "NO-SESSION"
     with
       e -> return "NO-SESSION"
   end
   >>= fun session_info ->
-  let indented = String.split ~on:'\n' s |! String.concat ~sep:"\n     " in
+  let indented = String.split ~on:'\n' s |> String.concat ~sep:"\n     " in
   wrap_io lwt_log
-    (sprintf "[%s][%s] %s" Time.(now () |! to_string) session_info indented)
+    (sprintf "[%s][%s] %s" Time.(now () |> to_string) session_info indented)
 
 let logf fmt = ksprintf log fmt
 
-  
+
 (*
   https://bitbucket.org/yminsky/ocaml-core/src/c0e9df7b574d/base/core/extended/lib/sendmail.mli
 *)
@@ -109,7 +130,7 @@ let send_mail ?subject ?sender ?cc ?bcc ?reply_to ?content_type ~recipients cont
   in
   double_bind m ~ok:return ~error:(function
   | `io_exn e -> error (`sendmail e))
-    
+
 let rec interleave_list ~sep = function
   | [] -> []
   | [one] -> [one]
@@ -126,51 +147,23 @@ let rec interleave_map ~sep ~f = function
 let layout_log ~dbh fmt =
   ksprintf (Common.add_log ~dbh) fmt
 
-(*
-let pg_raw_query ?with_log ~dbh ~query =
-  let module PG = Layout.PGOCaml in
-  let name = "todo_change_this" in
-  let execution = 
-    wrap_io (PG.prepare ~name ~query dbh) ()
-    >>= fun () ->
-    wrap_io (PG.execute ~name ~params:[] dbh) ()
-    >>= fun result ->
-    wrap_io (PG.close_statement dbh ~name) ()
-    >>= fun () ->
-    return result
-  in
-  match with_log with
-  | None -> execution
-  | Some tag ->
-    double_bind execution
-      ~ok:(fun x -> 
-        layout_log ~dbh "(%s success %S)" tag query
-        >>= fun () ->
-        return x)
-      ~error:(function
-      | `io_exn e as err ->
-        layout_log ~dbh "(%s error %S %S)" tag query (Exn.to_string e)
-        >>= fun () -> 
-        error err
-      | err -> error err)
-*)
 
 {client{
-let (|!) x f = f x
+let (|>) x f = f x
 let lwtunit (x: unit Lwt.t) = Pervasives.ignore x
 let ($) f x = f x
-  
+
 let float_of_string s =
   (* imitate ocaml's runtime: *)
   let f = float_of_string s in
   match classify_float f with
   | FP_infinite | FP_nan -> failwith "float_of_string"
   | _ -> f
-    
+
 let get_element_exn s =
   Js.Opt.get (Dom_html.document##getElementById (Js.string s))
     (fun _ -> Printf.ksprintf failwith "Getting %S -> ERROR " s)
-  
+
 let get_element s =
   Js.Opt.to_option (Dom_html.document##getElementById (Js.string s))
 
@@ -181,11 +174,11 @@ module List = ListLabels
 
 let dbg fmt =
   Printf.ksprintf (fun s -> Firebug.console##debug(Js.string ("DBG: " ^ s))) fmt
-  
+
 }}
 let dbg fmt = ksprintf (fun s -> eprintf "DBG: %s\n%!" s) fmt
 
-let pretty_string_of_float ?(sof=sprintf "%.3f") f = 
+let pretty_string_of_float ?(sof=sprintf "%.3f") f =
   let s = sof f in
   let rec f s =
     if String.(length s) > 3 then
@@ -202,16 +195,16 @@ let pretty_string_of_float ?(sof=sprintf "%.3f") f =
   | one :: more ->
     sprintf "%s.%s" (prefix (f one)) (String.concat ~sep:"" more)
 
-let make_delayed f = 
+let make_delayed f =
   let content = ref None in
   fun () ->
     match !content with
-    | None -> 
-      let s = f () in          
+    | None ->
+      let s = f () in
       content := Some s;
       s
     | Some s -> s
-      
+
 
 let unique_id: string -> string =
   let i = ref 0 in
@@ -240,3 +233,16 @@ let get_current_host_port () =
   end
 }}
 
+
+let processing_onclick_handler ~id_to_hide ~message_span_id =
+  Html5.a_onclick {{fun _ ->
+      let form_span =
+        Dom_html.document##getElementById (Js.string %id_to_hide) in
+      let message_span =
+        Dom_html.document##getElementById (Js.string %message_span_id) in
+      Js.Opt.iter form_span (fun span ->
+          span##style##visibility  <- Js.string "hidden";);
+      Js.Opt.iter message_span (fun span ->
+          span##style##visibility  <- Js.string "visible";
+          span##innerHTML <- Js.string "<b>Processing …</b>";);
+    }}

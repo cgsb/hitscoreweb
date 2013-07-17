@@ -444,17 +444,8 @@ let login_form () =
               (* The onclick seems to work also when the user types <enter>
                  but onsubmit does not seem to to anything (?)
                  a_onsubmit {{debugf %dbgsrv "onsubmit!"}}; *)
-               a_onclick {{fun _ ->
-                 let form_span =
-                   Dom_html.document##getElementById (Js.string %form_span_id) in
-                 let message_span =
-                   Dom_html.document##getElementById (Js.string %message_span_id) in
-                 Js.Opt.iter form_span (fun span ->
-                   span##style##visibility  <- Js.string "hidden";);
-                 Js.Opt.iter message_span (fun span ->
-                   span##style##visibility  <- Js.string "visible";
-                   span##innerHTML <- Js.string "<b>Processing …</b>";);
-               }};
+               (processing_onclick_handler
+                  ~id_to_hide:form_span_id ~message_span_id)
              ]
              ~input_type:`Submit ~value:"Login" ();
           ];
@@ -507,14 +498,14 @@ let display_state () =
       pcdataf " (%s) impersonating "
         (String.concat ~sep:", " Array.(map admin.LRP.g_value.LRP.roles
                                           ~f:Layout.Enumeration_role.to_string
-                                        |! to_list));
+                                        |> to_list));
       Html5.a ~service:(Services.person ())
         [pcdataf "%s" impersonated.LRP.g_value.LRP.email]
         (impersonated.LRP.g_value.LRP.email, None);
         pcdataf " (%s) "
           (String.concat ~sep:", " Array.(map impersonated.LRP.g_value.LRP.roles
                                             ~f:Layout.Enumeration_role.to_string
-                                          |! to_list));
+                                          |> to_list));
       ])
     | `user_logged u ->
       Data_access.person_by_pointer u.person
@@ -526,7 +517,7 @@ let display_state () =
         pcdataf " (%s)"
           (String.concat ~sep:", " Array.(map user.LRP.g_value.LRP.roles
                                             ~f:Layout.Enumeration_role.to_string
-                                          |! to_list));
+                                          |> to_list));
       ])
     | `error (s, _)
     | `insufficient_credentials s ->

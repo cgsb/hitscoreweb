@@ -463,8 +463,10 @@ module Doc_service = struct
       let content =
         begin match Configuration.root_path configuration with
         | Some rootpath ->
-          read_file (rootpath ^/ "doc" ^/
-                       (sprintf "%s.sdx" (String.concat path ~sep:"/")))
+          read_file Filename.(
+              (concat
+                 (concat rootpath "doc")
+                 (sprintf "%s.sdx" (String.concat path ~sep:"/"))))
         | None ->
           error `root_directory_not_configured
         end
@@ -685,7 +687,7 @@ TODO: All exceptions in coservices should be handled in some other way
         Web_data_access.init
           ~loop_time:(if !debug_mode then 90. else 600.)
           ~configuration:config ()
-        |! Lwt.ignore_result;
+        |> Lwt.ignore_result;
         let state =
           Hitscoreweb_state.init_state ~configuration:config () in
         (state, config, debug_mode)
@@ -745,6 +747,6 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register fastx_results)
         All_or_any_fastx_stats.(make ~configuration:hitscore_configuration);
 
-      logf "All services are registered" |! Lwt.ignore_result;
+      logf "All services are registered" |> Lwt.ignore_result;
 
     )

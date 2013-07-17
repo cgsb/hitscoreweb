@@ -33,7 +33,7 @@ let intro_paragraph info =
     List.map [ [`basic; `stock], "Metadata";
                [`basic; `fastq], "Sequencing Info";
                [`basic;`stock; `fastq], "Full" ] make_link
-    |! interleave_list ~sep:(pcdata ", ") in
+    |> interleave_list ~sep:(pcdata ", ") in
   [b [pcdata "Choose view: "]] @ links @ [pcdata "."] @ [br ()]
 
 
@@ -123,7 +123,7 @@ let detailed_fastq_subtable lib =
                 ~f:(fun s ->
                   [codef "%.2f" (s.Bui.quality_score_sum /. s.Bui.yield)]));
 
-        ])) |! List.concat) |! List.concat in
+        ])) |> List.concat) |> List.concat in
   let empty_row = [List.init 6 (fun _ -> `text [pcdata ""])] in
   `subtable (if List.concat subtable = [] then empty_row else subtable)
 
@@ -172,7 +172,7 @@ let simple_fastq_subtable lib =
               value_map fastq_stats ~default:[pcdata "—"]
                 ~f:(fun s ->
                   [codef "%.2f" (s.Bui.quality_score_sum /. s.Bui.yield)]));
-          ]) |! List.concat) |! List.concat) in
+          ]) |> List.concat) |> List.concat) in
   let empty_row = [List.init 5 (fun _ -> `text [pcdata ""])] in
   `subtable (if List.concat subtable = [] then empty_row else subtable)
 
@@ -180,7 +180,7 @@ let make_file_links vol_id paths =
   let open Html5 in
   List.map paths begin fun path ->
     if Eliom_registration.File.check_file path
-    then begin match Filename.split_extension path |! snd with
+    then begin match Filename.split_extension path |> snd with
     | Some ext ->
       b [Template.a_link Services.file [pcdata ext] (vol_id, path)]
     | None ->
@@ -189,7 +189,7 @@ let make_file_links vol_id paths =
     else
       i ~a:[ a_title path ] [pcdata "missing-file"]
   end
-  |! interleave_list ~sep:(pcdata ", ")
+  |> interleave_list ~sep:(pcdata ", ")
 
 let libraries_table ~showing ~can_view_fastq_details info =
   let open Template in
@@ -210,7 +210,7 @@ let libraries_table ~showing ~can_view_fastq_details info =
         cell_option Option.(lib#sample >>= fun s -> s#organism >>= fun o -> o#name));
       stock (fun () ->
         `sortable (
-          List.length lib#submissions |! Int.to_string,
+          List.length lib#submissions |> Int.to_string,
           begin match lib#submissions with
           | [] -> [pcdata "Never"]
           | l ->
@@ -513,13 +513,13 @@ let per_lirbary_details info =
                 interleave_map ~sep:[br ()] un#fastx_qss ~f:(fun fxqs ->
                   [pcdata "Function ";
                    layout_id_link "fastx_quality_stats" fxqs#g_id; ])
-                |! List.concat
+                |> List.concat
               in
               let rorigins =
                 interleave_map ~sep:[br ()] un#fastx_results ~f:(fun fxqsr ->
                   [pcdata "Record ";
                    layout_id_link "fastx_quality_stats_result" fxqsr#g_id; ])
-                |! List.concat
+                |> List.concat
               in
               while_sequential (r1 @ r2) (fun fastx_read ->
                 rendered_fastx_table fastx_read#path
@@ -554,7 +554,7 @@ let per_lirbary_details info =
                   ~f:(fun p -> [strongf "R1: "; codef "%s" p; br ()])
                 @ interleave_map fastq_r2s ~sep:[]
                   ~f:(fun p -> [strongf "R2: "; codef "%s" p; br ()])
-                |! List.concat
+                |> List.concat
               in
               let details =
                 div [
@@ -686,8 +686,8 @@ let filter_classy_libraries_information
     then begin
       let people =
         List.map l#submissions (fun sub -> sub#lane#contacts)
-        |! List.concat
-        |! List.map ~f:(fun p -> p#g_pointer) in
+        |> List.concat
+        |> List.map ~f:(fun p -> p#g_pointer) in
       people_filter people
       >>= function
       | true -> return (Some l)

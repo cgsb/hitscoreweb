@@ -330,13 +330,13 @@ let rec display_typed_value =
   | Option t, List [] -> sortable_text ""
   | Option t, List [v] -> display_typed_value (t,v)
   | Array t, List l ->
-    `sortable (l |! List.length |! Int.to_string,
+    `sortable (l |> List.length |> Int.to_string,
                List.map l (fun v ->
                  match display_typed_value (t,v) with
                  | `sortable (_, p) -> p
                  | _ -> [])
-               |! List.concat
-               |! interleave_list ~sep:(pcdata ", "))
+               |> List.concat
+               |> interleave_list ~sep:(pcdata ", "))
 
   | Record_name   name, List [List [Atom "id"; Atom s]]
   | Volume_name   name, List [List [Atom "id"; Atom s]]
@@ -403,7 +403,7 @@ let view_layout ~configuration ~main_title ~types ~values =
     let nodes =
       Html5.(div ~a:[ a_style "max-width: 55em" ]
                (List.map layout.LDSL.nodes node_link
-                |! interleave_list ~sep:(pcdata ", ")))
+                |> interleave_list ~sep:(pcdata ", ")))
     in
     let open Template in
     let open Html5 in
@@ -424,14 +424,14 @@ let view_layout ~configuration ~main_title ~types ~values =
               add_or_modify_sexp_interface kind name;
               begin match meta_values with
               | `Record [one] ->
-                let modify = Sql_query.(one.r_id, one.r_sexp |! Sexp.to_string) in
+                let modify = Sql_query.(one.r_id, one.r_sexp |> Sexp.to_string) in
                 add_or_modify_sexp_interface ~modify kind name
               | `Volume [one, _] ->
-                let modify = Sql_query.(one.v_id, one.v_sexp |! Sexp.to_string) in
+                let modify = Sql_query.(one.v_id, one.v_sexp |> Sexp.to_string) in
                 add_or_modify_sexp_interface ~modify kind name
               | _ -> []
               end;
-            ] |! List.map ~f:(fun l -> li [l]));
+            ] |> List.map ~f:(fun l -> li [l]));
           ]
         else
           content_list []
@@ -455,8 +455,8 @@ let view_layout ~configuration ~main_title ~types ~values =
         | Enumeration (name, values) ->
           content_section (span [pcdata "Enumeration "; codef "%s" name])
             (content_paragraph
-               (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
-          |! return
+               (List.map values (codef "`%s") |> interleave_list ~sep:(br ())))
+          |> return
 
         | Record (name, typed_values) ->
           get_all_values ~only:values dbh name >>= fun actual_values ->

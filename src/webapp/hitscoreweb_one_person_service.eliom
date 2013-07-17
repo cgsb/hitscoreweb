@@ -5,7 +5,7 @@ open Printf
 }}
 
 let logf fmt = logf ("{one-person} " ^^ fmt)
-  
+
 module Services = Hitscoreweb_services
 
 module Authentication = Hitscoreweb_authentication
@@ -13,7 +13,7 @@ module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 
 module State = Hitscoreweb_state
-  
+
 let one_time_post_coservice_error =
   Eliom_reference.eref ~secure:true
     ~scope:Eliom_common.default_process_scope (None: string option)
@@ -29,7 +29,7 @@ let email_verification_service =
                   ~get_params:Eliom_parameter.(string "identifier"
                                                 ** string "new_email"
                                                 ** opt (string "old_email")
-                                                ** string "key")) 
+                                                ** string "key"))
 
 let init_email_verification_service ~state =
   let open Html5 in
@@ -40,7 +40,7 @@ let init_email_verification_service ~state =
         >>= fun person ->
         Authentication.authorizes (`edit (`emails_of_person person#t#g_t))
         >>= fun can_edit ->
-        if can_edit 
+        if can_edit
         then (
           wrap_io Eliom_reference.get email_verification_tokens
           >>= fun tokens ->
@@ -54,7 +54,7 @@ let init_email_verification_service ~state =
             | Some old ->
               if person#t#email = old then
                 person#t#set_email new_email
-              else 
+              else
                 begin match Array.findi person#t#secondary_emails
                     (fun _ -> (=) old) with
                 | Some (idx, _) ->
@@ -77,15 +77,15 @@ let init_email_verification_service ~state =
         else
           Template.make_authentication_error
             ~configuration:(State.configuration state)
-            ~main_title:"Email Verification Page" 
+            ~main_title:"Email Verification Page"
             (return [Html5.pcdataf
                         "You should maybe login to complete this action."])
       in
       Template.default ~title:"Email Verification Page" work_m
     )
-    
 
-      
+
+
 {shared{
 type up_message =
 | Change_password of string * string * string  (* email, pwd1, pwd2 *)
@@ -95,7 +95,7 @@ type up_message =
 | Add_secondary_email of string * string
 deriving (Json)
 
-type down_message = 
+type down_message =
 | Success
 | Email_verification_in_progress of int * string
 | Error_string of string
@@ -104,7 +104,7 @@ let password_minimum_size = 8
 }}
 
 let caml_service =
-  make_delayed (Eliom_service.service 
+  make_delayed (Eliom_service.service
           ~path:["one_person_caml_service"]
           ~get_params:Eliom_parameter.(caml "param" Json.t<up_message>))
 
@@ -114,7 +114,7 @@ let do_edition ~state id cap edition =
     >>= fun person ->
     Authentication.authorizes (`edit (cap person#t#g_t))
     >>= fun can_edit ->
-    if can_edit 
+    if can_edit
     then (edition person >>= fun () ->
           logf "Edition of %s successful" id >>= fun () ->
           return Success)
@@ -165,13 +165,13 @@ let do_edition ~state id cap edition =
 
 let add_or_change_email ~id ?current ~next person =
   let key =
-    let rng = Cryptokit.Random.pseudo_rng Time.(now () |! to_string) in
+    let rng = Cryptokit.Random.pseudo_rng Time.(now () |> to_string) in
     let s = String.make 42 'B' in
     rng#random_bytes s 0 42;
     let b64 = Cryptokit.Base64.encode_compact () in
     b64#put_string s;
     b64#get_string in
-  let service = 
+  let service =
     Eliom_service.preapply (email_verification_service ())
       (id, (next, (current, key))) in
   let uri = Html5.make_string_uri ~absolute:true ~service () in
@@ -190,7 +190,7 @@ let add_or_change_email ~id ?current ~next person =
   >>= fun () ->
   error (`email_verification_in_progress (42, next))
 
-    
+
 let reply ~state =
   function
   | Change_password (id, pw1, pw2) ->
@@ -201,7 +201,7 @@ let reply ~state =
       else if String.length pw1 < password_minimum_size then
         error (`wrong_parameter
                   "Trying to mess around? passwords are not long enough")
-      else 
+      else
         let new_hash =
           Communication.Authentication.hash_password person#t#g_id pw1 in
         eprintf "hashed passwd for %s\n%!" id;
@@ -210,7 +210,7 @@ let reply ~state =
     do_edition ~state email (fun p -> `emails_of_person p) (fun person ->
       begin match Array.findi person#t#secondary_emails (fun _ -> (=) email) with
       | Some (idx, _) ->
-        person#t#secondary_emails.(idx) <- person#t#email; 
+        person#t#secondary_emails.(idx) <- person#t#email;
         person#t#set_secondary_emails person#t#secondary_emails >>= fun () ->
         person#t#set_email email
       | None -> error (`cannot_find_secondary_email)
@@ -231,7 +231,7 @@ let reply ~state =
   | Add_secondary_email (id, next) ->
     do_edition ~state id (fun p -> `emails_of_person p)
       (add_or_change_email ~id ~next)
-      
+
 let init_caml_service ~state =
   let already = ref false in
   fun () ->
@@ -247,7 +247,7 @@ let init_caml_service ~state =
           Lwt.bind (reply ~state param) (function
           | Ok o -> Lwt.return (o : down_message)
           | Error e -> fail "unknown error")))
-        
+
 let change_password_interface person_email =
   let chgpwd_id = unique_id "change_password" in
   let the_link_like =
@@ -260,17 +260,17 @@ let change_password_interface person_email =
     let open Lwt in
     try
       begin
-        
+
         let call_caml msg =
           Eliom_client.call_caml_service ~service: %caml msg () in
-        
+
         let the_span = get_element_exn %chgpwd_id in
         the_span##onclick <-
           Dom_html.(handler (fun ev ->
             the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
             the_span##innerHTML <-
               Js.string "Please, enter a <strong>good</strong> password twice: ";
-            the_span##classList##remove(Js.string "like_link"); 
+            the_span##classList##remove(Js.string "like_link");
             let pw1, pw2, submit =
               let open Html5 in
               (string_input ~input_type:`Password (),
@@ -315,7 +315,7 @@ let change_password_interface person_email =
             i_elt_2##onmouseup <- check_handler i_elt_1 i_elt_2 btn_elt msg_elt;
             btn_elt##onclick <- Dom_html.handler(fun _ ->
               the_span##innerHTML <- Js.string "<b>Processing …</b>";
-              Lwt.ignore_result 
+              Lwt.ignore_result
                 begin
                   let s1 = Js.to_string i_elt_1##value in
                   let s2 = Js.to_string i_elt_2##value in
@@ -346,15 +346,15 @@ let change_password_interface person_email =
             Dom.appendChild the_span msg_elt;
             Js._true
           ));
-        
+
       end
-    with e -> 
+    with e ->
       dbg "Exception in onload for %S: %s" %chgpwd_id (Printexc.to_string e);
       ()
   }};
   the_link_like
 
-    
+
 let change_emails_interface person_email secondary_emails =
   let chgpwd_id = unique_id "change_emails" in
   let the_link_like =
@@ -367,19 +367,19 @@ let change_emails_interface person_email secondary_emails =
     let open Lwt in
     try
       begin
-        
+
         let call_caml msg =
           Eliom_client.call_caml_service ~service: %caml msg () in
-        
+
         let change_email_button email =
-          let span = 
+          let span =
             (span ~a:[a_class ["like_link"]] [pcdata "change"]) in
           let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
             dbg "change %s" email;
-            elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
             elt##innerHTML <- Js.string "change: ";
-            elt##classList##remove(Js.string "like_link"); 
+            elt##classList##remove(Js.string "like_link");
             elt##style##fontWeight <- Js.string "bold";
             let field, submit =
               let open Html5 in
@@ -389,7 +389,7 @@ let change_emails_interface person_email secondary_emails =
             let field_elt = Html5_to_dom.of_input field in
             submit_elt##onclick <- Dom_html.(handler (fun ev ->
               elt##innerHTML <- Js.string "<b>In progress …</b>";
-              Lwt.ignore_result 
+              Lwt.ignore_result
                 begin
                   let s = Js.to_string field_elt##value in
                   call_caml (Change_email (email, s))
@@ -413,7 +413,7 @@ let change_emails_interface person_email secondary_emails =
                     return ()
                   end
                 end;
-              Js._true)); 
+              Js._true));
             Dom.appendChild elt field_elt;
             Dom.appendChild elt submit_elt;
             Js._true));
@@ -421,15 +421,15 @@ let change_emails_interface person_email secondary_emails =
         in
 
         let add_email_button person_email =
-          let span = 
+          let span =
             (span ~a:[a_class ["like_link"]]
                [pcdata "add an email address"]) in
           let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
             dbg "add email";
-            elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
             elt##innerHTML <- Js.string "enter a valid email address: ";
-            elt##classList##remove(Js.string "like_link"); 
+            elt##classList##remove(Js.string "like_link");
             elt##style##fontWeight <- Js.string "bold";
             let field, submit =
               let open Html5 in
@@ -439,7 +439,7 @@ let change_emails_interface person_email secondary_emails =
             let field_elt = Html5_to_dom.of_input field in
             submit_elt##onclick <- Dom_html.(handler (fun ev ->
               elt##innerHTML <- Js.string "<b>In progress …</b>";
-              Lwt.ignore_result 
+              Lwt.ignore_result
                 begin
                   let s = Js.to_string field_elt##value in
                   call_caml (Add_secondary_email (person_email, s))
@@ -463,24 +463,24 @@ let change_emails_interface person_email secondary_emails =
                     return ()
                   end
                 end;
-              Js._true)); 
+              Js._true));
             Dom.appendChild elt field_elt;
             Dom.appendChild elt submit_elt;
             Js._true));
           span
         in
-          
+
         let set_primary_email_button email =
-          let span = 
+          let span =
             (span ~a:[a_class ["like_link"]] [pcdata "set as primary"]) in
           let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
             dbg "set_primary_email_button %s" email;
-            elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
             elt##innerHTML <- Js.string "<b>In progress …</b>";
-            elt##classList##remove(Js.string "like_link"); 
+            elt##classList##remove(Js.string "like_link");
             elt##style##fontWeight <- Js.string "bold";
-            Lwt.ignore_result 
+            Lwt.ignore_result
               begin
                 call_caml (Set_primary_email email)
                 >>= fun msg ->
@@ -503,18 +503,18 @@ let change_emails_interface person_email secondary_emails =
             Js._true));
           span
         in
-            
+
         let delete_email_button email =
-          let span = 
+          let span =
             (span ~a:[a_class ["like_link"]] [pcdata "delete"]) in
           let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
             dbg "delete_email_button %s" email;
-            elt##onclick <- Dom_html.(handler (fun ev -> Js._true)); 
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
             elt##innerHTML <- Js.string "<b>In progress …</b>";
-            elt##classList##remove(Js.string "like_link"); 
+            elt##classList##remove(Js.string "like_link");
             elt##style##fontWeight <- Js.string "bold";
-            Lwt.ignore_result 
+            Lwt.ignore_result
               begin
                 call_caml (Delete_email email)
                 >>= fun msg ->
@@ -544,7 +544,7 @@ let change_emails_interface person_email secondary_emails =
             the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
             the_span##innerHTML <-
               Js.string "Please, configure your email addresses: ";
-            the_span##classList##remove(Js.string "like_link"); 
+            the_span##classList##remove(Js.string "like_link");
             let to_attach =
               Html5_to_dom.of_div
                 (div [ul
@@ -562,9 +562,9 @@ let change_emails_interface person_email secondary_emails =
             Dom.appendChild the_span to_attach;
             Js._true
           ));
-        
+
       end
-    with e -> 
+    with e ->
       dbg "Exception in onload for %S: %s" %chgpwd_id (Printexc.to_string e);
       ()
   }};
@@ -585,11 +585,11 @@ let make_view_page ~home ~state person =
     display title
       (match arr with
       | [| |] -> "N/A"
-      | s -> Array.to_list s |! String.concat ~sep:", ") in
+      | s -> Array.to_list s |> String.concat ~sep:", ") in
   Authentication.authorizes (`edit (`names_of_person person#t#g_t))
   >>= fun can_edit_names ->
   begin if can_edit_names
-    then 
+    then
       return [Template.a_link
                  (home "edit") [pcdata "You may edit names"] ();
               pcdata "."]
@@ -656,10 +656,10 @@ let one_time_post_coservice ~redirection ~state person =
       let modification =
         Authentication.authorizes (`edit (`names_of_person person#t#g_t))
         >>= fun can_edit ->
-        if can_edit 
-        then 
+        if can_edit
+        then
           if given_name <> "" && family_name <> ""
-          then 
+          then
             let print_name = if print_name = "" then None else Some print_name in
             let middle_name = if middle_name = "" then None else Some middle_name in
             let nickname = if nickname = "" then None else Some nickname in
@@ -675,12 +675,12 @@ let one_time_post_coservice ~redirection ~state person =
               person#t#g_id person#t#email
              >>= fun () ->
         error `non_emptiness_violation
-        else 
+        else
             logf "Error in Edition of %d (%s)'s names: `wrong_rights"
               person#t#g_id person#t#email
              >>= fun () ->
           error `wrong_rights
-      in 
+      in
       Lwt.(
          modification >>= (function
          | Ok () ->
@@ -716,8 +716,8 @@ let make_edit_page ~home ~state person =
               ]
         [pcdataf "%s should not be empty!" item_name]
     ] in
-  
-  let form = 
+
+  let form =
     let post_coservice =
       one_time_post_coservice ~state
         ~redirection:(home "view" ()) person in
@@ -738,7 +738,7 @@ let make_edit_page ~home ~state person =
             li [pcdata "Nickname: ";
                 string_input ~input_type:`Text ~name:nickname
                   ?value:person#t#nickname ();];
-           ]; 
+           ];
            Html5.string_input
              ~a:[ a_id "edit_submit"] ~input_type:`Submit ~value:"Go" ();
            span ~a:[a_id "edit_error_message";
@@ -746,7 +746,7 @@ let make_edit_page ~home ~state person =
              [pcdata "Cannot submit!"];
           ]) ())
   in
-  
+
   ignore {unit{
     let open Dom_html in
     let hide_exn id =
@@ -779,33 +779,33 @@ let make_edit_page ~home ~state person =
 
     ) !( %not_nulls)
   }};
-  
+
   let page = content_paragraph [form] in
   return page
-    
-let make_generic ~home ~state person action = 
+
+let make_generic ~home ~state person action =
   let configuration = State.configuration state in
   begin match action with
-  | Some "edit" -> 
+  | Some "edit" ->
     (Authentication.authorizes (`edit (`names_of_person person#t#g_t))
      >>= function
      | true ->
        Template.make_content ~configuration
-         ~main_title:"Complete The Information About Yourself" 
+         ~main_title:"Complete The Information About Yourself"
          (make_edit_page ~home ~state person)
      | false ->
        Template.make_authentication_error ~configuration
-         ~main_title:"User Page" 
+         ~main_title:"User Page"
          (return [Html5.pcdataf "You shall not edit anything there."]))
   | _ ->
     (Authentication.authorizes (`view (`person person#t#g_t))
      >>= function
      | true ->
-       Template.make_content ~configuration ~main_title:"About Yourself" 
+       Template.make_content ~configuration ~main_title:"About Yourself"
          (make_view_page ~home ~state person)
      | false ->
        Template.make_authentication_error ~configuration
-         ~main_title:"User Page" 
+         ~main_title:"User Page"
          (return [Html5.pcdataf "You shall not view anything there."]))
   end
 
@@ -818,7 +818,7 @@ let make_self ~state =
         >>= function
         | None ->
           (Template.make_authentication_error ~configuration
-             ~main_title:"User Page" 
+             ~main_title:"User Page"
              (return [Html5.pcdataf "You shall not view anything there."]))
         | Some u ->
           State.person_by_pointer ~state u.Authentication.person
@@ -827,7 +827,7 @@ let make_self ~state =
             ~home:(fun a () ->
               Eliom_service.preapply Services.(self ()) (Some a))
       end)
-    
+
 let make_person ~state =
   (fun (id, action) () ->
     Template.default ~title:"User Page"
@@ -838,4 +838,3 @@ let make_person ~state =
           ~home:(fun a () ->
             Eliom_service.preapply Services.(person ()) (id, Some a))
       end)
-      

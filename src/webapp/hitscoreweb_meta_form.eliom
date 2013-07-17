@@ -1,11 +1,11 @@
 module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
-  
+
 {shared{
 module LL = ListLabels
 module Html5 = struct
   include Eliom_content.Html5.D
-  open Printf 
+  open Printf
   let pcdataf fmt = ksprintf pcdata fmt
 
   let codef fmt = ksprintf (fun s -> code [pcdata s]) fmt
@@ -40,12 +40,12 @@ module Upload_shared = struct
     next_id: int;
   }
   deriving (Json)
-    
+
   (* type t = {key : int; filenames: string list} deriving (Json) *)
   let post_path = ["meta_form_upload"]
   let get_path = ["meta_form_download"]
   let remove_path = ["meta_form_remove"]
-    
+
   let add_file store ~original_name ~state =
     let id = !store.next_id in
     let next_id = !store.next_id + 1  in
@@ -71,8 +71,8 @@ module Upload_shared = struct
       | Upload_error _ -> false
       | Uploading -> false
       | Removing -> false
-      | Uploaded _ -> true) (!store.files) 
-      
+      | Uploaded _ -> true) (!store.files)
+
 end
  }}
 {client{
@@ -120,7 +120,7 @@ module Upload = struct
         let extension =
           Option.value_map  ~default:"" ~f:(sprintf ".%s")
             (Filename.split_extension
-               (Eliom_request_info.get_original_filename file) |! snd) in
+               (Eliom_request_info.get_original_filename file) |> snd) in
         Filename.temp_file ~in_dir ~perm:0o600 "hsw_mfupload_" extension in
       (try Unix.unlink newname; with _ -> ());
       logf "New upload:\ntmp filename: %s\noriginal: %s\nnew: %s"
@@ -140,7 +140,7 @@ module Upload = struct
       logf "`wrong_credentials in move_posted_file" >>= fun () ->
       error (`wrong_credentials)
     end
-    
+
   let check_access_rights ~configuration path =
     Authentication.user_logged ()
     >>= begin function
@@ -161,7 +161,7 @@ module Upload = struct
         >>= fun () ->
         error (`wrong_credentials)
     end
-    
+
   let identify_and_verify ~configuration path =
     dbg "identify_and_verify %s" path;
     check_access_rights ~configuration path >>= fun _ ->
@@ -175,7 +175,7 @@ module Upload = struct
     | false ->
       error (`path_not_right_volume path)
     end
-      
+
   let check_and_remove_file ~configuration path =
     check_access_rights ~configuration path >>= fun person_id ->
     let real_path = Filename.concat (uploads_dir ~configuration) path in
@@ -186,7 +186,7 @@ module Upload = struct
     logf "Remove %s (owner: %d)" real_path person_id >>= fun () ->
     Authentication.spy_userf "Remove file %s" path >>= fun () ->
     return ()
-    
+
   let init =
     let is_done = ref None in
     begin fun ~configuration () ->
@@ -199,7 +199,7 @@ module Upload = struct
               dbg "fall back service";
               Lwt.return ("FALLBACK", "")) in
 
-        let post = 
+        let post =
           Eliom_registration.String.register_post_service ~fallback:(upload_fallback ())
             ~post_params:Eliom_parameter.(file "file")
             (fun () (file) ->
@@ -335,11 +335,11 @@ module Markup = struct
       | List tl -> div [ul (LL.map tl ~f:(fun t -> li [(not_simple t)]))]
     in
     not_simple t
-      
+
 end
 type phrase = Markup.phrase deriving (Json)
 type content = Markup.structure deriving (Json)
-  
+
 type ('a, 'b) item_value = V_some of 'a | V_none | V_wrong of 'b * phrase
 deriving (Json)
 
@@ -383,7 +383,7 @@ module Range = struct
     | Infinity -> true)
 end
 
-    
+
 
 type meta_enumeration = {
   overall_question: phrase option;
@@ -431,7 +431,7 @@ module String_regexp_type = struct
     let t = Re_posix.re (sprintf "^%s$" rex) in
     let re = Re.compile t in
     Re.execp re s
-    
+
   include String_type
   let of_string rex msg s =
     if regexp_matches rex s
@@ -469,7 +469,7 @@ module Integer_range_type = struct
     with _ -> `error "This is not a integer"
 end
 }}
-  
+
 (* Form construction module, on server side. *)
 module Form = struct
   (* let item ?value question kind = Item {question; kind; value} *)
@@ -479,7 +479,7 @@ module Form = struct
 
   let upload ?(multiple=true) ~store q =
     Upload (q, store, multiple)
-    
+
   let make_item ~f ?help ?question ?text_question ?value () =
     let question =
       match question, text_question with
@@ -496,9 +496,9 @@ module Form = struct
 
   let string ?regexp =
     match regexp with
-    | Some (m, r) -> 
+    | Some (m, r) ->
       make_item ~f:(fun x -> String_regexp (r, m, x))
-    | None -> 
+    | None ->
       make_item ~f:(fun x -> String x)
 
   let integer ?range =
@@ -515,10 +515,10 @@ module Form = struct
     | more_or_less -> Section (s, List more_or_less)
 
   let date = make_item ~f:(fun x -> Date x)
-    
+
   let meta_enumeration
       ?help ?overall_question ?creation_cases ?choice default_cases =
-    let me = 
+    let me =
       Meta_enumeration {overall_question; default_cases;
                         creation_cases =
                          (match creation_cases with None -> [] | Some l -> l);
@@ -531,7 +531,7 @@ module Form = struct
 
   let open_string_enumeration ?question ?value ?(other="New") l =
     meta_enumeration ?overall_question:question ?choice:value
-      ~creation_cases:[other, string ()] 
+      ~creation_cases:[other, string ()]
       (LL.map l ~f:(fun s -> (s, string ~value:s ())))
 
   let extensible_list ~question ~model l =
@@ -550,7 +550,7 @@ module Form = struct
 
   let reload = `reload
 end
-    
+
 module Simplification = struct
 
   open Core.Std
@@ -614,7 +614,7 @@ module Simplification = struct
     | Date {value = V_wrong (e, _)} ->                  `date_error e
     | Upload (_, store, _) ->                           `upload store
     | Meta_enumeration {choice; default_cases; creation_cases}  ->
-      let content = 
+      let content =
         Option.bind choice (fun c ->
           match List.Assoc.find default_cases c with
           | Some s -> Some s
@@ -630,8 +630,8 @@ module Simplification = struct
     | Section (_, c) -> perform c
     | Help (_, c) -> perform c
     | Empty -> `empty
-      
-      
+
+
 end
 
 {shared{
@@ -655,7 +655,7 @@ module Style = struct
   open Html5
 
   let _my_style = Local_style.create ()
-    
+
   let make_class name style =
     a_class [ Local_style.add_class _my_style ("meta_form" ^ name) style ]
 
@@ -674,7 +674,7 @@ module Style = struct
       "padding: 2px";
     ]
 
-      
+
   let extensible_list_button =
     make_class "extensible_list_button" [
       "color: #050;";
@@ -698,7 +698,7 @@ module Style = struct
     make_class "help_contained" [
       "width: 60%"
     ]
-      
+
   let meta_enumeration_creation =
     make_class "meta_enumeration_creation" [
       "background-color: #dd0";
@@ -710,7 +710,7 @@ module Style = struct
       "color: black";
       "font-weight: bold";
     ]
-      
+
   let () = Local_style.use _my_style
 
 end
@@ -721,7 +721,7 @@ let create_reply_function ~state ~form_content =
   let open Lwt in
   server_function Json.t<up_message>
     (fun param ->
-      let to_handle = 
+      let to_handle =
         match param with
         | Ready -> None
         | Form_changed form -> Some form in
@@ -736,9 +736,9 @@ let create_reply_function ~state ~form_content =
 {client{
 
 open Html5
-open Lwt 
+open Lwt
 
-  
+
 (* State is a tuple with accessors (we did not want to write some
    crazy Eliom types in a record …) *)
 let validation_button ~state = fst state
@@ -759,7 +759,7 @@ let update_validation_button btn_elt msg_elt list_ref =
 
 let add_pending_thing ~state key value =
   let btn_elts, msg_elt, list_ref = validation_button ~state in
-  list_ref := (key, value) :: !list_ref; 
+  list_ref := (key, value) :: !list_ref;
   LL.iter btn_elts ~f:(fun btn_elt ->
     update_validation_button btn_elt msg_elt list_ref;
   );
@@ -771,12 +771,12 @@ let remove_pending_thing ~state key =
     update_validation_button btn_elt msg_elt list_ref;
   );
   ()
-    
+
 let add_todo_after_draw ~state f =
   let l = after_draw_todo_list ~state in
   l := f :: !l
 
-    
+
 let make_upload ~state ~question ~store ~multiple =
   let hu_host, hu_port = get_current_host_port () in
   let current_store = ref store in
@@ -791,7 +791,7 @@ let make_upload ~state ~question ~store ~multiple =
       (* - transmit list of file names, and "to remove" files
          - display them with a "remove" link *)
     let f file =
-      li 
+      li
         begin match file.state with
         | Uploading ->
           [pcdataf "File %s" file.original_name;
@@ -937,7 +937,7 @@ let form_item ~state (of_string, to_string) it =
       | Dom_html.Input ielt ->
         dbg "Input ELT %s" (Js.to_string ielt##value);
         begin match of_string (Js.to_string ielt##value) with
-        | `ok v -> 
+        | `ok v ->
           msg_box##innerHTML <-
             ksprintf Js.string "OK: %s" (Js.to_string ielt##value);
           current_value := { !current_value with value = V_some v }
@@ -966,7 +966,7 @@ let form_item ~state (of_string, to_string) it =
   ]), fun () -> !current_value)
 
 let _dp_counter = ref 0
-  
+
 let date_picker ~state it =
   let current = ref it in
   let value, msg =
@@ -1021,7 +1021,7 @@ let date_picker ~state it =
       div [input];
     ]) in
   return (whole_div, fun () -> !current)
-          
+
 let rec make_meta_enumeration ~state me =
   let current_value = ref me in
   Lwt_list.map_s (fun (label,form) ->
@@ -1233,19 +1233,19 @@ let create ~state ?(and_reload=false) form_content =
     try
       begin
 
-        
+
         Lwt.async_exception_hook := (fun e ->
           dbg "Async-exn: %s" (Printexc.to_string e);
           Firebug.console##log(e));
 
-        
+
         let call_server up = %call_server up in
 
 
         let rec make_with_save_buttons send_to_server =
           let hook = get_element_exn %hook_id in
           hook##innerHTML <- Js.string "<i>Contacting the server …</i>";
-              
+
           (* Lwt.ignore_result begin *)
             call_server send_to_server
             >>= begin function
@@ -1305,7 +1305,7 @@ let create ~state ?(and_reload=false) form_content =
           make_with_save_buttons Ready
         end
       end
-    with e -> 
+    with e ->
       dbg "Exception in onload for %S: %s" %hook_id (Printexc.to_string e);
       ()
   }};

@@ -460,7 +460,7 @@ let default ?(title) content =
       p [pcdata "If you think this is not normal, please complain at ";
          codef "bio.gencore@nyu.edu";
          pcdataf "."];]
-    |! Lwt.return
+    |> Lwt.return
   in
   Lwt.bind html_result (function
   | Ok html ->
@@ -543,7 +543,7 @@ let cell_timestamp t =
   `sortable (s,
              [ span ~a:[a_title s]
                  [pcdata
-                     (Time.(t |! to_local_date) |! Date.to_string)]])
+                     (Time.(t |> to_local_date) |> Date.to_string)]])
 let cell_timestamp_option = function
   | None -> cell_text "—"
   | Some t -> cell_timestamp t
@@ -622,7 +622,7 @@ let flatten_table l =
           after_the_row := t;
           h
         | any_other -> [`with_geometry (max_height, 1, any_other)])
-      |! List.concat in
+      |> List.concat in
     (i, the_row :: !after_the_row)
   )
 
@@ -881,34 +881,34 @@ module Highchart = struct
   let make_curve_series curve =
     let categories =
       List.mapi curve ~f:(fun i _ -> sprintf "'%d'" (i + 1))
-      |! String.concat ~sep:", " in
+      |> String.concat ~sep:", " in
     let series =
       sprintf "{type: 'spline', name: 'Mean', data: [%s]}"
-        (List.map curve ~f:(sprintf "%.2f") |! String.concat ~sep:", ") in
+        (List.map curve ~f:(sprintf "%.2f") |> String.concat ~sep:", ") in
     (categories, series, List.fold_left curve ~f:max ~init:0.)
 
   let make_stack_series_exn stack =
     let categories =
       List.mapi stack ~f:(fun i _ -> sprintf "'%d'" (i + 1))
-      |! String.concat ~sep:", " in
+      |> String.concat ~sep:", " in
     let stack_series =
-      let keys = List.hd_exn stack |! List.map ~f:fst |! List.rev in
+      let keys = List.hd_exn stack |> List.map ~f:fst |> List.rev in
       List.map keys ~f:(fun k ->
-        List.map stack ~f:(fun i -> List.Assoc.find_exn i k |! sprintf "%.2f")
-        |! String.concat ~sep:", "
-        |! sprintf "{type: 'column', name: '%s', data: [%s]}" k)
-      |! String.concat ~sep:" ,"
+        List.map stack ~f:(fun i -> List.Assoc.find_exn i k |> sprintf "%.2f")
+        |> String.concat ~sep:", "
+        |> sprintf "{type: 'column', name: '%s', data: [%s]}" k)
+      |> String.concat ~sep:" ,"
     in
     let y_max =
       List.fold_left stack ~init:0. ~f:(fun prev n ->
-        max prev (List.map n snd |! List.fold_left ~f:(+.) ~init:0.)) in
+        max prev (List.map n snd |> List.fold_left ~f:(+.) ~init:0.)) in
     (categories, stack_series, y_max)
 
 
   let make_box_whisker_plot_exn by_5_list =
     let categories =
       List.mapi by_5_list ~f:(fun i _ -> sprintf "'%d'" (i + 1))
-      |! String.concat ~sep:", " in
+      |> String.concat ~sep:", " in
     let minimum      = List.map by_5_list (fun (x, _, _, _, _) -> x) in
     let fst_quartile = List.map by_5_list (fun (_, x, _, _, _) -> x) in
     let median       = List.map by_5_list (fun (_, _, x, _, _) -> x) in
@@ -918,7 +918,7 @@ module Highchart = struct
       let make_series n d =
         sprintf "{name: '%s', marker:{enabled:false},
                   data: [%s], type: 'scatter'}"
-          n (List.map d (sprintf "%.2f") |! String.concat ~sep:", ") in
+          n (List.map d (sprintf "%.2f") |> String.concat ~sep:", ") in
       String.concat ~sep:", " [
         make_series "Minimum" minimum;
         make_series "1st Quartile" fst_quartile;
@@ -1041,12 +1041,13 @@ module Highchart = struct
         | `stack s -> update_width s; make_stack_series_exn s
         | `box_whisker bw ->
           update_width bw; make_box_whisker_plot_exn bw) in
-      let series_string = List.map series ~f:snd3 |! String.concat ~sep:", " in
+      let series_string =
+        List.map series ~f:(fun (_, x, _) -> x) |> String.concat ~sep:", " in
       let y_max = List.fold_left ~f:(fun c (_,_,y) -> max c y) ~init:0. series in
       let categories =
         match categories with
         | Some s -> s
-        | None -> List.hd_exn series |! fst3 in
+        | None -> List.hd_exn series |> (fun (x, _, _) -> x) in
       let more_code, tooltip =
         match spec with
         | [`box_whisker _] -> (additional_box_whisker_renderer, box_whisker_tooltip)
@@ -1171,6 +1172,7 @@ let anti_spam_mailto ~id ~mailto =
     | _ -> ()
     end
   }}
+
 
 let html_of_cluster = function
   | "bowery.es.its.nyu.edu" ->

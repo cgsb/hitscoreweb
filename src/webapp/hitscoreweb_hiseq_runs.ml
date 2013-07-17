@@ -30,10 +30,10 @@ let flowcell_cell ~dbh fc_p =
     >>= fun lanes_info ->
     let keys =
       List.filter lanes_info ~f:(fun x -> fst x <> [])
-      |! List.map ~f:fst |! List.dedup in
+      |> List.map ~f:fst |> List.dedup in
     let lanes_of l =
       List.map l ~f:(fun (lane, _, _, _) -> sprintf "%d" lane)
-      |! String.concat ~sep:", " in
+      |> String.concat ~sep:", " in
     let links_of l =
       try let (_, links,_ ,_) = List.hd_exn l in
           interleave_list ~sep:(pcdata ", ") links
@@ -43,11 +43,11 @@ let flowcell_cell ~dbh fc_p =
         (List.map keys ~f:(fun k ->
           let vals = List.filter lanes_info ~f:(fun a -> fst a = k) in
           let plural = if List.length vals = 1 then "" else "s" in
-          let lanes = List.map vals snd |! lanes_of in
+          let lanes = List.map vals snd |> lanes_of in
             (* Put lane numbers first to allow sorting and then removing them *)
           (lanes, pcdataf "Lane%s %s: " plural lanes
-            :: (List.map vals snd |! links_of)))
-          |! List.sort ~cmp:compare |! List.map ~f:snd) in
+            :: (List.map vals snd |> links_of)))
+          |> List.sort ~cmp:compare |> List.map ~f:snd) in
     let run_type =
       try
         let (_, (_, _, r1 ,r2o)) =
@@ -77,7 +77,7 @@ let hiseq_runs ~configuration =
         `sortable (Time.to_string hsr#date,
           [strong [
              pcdata hsr#sequencer; pcdata ": "; br ();
-             pcdata (Time.to_local_date hsr#date |! Date.to_string)]]) in
+             pcdata (Time.to_local_date hsr#date |> Date.to_string)]]) in
       sfc hsr#flowcell_a >>= fun fca ->
       sfc hsr#flowcell_b >>= fun fcb ->
       return ([date_cell ; fca; fcb])))
@@ -215,7 +215,7 @@ let person_flowcells ~configuration =
       List.map runs_and_deliveries (fun (hrt, deliveries) ->
         let date = Layout.Record_hiseq_run.(hrt.hr_t.g_value.date) in
         let run_title =
-          pcdataf "%s Run" (Time.to_local_date date |! Date.to_string) in
+          pcdataf "%s Run" (Time.to_local_date date |> Date.to_string) in
         let deliveries_list =
           let delivery_title cfd =
             span [
@@ -228,13 +228,13 @@ let person_flowcells ~configuration =
             List.map delivp (fun (fpub, cfd) ->
               content_section (delivery_title cfd)
                 (lanes_table_with_stats broker fc.ff_lanes dmux_sum
-                 |! content_table))
-          ) |! List.concat;
+                 |> content_table))
+          ) |> List.concat;
         in
         if deliveries = []
         then
           content_section run_title
-            (simple_lanes_table broker fc.ff_lanes |! content_table)
+            (simple_lanes_table broker fc.ff_lanes |> content_table)
         else
           content_section run_title (content_list deliveries_list)
       )

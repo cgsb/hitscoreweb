@@ -18,11 +18,11 @@ let _temporary_form_store = (ref [] : (int * int * user_submission_form) list re
 let forms_of_user id =
   List.filter_map !_temporary_form_store
     (fun (u, k, f) -> if u = id then Some (k, f) else None)
-  |! return
+  |> return
 
 let find_form form_list ~key = List.Assoc.find form_list key
 
-let user_persons_form user_id key_opt = 
+let user_persons_form user_id key_opt =
   match key_opt with
   | Some key ->
     forms_of_user user_id >>= fun forms ->
@@ -32,7 +32,7 @@ let user_persons_form user_id key_opt =
     end
   | None -> return None
 
-let user_libraries_form user_id key_opt = 
+let user_libraries_form user_id key_opt =
   match key_opt with
   | Some key ->
     forms_of_user user_id >>= fun forms ->
@@ -82,7 +82,7 @@ let delete_submission user key  =
     List.filter !_temporary_form_store (fun (u, k, _) ->
       not (u = user && k = key));
   return ()
-    
+
 module Msg = struct
 
   open Hitscoreweb_meta_form
@@ -109,7 +109,7 @@ module Msg = struct
 
   let libraries_section = [Markup.text "Libraries"]
   let add_library = [Markup.text "Add a library"]
-  let choose_or_create_library = 
+  let choose_or_create_library =
     [Markup.text "Pick an existing library (of yours) or define a new one:"]
   let create_new_library = "Create a new library …"
   let library_name = "Library Name (mandatory)"
@@ -124,7 +124,7 @@ module Msg = struct
   let truseq_control = [Markup.text "TruSeq Control?"]
   let rna_seq_control = [Markup.text "RNA-Seq Control?"]
 end
-  
+
 module Regexp = struct
   let mandatory_identifier =
     ("non-empty string of letters, numbers, underscores, and dashes",
@@ -143,13 +143,13 @@ module Regexp = struct
     | `string_error s
     | `string s -> if matches r s then Ok s else Error (r, Some s)
     | _ -> Error (r, None)
-      
+
 end
 
 
 let save_and_cancel, save_choice, cancel_choice =
   ([Msg.save; Msg.cancel], Some 0, Some 1)
-    
+
 let contacts_form_key = "contacts"
 let new_contacts_form ~state =
   let open Hitscoreweb_meta_form in
@@ -162,10 +162,10 @@ let new_contacts_form ~state =
          p#t#family_name p#t#given_name p#t#email,
        string ~value:p#t#email ())) in
   let contacts_section =
-    let make_model v = 
+    let make_model v =
       let choice = Option.value ~default:"" v in
       let open Regexp in
-      meta_enumeration 
+      meta_enumeration
         ~overall_question:Msg.choose_contact
         ~creation_cases:[
           (Msg.create_new_user, list [
@@ -284,7 +284,7 @@ let list_of_contacts_div f =
   return (div [pcdata "Contacts:"; ul li_s])
 
 
-    
+
 let standard_applications = [
   "Amplicon-Seq";
   "ChIP-seq";
@@ -305,21 +305,21 @@ let new_libraries_form ~state user_id =
     List.find_map persons_info#persons (fun p ->
       if p#t#g_id = user_id
       then Some (List.map p#libraries (fun l ->
-        let qn = 
+        let qn =
           sprintf "%s%s"
             (Option.value_map l#project ~default:"" ~f:(sprintf "%s."))
             l#name in
         (sprintf "<code>%s</code>" qn, string ~value:qn ()))
-        |! List.dedup |! List.sort ~cmp:compare)
+        |> List.dedup |> List.sort ~cmp:compare)
       else None)
-    |! Option.value ~default:[]
+    |> Option.value ~default:[]
   in
   let all_applications =
     ("", empty) ::
       List.map standard_applications ~f:(fun s -> (s, string ~value:s ())) in
   let libraries_section =
     let model =
-      meta_enumeration 
+      meta_enumeration
           ~overall_question:Msg.choose_or_create_library
           ~creation_cases:[
             (Msg.create_new_library, list [
@@ -393,13 +393,13 @@ let submission_form ~state user_id form_key_opt =
     initial_action_buttons_handler form.form_choice
       ~when_contacts:(fun () ->
         user_persons_form user_id form_key_opt
-        >>= begin function 
+        >>= begin function
         | Some f -> return (`form f)
         | None -> new_contacts_form ~state
         end)
       ~when_libraries:(fun () ->
         user_libraries_form user_id form_key_opt
-        >>= begin function 
+        >>= begin function
         | Some f -> return (`form f)
         | None -> new_libraries_form ~state user_id
         end)
@@ -418,13 +418,13 @@ let submission_form ~state user_id form_key_opt =
     >>= fun () ->
         return reload
   | Some form when form.form_choice = cancel_choice -> start ()
-  | _ -> 
+  | _ ->
     wrap_error (logf "submission_form: unexpected choice?")
     >>= fun () ->
     error (Msg.error "?")
   end
 
-    
+
 let test_user = ref 0
 let pick_test_user_form ~state =
   let open Hitscoreweb_meta_form in
@@ -471,10 +471,10 @@ let pick_test_user_form ~state =
       dbg " cannot parse form answer: %s" (Simplification.to_string f);
       error [Markup.text " cannot parse form answer"]
     end)
- 
+
 let all_submissions ~state ~can_edit_own ~can_edit_all =
   let open Html5 in
-  begin 
+  begin
     forms_of_user !test_user
     >>= fun forms ->
     while_sequential forms ~f:(fun (k, f) ->
@@ -516,7 +516,7 @@ let all_submissions ~state ~can_edit_own ~can_edit_all =
       error (stringify "/test I/O error: %s" (Exn.to_string e))
     end
   end
-    
+
 let own_submissions ~state ~can_edit =
   error (`string "NOT IMPLEMENTED")
 
@@ -533,7 +533,7 @@ let dispatch ~state =
   | true -> all_submissions ~state ~can_edit_all ~can_edit_own
   | false -> own_submissions ~state ~can_edit:can_edit_own
   end
-  
+
 let make ~state =
   (fun () () ->
     let main_title = "Submission Forms" in

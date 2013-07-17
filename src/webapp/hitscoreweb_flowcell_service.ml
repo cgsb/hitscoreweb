@@ -10,13 +10,13 @@ module Persons_service = Hitscoreweb_persons
 let sortable_people_cell people =
   let open Html5 in
   let sortability =
-    List.map people trd3 |! String.concat ~sep:", " in
+    List.map people (fun (_, _, x) -> x) |> String.concat ~sep:", " in
   let cell =
     (List.map people (fun (f, l, e) ->
       [
         Template.a_link Services.persons
           [ksprintf Html5.pcdata "%s %s" f l] (Some true, [e]);
-        br () ]) |! List.concat)
+        br () ]) |> List.concat)
     @ [
       if List.length people > 1 then
         small [
@@ -38,8 +38,8 @@ let sortable_libraries_cell libs =
   let sortability = String.concat ~sep:", " (List.map ~f:qname libs) in
   let paragraphs =
     List.sort ~cmp:(fun (_, a) (_, b) -> compare a b) libs
-    |! List.group ~break:(fun (_, a) (_, b) -> a <> b)
-    |! List.map ~f:(fun l ->
+    |> List.group ~break:(fun (_, a) (_, b) -> a <> b)
+    |> List.map ~f:(fun l ->
       p (Option.(value ~default:(pcdata "No Project: ")
                    (List.hd l >>= fun (_, p) ->
                     p >>= fun p -> return (b [pcdataf "%s: " p])))
@@ -47,7 +47,7 @@ let sortable_libraries_cell libs =
            (List.map l (fun (n, p) ->
              Template.a_link Services.libraries
                [pcdata n] ([`basic;`fastq], [qname (n, p)]))
-             |! interleave_list ~sep:(pcdata ", ")))) in
+             |> interleave_list ~sep:(pcdata ", ")))) in
   let cell =
     paragraphs @ [
       if List.length libs > 1 then
@@ -320,7 +320,7 @@ let hiseq_raw_info ~configuration ~serial_name =
             ]] in
         let section =
           content_section
-            (pcdataf "%s Run" (d#run_date |! Time.to_local_date |! Date.to_string))
+            (pcdataf "%s Run" (d#run_date |> Time.to_local_date |> Date.to_string))
             (content_list [intro_paragraph; cluster_stats_subsection]) in
         return (Some section))
       else

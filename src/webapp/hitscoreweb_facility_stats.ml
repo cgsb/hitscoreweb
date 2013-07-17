@@ -63,7 +63,7 @@ let flowcell_data layout =
   layout#hiseq_run#all
   >>| List.sort ~cmp:(fun a b -> compare a#date b#date)
   >>= while_sequential ~f:(fun hsr ->
-    let l = [hsr#flowcell_a; hsr#flowcell_b] |! List.filter_opt in
+    let l = [hsr#flowcell_a; hsr#flowcell_b] |> List.filter_opt in
     while_sequential l (fun fc_p ->
       fc_p#get >>= fun fc ->
       while_sequential (Array.to_list fc#lanes) (fun l ->
@@ -86,13 +86,14 @@ let flowcell_data layout =
         method run = hsr
         method fcid = fc#serial_name
         method run_type =
-          List.nth pi_runs 1 |! Option.value_map ~default:"???" ~f:snd3
+          List.nth pi_runs 1
+          |> Option.value_map ~default:"???" ~f:(fun (_, x, _) -> x)
         method pi_s =
           List.map pi_runs (fun (pis, _, _) -> List.map pis (fun p -> p#family_name))
-          |! List.concat
-          |! List.dedup
+          |> List.concat
+          |> List.dedup
         method nb_of_libraries =
-          List.fold_left (List.map pi_runs trd3)
+          List.fold_left (List.map pi_runs (fun (_, _, x) -> x))
             ~init:0 ~f:(fun a b -> a + b)
       end)))
   >>| List.concat
@@ -103,7 +104,7 @@ let mini_run_plan flowcells =
   let table =
     let rows =
       List.map flowcells (fun f ->
-        [ `text [pcdata (Time.to_local_date f#run#date |! Date.to_string)];
+        [ `text [pcdata (Time.to_local_date f#run#date |> Date.to_string)];
           `text [pcdata f#fcid];
           `text [pcdata f#run_type];
           `text [pcdata String.(concat ~sep:", " f#pi_s)] ]) in
@@ -139,7 +140,7 @@ let libraries_per_month flowcells =
 let parse_date_string newdate =
   let date_time y m d =
     let y = Int.of_string y in
-    let m = Int.of_string m |! Core.Month.of_int_exn in
+    let m = Int.of_string m |> Core.Month.of_int_exn in
     let d = Int.of_string d in
     Time.of_local_date_ofday
       (Date.create_exn ~y ~m ~d) (Core.Ofday.create  ~hr:10 ()) in
@@ -171,7 +172,7 @@ let hiseq_stats ~state layout =
       let current = ref initial in
       let strdate s =
         Option.value_map s ~default:"None" ~f:(fun s ->
-          Time.to_local_date s |! Date.to_string) in
+          Time.to_local_date s |> Date.to_string) in
       let form =
         Hitscoreweb_meta_form.(create ~state Form.(fun from_client ->
           begin match from_client with
@@ -215,7 +216,7 @@ let hiseq_stats ~state layout =
                       (date ~text_question:"Wrong Input: A DATE or NOTHING:"
                          ~value:(strdate !current) ()))
           | Error e ->
-            let error_string = 
+            let error_string =
               begin match e with
               | `auth_state_exn e ->
                 sprintf "auth_state_exn %s" Exn.(to_string e)
@@ -227,8 +228,8 @@ let hiseq_stats ~state layout =
                 sprintf "wrong_rights"
               | `Layout (l, e) ->
                 sprintf "layout %s :: %s"
-                  (Layout.sexp_of_error_location l |! Sexp.to_string_hum)
-                  (Layout.sexp_of_error_cause e |! Sexp.to_string_hum)
+                  (Layout.sexp_of_error_location l |> Sexp.to_string_hum)
+                  (Layout.sexp_of_error_cause e |> Sexp.to_string_hum)
               |  e -> sprintf "other error"
               end in
             Lwt.ignore_result
@@ -242,11 +243,11 @@ let hiseq_stats ~state layout =
       let fc_link =
         a_link Services.flowcell [strong [pcdataf "%s" fc#serial_name]] fc#serial_name
       in
-      let hr_date = Time.to_local_date hsr#date |! Date.to_string in
+      let hr_date = Time.to_local_date hsr#date |> Date.to_string in
       [ `sortable (hr_date, [strongf "%s / %s" hr_date side]);
         `sortable (fc#serial_name, [fc_link])
       ] @ stats
-      |! return in
+      |> return in
     map_option hsr#flowcell_a (fun p ->
       fc_row "A" [
         stat "a_clustered" hs#a_clustered hs#g_id (fun hs o -> hs#set_a_clustered o);
