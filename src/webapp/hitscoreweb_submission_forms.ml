@@ -1,7 +1,5 @@
 (* Submission forms service *)
-{shared{
-  open Hitscoreweb_std
-}}
+open Hitscoreweb_std
 module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 module Services = Hitscoreweb_services

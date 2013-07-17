@@ -12,22 +12,22 @@ CLIENT_PACKAGES := re.posix
 
 ## Source files for the server part
 COMMON_FILES := \
-  hitscoreweb_template.eliom	   \
-  hitscoreweb_meta_form.eliom	    \
-  hitscoreweb_log.eliom	    \
-  hitscoreweb_uploads_service.eliom	    \
+  hitscoreweb_template.eliom \
+  hitscoreweb_meta_form.eliom \
+  hitscoreweb_log.eliom \
+  hitscoreweb_uploads_service.eliom \
   hitscoreweb_layout_service.eliom \
-  hitscoreweb_std.eliom	    \
-  hitscoreweb_submission_forms.eliom	    \
+  hitscoreweb_std.eliom \
   hitscoreweb_one_person_service.eliom
 SERVER_FILES := $(COMMON_FILES) \
+  hitscoreweb_submission_forms.ml \
   hitscoreweb_authentication.ml \
-  hitscoreweb_services.ml	    \
-  hitscoreweb_hiseq_runs.ml	   \
-  hitscoreweb_persons.ml	   \
-  hitscoreweb_messages.ml	    \
-  hitscoreweb_data_access.ml	    \
-  hitscoreweb_state.ml	    \
+  hitscoreweb_services.ml \
+  hitscoreweb_hiseq_runs.ml \
+  hitscoreweb_persons.ml \
+  hitscoreweb_messages.ml \
+  hitscoreweb_data_access.ml \
+  hitscoreweb_state.ml \
   hitscoreweb_flowcell_service.ml \
   hitscoreweb_facility_stats.ml \
   hitscoreweb_libraries.ml \
