@@ -2,8 +2,6 @@
 open Hitscoreweb_std
 }}
 
-module Queries = Hitscoreweb_queries
-
 module Services = Hitscoreweb_services
 
 module Authentication = Hitscoreweb_authentication
@@ -16,7 +14,7 @@ module LDSL = Hitscoregen_layout_dsl
 {shared{
 type up_message =
 | Add_record of string * string
-| Add_function of string * string 
+| Add_function of string * string
 | Add_volume of string * string
 | Modify_value of int * string * string
 | Modify_volume of int * string * string
@@ -30,7 +28,7 @@ type down_message =
 
 
 let caml_service =
-  make_delayed (Eliom_service.service 
+  make_delayed (Eliom_service.service
           ~path:["layout_caml_service"]
           ~get_params:Eliom_parameter.(caml "param" Json.t<up_message>))
 
@@ -98,7 +96,7 @@ let init_caml_service ~configuration =
 
 let sexp_area ?value () =
   Html5_to_dom.of_textarea
-    Html5.(raw_textarea ~a:[ a_cols 50; a_rows 20] ?value ~name:"sexpinput" ()) 
+    Html5.(raw_textarea ~a:[ a_cols 50; a_rows 20] ?value ~name:"sexpinput" ())
 
 let submit_button ?(visible=true) f =
   let open Html5 in
@@ -122,7 +120,7 @@ let add_or_modify_sexp_interface
     [span ~a:[a_id link_like_id; a_class ["like_link"]]
         (if modify = None then
             [pcdataf "You may add a new %s" type_name]
-         else 
+         else
             [pcdataf "You may modify this %s" type_name])] in
   let caml = caml_service () in
   let (type_name: string) = "" ^ type_name in
@@ -135,26 +133,26 @@ let add_or_modify_sexp_interface
       begin
         let call_caml msg =
           Eliom_client.call_caml_service ~service: %caml msg () in
-        
+
         let the_span = get_element_exn %link_like_id in
         the_span##onclick <-
           Dom_html.(handler (fun ev ->
             the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
             the_span##innerHTML <-
               Js.string "Please, enter the S-Expression:<br/>";
-            the_span##classList##remove(Js.string "like_link"); 
+            the_span##classList##remove(Js.string "like_link");
 
             let rec on_submit_sexp txt_elt ev btn_elt =
               the_span##innerHTML <- Js.string "<b>Processing …</b>";
               let sexp_str = Js.to_string txt_elt##value in
               begin match %kind , %modify with
               | `Record, None -> call_caml (Add_record ( %type_name, sexp_str))
-              | `Function, None -> call_caml (Add_function ( %type_name, sexp_str)) 
+              | `Function, None -> call_caml (Add_function ( %type_name, sexp_str))
               | `Volume, None -> call_caml (Add_volume ( %type_name, sexp_str))
               | `Record, Some (id, _) ->
-                call_caml (Modify_value (id, %type_name, sexp_str)) 
+                call_caml (Modify_value (id, %type_name, sexp_str))
               | `Volume, Some (id, _) ->
-                call_caml (Modify_volume (id, %type_name, sexp_str)) 
+                call_caml (Modify_volume (id, %type_name, sexp_str))
               | _ -> fail (Failure "Not implemented …")
               end
               >>= fun msg ->
@@ -181,17 +179,17 @@ let add_or_modify_sexp_interface
             end;
             Js._true
           ));
-        
+
       end
-    with e -> 
+    with e ->
       dbg "Exception in onload for %S: %s" %link_like_id (Printexc.to_string e);
       ()
   }};
   the_link_like
 
 
-  
-let node_name = 
+
+let node_name =
   let open LDSL in
   let open Html5 in
   let s color text =
@@ -205,13 +203,13 @@ let node_name =
 
 let self_link = function
   | `default ->
-    fun html -> Template.a_link Services.layout [html]  ([], []) 
+    fun html -> Template.a_link Services.layout [html]  ([], [])
   | `view_one_type t ->
-    fun html -> Template.a_link Services.layout [html]  ([t], []) 
+    fun html -> Template.a_link Services.layout [html]  ([t], [])
   | `view_one_value (t, n) ->
-    fun html -> Template.a_link Services.layout [html]  ([t], [n]) 
+    fun html -> Template.a_link Services.layout [html]  ([t], [n])
 
-let node_link n = 
+let node_link n =
   let open Html5 in
   let styled_type, name = node_name n in
   span [pcdata "["; styled_type; pcdata " ";
@@ -229,7 +227,7 @@ let find_node dsl nodename =
 
 let find_enumeration_values name =
   let open LDSL in
-  List.find_map (Meta.layout ()).nodes 
+  List.find_map (Meta.layout ()).nodes
     (function
     | Enumeration (enum, vals) when enum = name -> Some vals
     | _ -> None)
@@ -240,11 +238,11 @@ let typed_values_in_table l =
   List.map l (fun (n, t) ->
     `head [
       b [codef "%s" n]; codef ": "; br ();
-      i [codef "%s" (LDSL.string_of_dsl_type t)]]) 
+      i [codef "%s" (LDSL.string_of_dsl_type t)]])
 
 let get_all_values ?(only=[])  dbh record_name =
   begin match only with
-  | [] -> 
+  | [] ->
     let query = Sql_query.get_all_values_sexp ~record_name in
     Backend.query ~dbh query
     >>= fun results ->
@@ -259,7 +257,7 @@ let get_all_values ?(only=[])  dbh record_name =
   end
 let get_all_evaluations ?(only=[])  dbh function_name =
   begin match only with
-  | [] -> 
+  | [] ->
     let query = Sql_query.get_all_evaluations_sexp ~function_name in
     Backend.query ~dbh query
     >>= fun results ->
@@ -280,7 +278,7 @@ let get_all_volumes ~configuration ?(only=[]) dbh volume_kind =
     return (v, path)
   in
   begin match only with
-  | [] -> 
+  | [] ->
     let query = Sql_query.get_all_volumes_sexp () in
     Backend.query ~dbh query
     >>= fun results ->
@@ -299,7 +297,7 @@ let get_all_volumes ~configuration ?(only=[]) dbh volume_kind =
       >>= fun r -> of_result (Sql_query.parse_volume r)
       >>= enhance_volume)
   end
- 
+
 
 let generic_to_table type_info current_name r = []
 
@@ -317,13 +315,13 @@ let find_in_sexp the_sexp field =
     | Sexp.List [Sexp.Atom a; v] when a = field -> Some v
     | _ -> None)
   | _ -> None
-    
+
 let rec display_typed_value =
   let open Html5 in
   let open LDSL in
   let open Sexp in
   function
-  | Bool, Atom s 
+  | Bool, Atom s
   | Int, Atom s
   | Real, Atom s
   | Enumeration_name _, Atom s
@@ -344,12 +342,12 @@ let rec display_typed_value =
   | Volume_name   name, List [List [Atom "id"; Atom s]]
   | Function_name name, List [List [Atom "id"; Atom s]]
     -> sortable_link s name
-    
+
   | Timestamp,  l ->
     sortable_timestamp Timestamp.(t_of_sexp l)
   | _ -> sortable_text "«ERROR»"
-  
-    
+
+
 let values_to_table type_info r =
   try
     List.map r ~f:(fun value ->
@@ -385,8 +383,8 @@ let evaluations_to_table type_info result_type r =
           ~f:(fun v -> display_typed_value (field_type, v))
           (find_in_sexp eval.f_sexp field))))
   with e -> [[ `head [Html5.pcdataf "ERROR: %S" (Exn.to_string e)]]]
-  
-let volumes_to_table name toplevel r = 
+
+let volumes_to_table name toplevel r =
   try
     List.map r ~f:(fun (vol, path) ->
       let open Sql_query in
@@ -405,8 +403,8 @@ let view_layout ~configuration ~main_title ~types ~values =
     let nodes =
       Html5.(div ~a:[ a_style "max-width: 55em" ]
                (List.map layout.LDSL.nodes node_link
-                |! interleave_list ~sep:(pcdata ", "))) 
-    in 
+                |! interleave_list ~sep:(pcdata ", ")))
+    in
     let open Template in
     let open Html5 in
     let open LDSL in
@@ -452,11 +450,11 @@ let view_layout ~configuration ~main_title ~types ~values =
     in
     while_sequential types ~f:(fun elt ->
       match find_node layout elt with
-      | Some s -> 
+      | Some s ->
         begin match s with
         | Enumeration (name, values) ->
           content_section (span [pcdata "Enumeration "; codef "%s" name])
-            (content_paragraph 
+            (content_paragraph
                (List.map values (codef "`%s") |! interleave_list ~sep:(br ())))
           |! return
 
@@ -484,22 +482,22 @@ let view_layout ~configuration ~main_title ~types ~values =
           table_section (`Volume actual_volumes) name
             (head ["Id"; "S-Exp"; "Path"] :: table)
         end
-      | None -> 
+      | None ->
         return (
           content_section (span [pcdata "Element "; codef "%s" elt])
             (content_paragraph
                [pcdataf "The element %S was not found" elt]))
     )
     >>= fun displayed_nodes ->
-    db_disconnect configuration dbh >>= fun () -> 
+    db_disconnect configuration dbh >>= fun () ->
     return (content_list (
-      [content_section (pcdataf "The Layout") (content_paragraph [nodes]);] 
+      [content_section (pcdataf "The Layout") (content_paragraph [nodes]);]
       @ displayed_nodes
     ))
   in
-  Template.make_content ~configuration ~main_title content 
+  Template.make_content ~configuration ~main_title content
 
-    
+
 let make ~configuration =
   (fun (types, values) () ->
     let main_title = "The Layout Navigaditor" in

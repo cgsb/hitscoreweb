@@ -1,17 +1,15 @@
 {shared{
-  
+
 open Hitscoreweb_std
 
 }}
 
 module Data_access = Hitscoreweb_data_access
-  
+
 module Services = Hitscoreweb_services
 
-module Queries = Hitscoreweb_queries
-
 type capability = [
-| `view of [`all 
+| `view of [`all
            | `person of Layout.Record_person.t
            | `all_evaluations
            | `all_flowcells
@@ -96,7 +94,7 @@ type user_logged = {
   person: Layout.Record_person.pointer;
   roles: Layout.Enumeration_role.t list;
 }
-    
+
 type authentication_state = [
 | `nothing
 | `user_logged of user_logged
@@ -132,12 +130,12 @@ let authentication_state_to_string =
 let authentication_history =
   Eliom_reference.eref ~secure:true
     ~scope:Eliom_common.default_session_scope ([]: authentication_state list)
-   
-let authentication_configuration = 
+
+let authentication_configuration =
   ref (None: Configuration.local_configuration option)
 
 let global_authentication_disabled = ref false
-let global_pam_service = ref ("")  
+let global_pam_service = ref ("")
 let global_maintenance_mode = ref false
 
 let is_maintenance_mode () =
@@ -146,7 +144,7 @@ let maintenance_mode_on () =
   global_maintenance_mode := true
 let maintenance_mode_off () =
   global_maintenance_mode := false
-    
+
 let init ?(disabled=false) ?(pam_service="") configuration  =
 
   authentication_configuration := (Some configuration);
@@ -165,7 +163,7 @@ let get_all_sessions () =
   wrap_io () ~on_exn:(fun e -> `io_exn e)
     ~f:begin fun () ->
       let open Lwt in
-      Eliom_state.Ext.fold_sub_states ~state:volatile_state 
+      Eliom_state.Ext.fold_sub_states ~state:volatile_state
         (fun l state ->
           Eliom_reference.Ext.get state authentication_history
           >>= fun h ->
@@ -173,7 +171,7 @@ let get_all_sessions () =
         []
     end
 
-  
+
 let set_state s =
   let module LRP = Layout.Record_person in
   let prf fmt =
@@ -226,8 +224,8 @@ let find_user login =
   | Some p -> return p
   | None -> error (`login_not_found login)
   end
-    
-let make_user u = 
+
+let make_user u =
   let module P = Layout.Record_person in
   { roles = Array.to_list u.P.g_value.P.roles;
     person = P.unsafe_cast u.P.g_id}
@@ -266,11 +264,11 @@ let pam_auth ?service ~user ~password () =
     Option.value ~default:!global_pam_service service in
   let wrap_pam f a = try Ok (f a) with e -> Error (`pam_exn e) in
   let auth () =
-     wrap_pam (Simple_pam.authenticate service user) (password) 
+     wrap_pam (Simple_pam.authenticate service user) (password)
   in
-  Lwt_preemptive.detach auth () 
+  Lwt_preemptive.detach auth ()
 
-  
+
 let check = function
   | `user_password (identifier, password) ->
     let open Layout.Record_person in
@@ -295,7 +293,7 @@ let check = function
               >>= fun () ->
               spy_userf "Log-in (PAM)"
             end
-          else 
+          else
             begin
               spy_userf "Log-in failed" >>= fun () ->
               set_state (`insufficient_credentials identifier)
@@ -328,7 +326,7 @@ let restrict_access cap =
   >>= fun auth ->
   if auth then return () else error `wrong_rights
 
-let login_coservice = 
+let login_coservice =
   let coserv = ref None in
   fun () ->
     match !coserv with
@@ -365,7 +363,7 @@ let logout_coservice =
       let handler =
         Eliom_registration.Action.register_post_coservice'
           ~post_params:Eliom_parameter.unit
-          (fun () () -> 
+          (fun () () ->
             logout () >>= function
             | Ok () -> return ()
             | Error e -> return ())
@@ -373,7 +371,7 @@ let logout_coservice =
       coserv := Some handler;
       handler
 
-let start_impersonation_coservice = 
+let start_impersonation_coservice =
   let coserv = ref None in
   fun () ->
     match !coserv with
@@ -403,7 +401,7 @@ let start_impersonation_coservice =
       coserv := Some handler;
       handler
 
-let stop_impersonation_coservice = 
+let stop_impersonation_coservice =
   let coserv = ref None in
   fun () ->
     match !coserv with
@@ -460,7 +458,7 @@ let login_form () =
              ]
              ~input_type:`Submit ~value:"Login" ();
           ];
-      ]) () 
+      ]) ()
 
 let logout_form () =
   let open Html5 in
@@ -479,8 +477,8 @@ let start_impersonating_form () =
         Html5.string_input ~input_type:`Text ~name ();
         Html5.string_input
           ~input_type:`Submit ~value:"Start" ();
-      ])  
-  
+      ])
+
 let stop_impersonating_form () =
   let open Html5 in
   Html5.post_form ~service:(stop_impersonation_coservice ())
@@ -488,7 +486,7 @@ let stop_impersonating_form () =
       [span [
         Html5.string_input ~input_type:`Submit ~value:"Stop" ()
       ]])
-  
+
 let display_state () =
   let open Html5 in
   let module LRP = Layout.Record_person in
@@ -507,18 +505,18 @@ let display_state () =
         [pcdataf "%s" admin.LRP.g_value.LRP.email]
         (admin.LRP.g_value.LRP.email, None);
       pcdataf " (%s) impersonating "
-        (String.concat ~sep:", " Array.(map admin.LRP.g_value.LRP.roles 
+        (String.concat ~sep:", " Array.(map admin.LRP.g_value.LRP.roles
                                           ~f:Layout.Enumeration_role.to_string
                                         |! to_list));
       Html5.a ~service:(Services.person ())
         [pcdataf "%s" impersonated.LRP.g_value.LRP.email]
         (impersonated.LRP.g_value.LRP.email, None);
         pcdataf " (%s) "
-          (String.concat ~sep:", " Array.(map impersonated.LRP.g_value.LRP.roles 
+          (String.concat ~sep:", " Array.(map impersonated.LRP.g_value.LRP.roles
                                             ~f:Layout.Enumeration_role.to_string
                                           |! to_list));
       ])
-    | `user_logged u -> 
+    | `user_logged u ->
       Data_access.person_by_pointer u.person
       >>= fun user ->
       return (span [
@@ -526,7 +524,7 @@ let display_state () =
         Html5.a ~service:(Services.self ())
           [pcdataf "%s" user.LRP.g_value.LRP.email] None;
         pcdataf " (%s)"
-          (String.concat ~sep:", " Array.(map user.LRP.g_value.LRP.roles 
+          (String.concat ~sep:", " Array.(map user.LRP.g_value.LRP.roles
                                             ~f:Layout.Enumeration_role.to_string
                                           |! to_list));
       ])
@@ -546,13 +544,13 @@ let display_state () =
     else [] in
   return (state
           :: (match s with
-          | `user_logged _ -> 
+          | `user_logged _ ->
             impersonation_form @ [pcdata "; "; logout_form () ()]
             @ maintenance_warning
-          | `user_impersonating _ -> 
+          | `user_impersonating _ ->
             [stop_impersonating_form () ()] @ [pcdata "; "; logout_form () ()]
             @ maintenance_warning
-          | _ -> 
+          | _ ->
              if Eliom_request_info.get_ssl () then
                [pcdata ". "; login_form ()]
                @ maintenance_warning
@@ -562,8 +560,5 @@ let display_state () =
                   ~service:Eliom_service.https_void_coservice'
                   [pcdata "Login with HTTPS"] ();
                pcdata "."]
-             
-          ))
 
-    
-  
+          ))

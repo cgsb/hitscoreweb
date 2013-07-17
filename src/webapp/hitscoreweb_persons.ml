@@ -4,8 +4,6 @@ open Hitscoreweb_std
 
 module State = Hitscoreweb_state
 
-module Queries = Hitscoreweb_queries
-
 module Services = Hitscoreweb_services
 
 module Authentication = Hitscoreweb_authentication
@@ -149,4 +147,3 @@ let make ~state =
            ~configuration:state.State.configuration
            ~main_title:"Persons"
            (return [Html5.pcdataf "You may not view any person."])))
-

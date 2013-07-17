@@ -3,8 +3,6 @@ open Hitscoreweb_std
 
 module Web_data_access = Hitscoreweb_data_access
 
-module Queries = Hitscoreweb_queries
-
 module Services = Hitscoreweb_services
 
 module Authentication = Hitscoreweb_authentication
@@ -268,5 +266,3 @@ let make configuration =
          Template.make_authentication_error ~configuration
            ~main_title:"HiSeq 2000 Runs"
            (return [Html5.pcdataf "You may not view anything here."])))
-
-

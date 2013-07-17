@@ -4,8 +4,6 @@ module Msg = Hitscoreweb_messages
 
 module Web_data_access = Hitscoreweb_data_access
 
-module Queries = Hitscoreweb_queries
-
 module Services = Hitscoreweb_services
 
 module Authentication = Hitscoreweb_authentication
