@@ -4,7 +4,7 @@
 APP_NAME := hitscoreweb
 
 ## Packages required to build the server part of the application
-SERVER_PACKAGES := hitscoregen threads core hitscore core_extended re.posix
+SERVER_PACKAGES := hitscoregen threads core hitscore core_extended re.posix eliom.server tyxml
 
 ## Packages to be linked in the client part
 
@@ -113,12 +113,12 @@ ${ELIOM_SERVER_DIR}/%.cmi: %.eliomi
 	${ELIOMC} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
 
 ${ELIOM_SERVER_DIR}/%.cmo: %.ml
-	${ELIOMC} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
+	ocamlfind ocamlc -thread -c -o $@ -I ${ELIOM_SERVER_DIR} ${SERVER_INC} $(GENERATE_DEBUG) $<
 ${ELIOM_SERVER_DIR}/%.cmo: %.eliom
 	${ELIOMC} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
 
 ${ELIOM_SERVER_DIR}/%.cmx: %.ml
-	${ELIOMOPT} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
+	ocamlfind ocamlopt -thread -c -o $@ -I ${ELIOM_SERVER_DIR} ${SERVER_INC} $(GENERATE_DEBUG) $<
 ${ELIOM_SERVER_DIR}/%.cmx: %.eliom
 	${ELIOMOPT} -c ${SERVER_INC} $(GENERATE_DEBUG) $<
 

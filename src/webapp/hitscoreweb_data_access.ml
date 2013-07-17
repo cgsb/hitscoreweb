@@ -8,7 +8,7 @@ type broker_error =
         Hitscore_layout.Layout.error_location *
           Hitscore_layout.Layout.error_cause
 | `pg_exn of exn ]
-  
+
 let _global_broker : broker_error Broker.t option ref = ref None
 
 let _global_timeout = ref 500.
@@ -31,9 +31,9 @@ let rec update  ~configuration () =
   wrap_io Lwt_unix.sleep !_global_timeout
   >>= fun () ->
   update ~configuration ()
-  
 
-    
+
+
 let _loop_withing_time = ref 5.
 let _allowed_age = ref 60.
 let _maximal_age = ref 900.
@@ -43,7 +43,7 @@ type classy_persons_error =
 [ `Layout of
     Hitscore_layout.Layout.error_location *
       Hitscore_layout.Layout.error_cause
-| `db_backend_error of [ Hitscore_db_backend.Backend.error ]
+| `db_backend_error of  Hitscore_db_backend.Backend.error
 | `io_exn of exn
 | `root_directory_not_configured ]
 
@@ -104,7 +104,7 @@ let find_person_opt id =
         Array.exists p#t#secondary_emails ((=) id)
       then Some p#t#g_t
       else None))
-    
+
 let find_person id =
   find_person_opt id
   >>= fun op ->
@@ -118,17 +118,16 @@ let get_person_by_id id =
   >>= fun classy_persons_info ->
   return (List.find classy_persons_info#persons (fun p -> p#t#g_id = id))
 
-  
+
 let person_by_pointer p =
   let open Layout.Record_person in
   broker ()
   >>= fun broker ->
   let c = Broker.current_dump broker in
   return (List.find_exn c.Layout.person ~f:(fun x -> x.g_id = p.id))
-    
+
 let modify_person ~dbh ~person =
   bind_on_error (broker ()
                  >>= fun broker ->
                  Broker.modify_person broker ~dbh ~person)
     (fun e -> error (`broker_error e))
-

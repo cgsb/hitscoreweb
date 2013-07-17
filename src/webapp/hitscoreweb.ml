@@ -335,8 +335,8 @@ module Test_service = struct
         begin match form.form_choice with
         | Some 0 ->
           services_form := `form form;
-          dbg "Modified form : %s"
-            Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form);
+          (* dbg "Modified form : %s" *)
+            (* Deriving_Json.(to_string Json.t<Hitscoreweb_meta_form.form_content> modified_form); *)
           dbg "Files:[\n TODO \n]";
           return (make ~text_buttons:["Would you like to restart?"] empty)
         | Some 1 ->
