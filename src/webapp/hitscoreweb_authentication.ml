@@ -9,7 +9,7 @@ type capability = [
 | `view of [`all
            | `person of Layout.Record_person.t
            | `all_evaluations
-           | `all_flowcells
+           | `user_hiseq_runs
            | `all_hiseq_runs
            | `all_pgm_runs
            | `layout
@@ -81,7 +81,7 @@ let roles_allow
       let is_user = List.exists roles ((=) `user)  in
       if is_user then
         match something with
-        | `persons | `libraries | `flowcell | `all_flowcells -> true
+        | `persons | `libraries | `flowcell | `user_hiseq_runs -> true
         | `libraries_of people when is_part_of_crew people -> true
         | `lane_of people when is_part_of_crew people -> true
         | _ -> false

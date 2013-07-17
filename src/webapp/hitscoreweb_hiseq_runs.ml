@@ -252,7 +252,7 @@ let make configuration =
     Template.default ~title:"HiSeq 2500 Runs"
       (Authentication.authorizes (`view `all_hiseq_runs)
        >>= fun can_view_hiseq_runs ->
-       Authentication.authorizes (`view `all_flowcells)
+       Authentication.authorizes (`view `user_hiseq_runs)
        >>= fun can_view_all_flowcells ->
        if can_view_hiseq_runs
        then
