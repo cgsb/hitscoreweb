@@ -1,7 +1,5 @@
 
-{shared{
 open Hitscoreweb_std
-}}
 module Web_data_access = Hitscoreweb_data_access
 module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
