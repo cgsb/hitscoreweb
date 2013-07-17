@@ -19,7 +19,6 @@ COMMON_FILES := \
   hitscoreweb_uploads_service.eliom	    \
   hitscoreweb_queries.eliom	    \
   hitscoreweb_services.eliom	    \
-  hitscoreweb_persons.eliom	   \
   hitscoreweb_hiseq_runs.eliom	   \
   hitscoreweb_layout_service.eliom \
   hitscoreweb_std.eliom	    \
@@ -29,6 +28,7 @@ COMMON_FILES := \
   hitscoreweb_facility_stats.eliom \
   hitscoreweb.eliom
 SERVER_FILES := $(COMMON_FILES) \
+  hitscoreweb_persons.ml	   \
   hitscoreweb_messages.ml	    \
   hitscoreweb_data_access.ml	    \
   hitscoreweb_state.ml	    \
