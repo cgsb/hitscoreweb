@@ -121,10 +121,11 @@ let get_person_by_id id =
 
 let person_by_pointer p =
   let open Layout.Record_person in
-  broker ()
-  >>= fun broker ->
-  let c = Broker.current_dump broker in
-  return (List.find_exn c.Layout.person ~f:(fun x -> x.g_id = p.id))
+  get_person_by_id p.id
+  >>= begin function
+  | Some s -> return s
+  | None -> error (`person_not_found (Int.to_string p.id))
+  end
 
 let modify_person ~dbh ~person =
   bind_on_error (broker ()

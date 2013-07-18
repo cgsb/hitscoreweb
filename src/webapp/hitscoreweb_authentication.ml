@@ -100,7 +100,6 @@ type authentication_state = [
 | `insufficient_credentials of string
 | `error of string *
     [ `auth_state_exn of exn
-    | `broker_not_initialized
     | `io_exn of exn
     | `login_not_found of string
     | `pam_exn of exn
@@ -121,7 +120,6 @@ let authentication_state_to_string =
       | `auth_state_exn e
       | `io_exn e
       | `pam_exn e ->  (Exn.to_string e)
-      | `broker_not_initialized -> "broker_not_initialized"
       | `login_not_found s -> sprintf "login_not_found: %S" s
       | `person_not_unique s -> sprintf "person_not_unique: %S" s)
 
@@ -190,7 +188,6 @@ let set_state s =
       | `auth_state_exn e
       | `io_exn e
       | `pam_exn e ->  (Exn.to_string e)
-      | `broker_not_initialized -> "broker_not_initialized"
       | `login_not_found s -> sprintf "login_not_found: %S" s
       | `person_not_unique s -> sprintf "person_not_unique: %S" s)
   end
@@ -491,17 +488,15 @@ let display_state () =
     return (span [
       pcdata "User: ";
       Html5.a ~service:(Services.person ())
-        [pcdataf "%s" admin.LRP.g_value.LRP.email]
-        (admin.LRP.g_value.LRP.email, None);
+        [pcdataf "%s" admin#t#email] (admin#t#email, None);
       pcdataf " (%s) impersonating "
-        (String.concat ~sep:", " Array.(map admin.LRP.g_value.LRP.roles
+        (String.concat ~sep:", " Array.(map admin#t#roles
                                           ~f:Layout.Enumeration_role.to_string
                                         |> to_list));
       Html5.a ~service:(Services.person ())
-        [pcdataf "%s" impersonated.LRP.g_value.LRP.email]
-        (impersonated.LRP.g_value.LRP.email, None);
+        [pcdataf "%s" impersonated#t#email] (impersonated#t#email, None);
         pcdataf " (%s) "
-          (String.concat ~sep:", " Array.(map impersonated.LRP.g_value.LRP.roles
+          (String.concat ~sep:", " Array.(map impersonated#t#roles
                                             ~f:Layout.Enumeration_role.to_string
                                           |> to_list));
       ])
@@ -510,10 +505,9 @@ let display_state () =
       >>= fun user ->
       return (span [
         pcdata "User: ";
-        Html5.a ~service:(Services.self ())
-          [pcdataf "%s" user.LRP.g_value.LRP.email] None;
+        Html5.a ~service:(Services.self ()) [pcdataf "%s" user#t#email] None;
         pcdataf " (%s)"
-          (String.concat ~sep:", " Array.(map user.LRP.g_value.LRP.roles
+          (String.concat ~sep:", " Array.(map user#t#roles
                                             ~f:Layout.Enumeration_role.to_string
                                           |> to_list));
       ])
