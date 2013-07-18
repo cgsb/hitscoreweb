@@ -131,3 +131,61 @@ let modify_person ~dbh ~person =
                  >>= fun broker ->
                  Broker.modify_person broker ~dbh ~person)
     (fun e -> error (`broker_error e))
+
+
+let classy_pgm_data =
+  let r =
+    ref (None: (unit ->
+                (<
+                 persons: classy_persons_error Classy.person_element list;
+                 pgm_runs : classy_persons_error Classy.pgm_run_element list;
+                 pgm_pools : classy_persons_error Classy.pgm_pool_element list;
+                 invoicings : classy_persons_error Classy.invoicing_element list;
+                 pgm_input_libs : classy_persons_error Classy.pgm_input_library_element list;
+                 pgm_stock_libs:
+                   (classy_persons_error Classy.pgm_input_library_element
+                    * classy_persons_error Classy.stock_library_element)
+                     list;
+                 >,
+                 [ `io_exn of exn ]) t) option) in
+  begin fun () ->
+    begin match !r with
+    | None ->
+      let classy_info =
+        Data_access.init_retrieval_loop
+          ~loop_waiting_time:!_loop_withing_time
+          ~log ~allowed_age:!_allowed_age ~maximal_age:!_allowed_age
+          ~log_prefix:"classy_pgm_data"
+          ~configuration:!_configuration
+          ~f:(fun ~configuration ~layout_cache ->
+              layout_cache#person >>= fun persons ->
+              layout_cache#pgm_run >>= fun pgm_runs ->
+              layout_cache#pgm_pool >>= fun pgm_pools ->
+              layout_cache#invoicing >>= fun invoicings ->
+              layout_cache#pgm_input_library >>= fun pgm_input_libs ->
+              while_sequential pgm_input_libs (fun pil ->
+                  pil#library#get
+                  >>= fun sl ->
+                  return (pil, sl))
+              >>= fun pgm_stock_libs ->
+              return (object
+                method persons = persons
+                method pgm_runs =  pgm_runs
+                method pgm_pools =  pgm_pools
+                method invoicings =  invoicings
+                method pgm_input_libs =  pgm_input_libs
+                method pgm_stock_libs = pgm_stock_libs
+              end))
+      in
+      eprintf "Creation of classy pgm data\n%!";
+      r := Some classy_info;
+      classy_info ()
+      >>= fun c ->
+      return c
+    | Some f -> f () >>= return
+    end
+    >>< begin function
+    | Ok o -> return o
+    | Error (`io_exn e) -> error (`io_exn e)
+    end
+  end
