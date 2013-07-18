@@ -132,16 +132,8 @@ let make ~state =
       (Authentication.authorizes (`view `all_pgm_runs)
        >>= begin function
        | true ->
-         ((all_pgm_runs ~configuration) :
-            (_, [>  Web_data_access.classy_persons_error]) Flow.t)
-         >>< begin function
-         | Ok o ->
-           Template.(make_content ~configuration
-                       ~main_title:"PGM Runs" (return o))
-         | Error (e: [> ]) ->
-           Template.(make_content ~configuration
-                       ~main_title:"PGM Runs" (error e))
-         end
+         Template.(make_content ~configuration
+                     ~main_title:"PGM Runs" (all_pgm_runs ~configuration))
        | false ->
          Template.make_authentication_error ~configuration
            ~main_title:"PGM Runs"

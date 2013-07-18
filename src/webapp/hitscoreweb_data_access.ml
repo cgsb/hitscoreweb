@@ -39,7 +39,7 @@ let _allowed_age = ref 60.
 let _maximal_age = ref 900.
 let _configuration = ref (Configuration.configure ())
 
-type classy_persons_error =
+type classy_error =
 [ `Layout of
     Hitscore_layout.Layout.error_location *
       Hitscore_layout.Layout.error_cause
@@ -50,7 +50,7 @@ type classy_persons_error =
 let classy_persons =
   let r =
     ref (None: (unit ->
-                (classy_persons_error Hitscore_data_access_types.classy_persons_information,
+                (classy_error Hitscore_data_access_types.classy_persons_information,
                  [ `io_exn of exn ]) t) option) in
   begin fun () ->
     begin match !r with
@@ -133,21 +133,21 @@ let modify_person ~dbh ~person =
     (fun e -> error (`broker_error e))
 
 
+type classy_pgm_data = <
+  persons: classy_error Classy.person_element list;
+  pgm_runs : classy_error Classy.pgm_run_element list;
+  pgm_pools : classy_error Classy.pgm_pool_element list;
+  invoicings : classy_error Classy.invoicing_element list;
+  pgm_input_libs : classy_error Classy.pgm_input_library_element list;
+  pgm_stock_libs:
+    (classy_error Classy.pgm_input_library_element
+     * classy_error Classy.stock_library_element) list;
+>
+
 let classy_pgm_data =
   let r =
     ref (None: (unit ->
-                (<
-                 persons: classy_persons_error Classy.person_element list;
-                 pgm_runs : classy_persons_error Classy.pgm_run_element list;
-                 pgm_pools : classy_persons_error Classy.pgm_pool_element list;
-                 invoicings : classy_persons_error Classy.invoicing_element list;
-                 pgm_input_libs : classy_persons_error Classy.pgm_input_library_element list;
-                 pgm_stock_libs:
-                   (classy_persons_error Classy.pgm_input_library_element
-                    * classy_persons_error Classy.stock_library_element)
-                     list;
-                 >,
-                 [ `io_exn of exn ]) t) option) in
+                (classy_pgm_data, [ `io_exn of exn ]) t) option) in
   begin fun () ->
     begin match !r with
     | None ->
