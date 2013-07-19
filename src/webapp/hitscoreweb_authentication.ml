@@ -216,7 +216,7 @@ let find_user login =
   Data_access.find_person_opt login
   >>= fun found ->
   begin match found with
-  | Some p -> return p
+  | Some p -> return p#g_t
   | None -> error (`login_not_found login)
   end
 

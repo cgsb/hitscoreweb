@@ -45,7 +45,8 @@ type classy_error =
       Hitscore_layout.Layout.error_cause
 | `db_backend_error of  Hitscore_db_backend.Backend.error
 | `io_exn of exn
-| `root_directory_not_configured ]
+| `root_directory_not_configured
+]
 type classy_cache = <
   persons: classy_error Classy.person_element list;
   pgm_runs : classy_error Classy.pgm_run_element list;
@@ -131,7 +132,7 @@ let find_person_opt id =
     List.find_map classy_cache#persons (fun p ->
         if p#email = id || p#login = Some id ||
            Array.exists p#secondary_emails ((=) id)
-        then Some p#g_t
+        then Some p
         else None))
 
 let find_person id =
@@ -147,6 +148,14 @@ let get_person_by_id id =
   >>= fun classy_cache ->
   return (List.find classy_cache#persons (fun p -> p#g_id = id))
 
+let get_person_by_id_or_error id =
+  classy_cache ()
+  >>= fun classy_cache ->
+  return (List.find classy_cache#persons (fun p -> p#g_id = id))
+  >>= begin function
+  | Some s -> return s
+  | None -> error (`person_not_found (Int.to_string id))
+  end
 
 let person_by_pointer p =
   let open Layout.Record_person in
@@ -154,4 +163,11 @@ let person_by_pointer p =
   >>= begin function
   | Some s -> return s
   | None -> error (`person_not_found (Int.to_string p.id))
+  end
+
+let wrap_action f x =
+  f x
+  >>< begin function
+  | Ok o -> return o
+  | Error e -> error (`classy_data_access e)
   end

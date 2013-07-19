@@ -14,6 +14,7 @@ module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 
 module State = Hitscoreweb_state
+module Web_data_access = Hitscoreweb_data_access
 
 let one_time_post_coservice_error =
   Eliom_reference.eref ~secure:true
@@ -37,9 +38,9 @@ let init_email_verification_service ~state =
   Output_app.register ~service:(email_verification_service ())
     (fun (id, (new_email, (old_email, key))) () ->
       let work_m =
-        State.find_person state id
+        Web_data_access.find_person id
         >>= fun person ->
-        Authentication.authorizes (`edit (`emails_of_person person#t#g_t))
+        Authentication.authorizes (`edit (`emails_of_person person#g_t))
         >>= fun can_edit ->
         if can_edit
         then (
@@ -50,18 +51,18 @@ let init_email_verification_service ~state =
             let open Layout.Record_person in
             begin match old_email with
             | None ->
-              person#t#set_secondary_emails
-                (Array.append [| new_email |] person#t#secondary_emails)
+              Web_data_access.wrap_action person#set_secondary_emails
+                (Array.append [| new_email |] person#secondary_emails)
             | Some old ->
-              if person#t#email = old then
-                person#t#set_email new_email
+              if person#email = old then
+                Web_data_access.wrap_action person#set_email new_email
               else
-                begin match Array.findi person#t#secondary_emails
+                begin match Array.findi person#secondary_emails
                     (fun _ -> (=) old) with
                 | Some (idx, _) ->
-                  let se = person#t#secondary_emails in
+                  let se = person#secondary_emails in
                   se.(idx) <- new_email;
-                  person#t#set_secondary_emails se
+                  Web_data_access.wrap_action person#set_secondary_emails se
                 | None ->
                   error (`email_verification (`cannot_find_old_email old))
                 end
@@ -113,7 +114,7 @@ let do_edition ~state id cap edition =
   let edition_m =
     State.find_person ~state id
     >>= fun person ->
-    Authentication.authorizes (`edit (cap person#t#g_t))
+    Authentication.authorizes (`edit (cap person#g_t))
     >>= fun can_edit ->
     if can_edit
     then (edition person >>= fun () ->
@@ -204,26 +205,26 @@ let reply ~state =
                   "Trying to mess around? passwords are not long enough")
       else
         let new_hash =
-          Communication.Authentication.hash_password person#t#g_id pw1 in
+          Communication.Authentication.hash_password person#g_id pw1 in
         eprintf "hashed passwd for %s\n%!" id;
-        person#t#set_password_hash (Some new_hash))
+        Web_data_access.wrap_action person#set_password_hash (Some new_hash))
   | Set_primary_email email ->
     do_edition ~state email (fun p -> `emails_of_person p) (fun person ->
-      begin match Array.findi person#t#secondary_emails (fun _ -> (=) email) with
+      begin match Array.findi person#secondary_emails (fun _ -> (=) email) with
       | Some (idx, _) ->
-        person#t#secondary_emails.(idx) <- person#t#email;
-        person#t#set_secondary_emails person#t#secondary_emails >>= fun () ->
-        person#t#set_email email
+        person#secondary_emails.(idx) <- person#email;
+        Web_data_access.wrap_action person#set_secondary_emails person#secondary_emails >>= fun () ->
+        Web_data_access.wrap_action person#set_email email
       | None -> error (`cannot_find_secondary_email)
       end)
   | Delete_email email ->
     do_edition ~state email (fun p -> `emails_of_person p) (fun person ->
-      begin match Array.findi person#t#secondary_emails
+      begin match Array.findi person#secondary_emails
           (fun _ -> (=) email) with
       | Some (idx, _) ->
         let secondary_emails =
-          Array.filter person#t#secondary_emails ~f:((<>) email) in
-        person#t#set_secondary_emails secondary_emails
+          Array.filter person#secondary_emails ~f:((<>) email) in
+        Web_data_access.wrap_action person#set_secondary_emails secondary_emails
       | None -> error (`cannot_find_secondary_email)
       end)
   | Change_email (current, next) ->
@@ -587,7 +588,7 @@ let make_view_page ~home ~state person =
       (match arr with
       | [| |] -> "N/A"
       | s -> Array.to_list s |> String.concat ~sep:", ") in
-  Authentication.authorizes (`edit (`names_of_person person#t#g_t))
+  Authentication.authorizes (`edit (`names_of_person person#g_t))
   >>= fun can_edit_names ->
   begin if can_edit_names
     then
@@ -598,9 +599,9 @@ let make_view_page ~home ~state person =
       return [pcdata "You cannot edit your information."]
   end
   >>= fun edition_link ->
-  Authentication.authorizes (`edit (`password_of_person person#t#g_t))
+  Authentication.authorizes (`edit (`password_of_person person#g_t))
   >>= fun can_edit_password ->
-  Authentication.authorizes (`edit (`emails_of_person person#t#g_t))
+  Authentication.authorizes (`edit (`emails_of_person person#g_t))
   >>= fun can_edit_emails ->
   let error_message =
     Option.value_map ~default:(span []) potential_error_to_display
@@ -609,11 +610,11 @@ let make_view_page ~home ~state person =
   in
   let change_password_link =
     if not can_edit_password then []
-    else change_password_interface person#t#email in
+    else change_password_interface person#email in
   let change_emails_link =
     if not can_edit_emails then []
-    else change_emails_interface person#t#email person#t#secondary_emails in
-  let pv = person#t in
+    else change_emails_interface person#email person#secondary_emails in
+  let pv = person in
   return (content_paragraph
             [error_message;
              ul [
@@ -655,7 +656,7 @@ let one_time_post_coservice ~redirection ~state person =
     (fun () (print_name, (given_name, (middle_name, (family_name, nickname)))) ->
       eprintf "%s %s\n%!" print_name given_name;
       let modification =
-        Authentication.authorizes (`edit (`names_of_person person#t#g_t))
+        Authentication.authorizes (`edit (`names_of_person person#g_t))
         >>= fun can_edit ->
         if can_edit
         then
@@ -664,21 +665,21 @@ let one_time_post_coservice ~redirection ~state person =
             let print_name = if print_name = "" then None else Some print_name in
             let middle_name = if middle_name = "" then None else Some middle_name in
             let nickname = if nickname = "" then None else Some nickname in
-            person#t#set_print_name print_name >>= fun () ->
-            person#t#set_middle_name middle_name >>= fun () ->
-            person#t#set_nickname nickname >>= fun () ->
-            person#t#set_family_name family_name >>= fun () ->
-            person#t#set_family_name given_name >>= fun () ->
-            logf "Edition of %d (%s)'s names successful" person#t#g_id
-              person#t#email
+            Web_data_access.wrap_action person#set_print_name print_name >>= fun () ->
+            Web_data_access.wrap_action person#set_middle_name middle_name >>= fun () ->
+            Web_data_access.wrap_action person#set_nickname nickname >>= fun () ->
+            Web_data_access.wrap_action person#set_family_name family_name >>= fun () ->
+            Web_data_access.wrap_action person#set_family_name given_name >>= fun () ->
+            logf "Edition of %d (%s)'s names successful" person#g_id
+              person#email
           else
             logf "Error in Edition of %d (%s)'s names: `non_emptiness_violation"
-              person#t#g_id person#t#email
+              person#g_id person#email
              >>= fun () ->
         error `non_emptiness_violation
         else
             logf "Error in Edition of %d (%s)'s names: `wrong_rights"
-              person#t#g_id person#t#email
+              person#g_id person#email
              >>= fun () ->
           error `wrong_rights
       in
@@ -728,17 +729,17 @@ let make_edit_page ~home ~state person =
           [ul [
             li [pcdata "Print name: ";
                 string_input ~input_type:`Text ~name:print_name
-                  ?value:person#t#print_name ();];
+                  ?value:person#print_name ();];
             li [not_null_string_input_item ~item_name:"Given Name"
-                   ~name:given_name ~value:person#t#given_name];
+                   ~name:given_name ~value:person#given_name];
             li [pcdata "Middle name: ";
                 string_input ~input_type:`Text ~name:middle_name
-                  ?value:person#t#middle_name ();];
+                  ?value:person#middle_name ();];
             li [not_null_string_input_item ~item_name:"Family name"
-                   ~name:family_name ~value:person#t#family_name ];
+                   ~name:family_name ~value:person#family_name ];
             li [pcdata "Nickname: ";
                 string_input ~input_type:`Text ~name:nickname
-                  ?value:person#t#nickname ();];
+                  ?value:person#nickname ();];
            ];
            Html5.string_input
              ~a:[ a_id "edit_submit"] ~input_type:`Submit ~value:"Go" ();
@@ -788,7 +789,7 @@ let make_generic ~home ~state person action =
   let configuration = State.configuration state in
   begin match action with
   | Some "edit" ->
-    (Authentication.authorizes (`edit (`names_of_person person#t#g_t))
+    (Authentication.authorizes (`edit (`names_of_person person#g_t))
      >>= function
      | true ->
        Template.make_content ~configuration
@@ -799,7 +800,7 @@ let make_generic ~home ~state person action =
          ~main_title:"User Page"
          (return [Html5.pcdataf "You shall not edit anything there."]))
   | _ ->
-    (Authentication.authorizes (`view (`person person#t#g_t))
+    (Authentication.authorizes (`view (`person person#g_t))
      >>= function
      | true ->
        Template.make_content ~configuration ~main_title:"About Yourself"

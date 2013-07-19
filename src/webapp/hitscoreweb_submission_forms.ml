@@ -4,6 +4,7 @@ module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 module Services = Hitscoreweb_services
 
+(*
 type user_submission_form = {
   persons_form: Hitscoreweb_meta_form.form option;
   libraries_form: Hitscoreweb_meta_form.form option;
@@ -157,8 +158,8 @@ let new_contacts_form ~state =
   let all_contacts =
     List.map persons_info#persons (fun p ->
       (sprintf "%s, %s &lt;<code>%s</code>&gt;"
-         p#t#family_name p#t#given_name p#t#email,
-       string ~value:p#t#email ())) in
+         p#family_name p#given_name p#email,
+       string ~value:p#email ())) in
   let contacts_section =
     let make_model v =
       let choice = Option.value ~default:"" v in
@@ -301,7 +302,7 @@ let new_libraries_form ~state user_id =
   >>= fun persons_info ->
   let all_libraries =
     List.find_map persons_info#persons (fun p ->
-      if p#t#g_id = user_id
+      if p#g_id = user_id
       then Some (List.map p#libraries (fun l ->
         let qn =
           sprintf "%s%s"
@@ -436,9 +437,9 @@ let pick_test_user_form ~state =
         List.map persons_info#persons (fun p ->
           let choice =
             sprintf "%s, %s &lt;<code>%s</code>&gt;"
-              p#t#family_name p#t#given_name p#t#email in
-          contacts := (choice, p#t#g_id) :: !contacts;
-          (choice, integer ~value:p#t#g_id ())) in
+              p#family_name p#given_name p#email in
+          contacts := (choice, p#g_id) :: !contacts;
+          (choice, integer ~value:p#g_id ())) in
       return (make ~buttons:[ [Markup.text "Go"] ]
                 (section [Markup.text "Set the “test” user"] [
                   meta_enumeration ~choice:"" (("", empty) :: all_contacts);
@@ -532,16 +533,17 @@ let dispatch ~state =
   | false -> own_submissions ~state ~can_edit:can_edit_own
   end
 
+*)
 let make ~state =
   (fun () () ->
     let main_title = "Submission Forms" in
     Template.default ~title:main_title
       (Authentication.authorizes (`view `submission_forms)
        >>= function
-       | true ->
-         dispatch ~state >>= fun c ->
-         return c
-       | false ->
+       | _ ->
+         (* dispatch ~state >>= fun c -> *)
+         (* return c *)
+       (* | false -> *)
          Template.make_authentication_error ~main_title
            ~configuration:state.Hitscoreweb_state.configuration
            (return [Html5.pcdataf "You may not view the submission forms."])))

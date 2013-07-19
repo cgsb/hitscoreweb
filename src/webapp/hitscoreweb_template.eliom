@@ -343,12 +343,14 @@ let string_of_error_sublevel poly_error =
         | `stopped i -> sprintf "Got stopped (%d)" i)]
   | `no_user_logged -> ["no_user_logged"]
   | `sexp_parsing_error e -> [sprintf "sexp_parsing_error: %s" Exn.(to_string e)]
+  | `classy_data_access e -> ["classy_data_access?"]
   )
 
 let string_of_error  poly_error =
   match poly_error with
   | `broker_error e -> string_of_error_sublevel e
   | `Layout_service e -> string_of_error_sublevel e
+  | `classy_data_access e -> string_of_error_sublevel e
   | `user_data (s, e) ->
     sprintf "User-data: %s, %s" s (string_of_error_sublevel e)
   | e -> string_of_error_sublevel e
