@@ -11,6 +11,7 @@ module Authentication = Hitscoreweb_authentication
 module Template = Hitscoreweb_template
 
 module Persons_service = Hitscoreweb_persons
+module Web_data_access = Hitscoreweb_data_access
 
 
 let qualified_name po n =
@@ -705,13 +706,9 @@ let filter_classy_libraries_information
     method libraries = filtered
   end)
 
-let make ~information_cache_timming ~configuration =
-  let allowed_age, maximal_age = information_cache_timming in
+let make ~configuration =
   let people_filter people =
     Authentication.authorizes (`view (`libraries_of people)) in
-  let classy_info =
-    Data_access.init_classy_libraries_information_loop
-      ~loop_waiting_time:5. ~log ~allowed_age ~maximal_age ~configuration in
   (fun (showing, qualified_names) () ->
     let work_started = Time.now () in
     let main_title = "Libraries" in
@@ -726,7 +723,9 @@ let make ~information_cache_timming ~configuration =
            | false -> return ["PhiX_v2"; "PhiX_v3"]
            end
            >>= fun exclude ->
-           classy_info () >>= fun info ->
+           Web_data_access.classy_cache ()
+           >>= fun cache ->
+           let info = cache#classy_libraries in
            filter_classy_libraries_information
              ~exclude ~people_filter ~configuration ~qualified_names info
            >>= fun filtered_info ->
