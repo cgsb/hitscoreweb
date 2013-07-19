@@ -155,9 +155,3 @@ let person_by_pointer p =
   | Some s -> return s
   | None -> error (`person_not_found (Int.to_string p.id))
   end
-
-let modify_person ~dbh ~person =
-  bind_on_error (broker ()
-                 >>= fun broker ->
-                 Broker.modify_person broker ~dbh ~person)
-    (fun e -> error (`broker_error e))
