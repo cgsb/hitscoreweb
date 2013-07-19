@@ -58,6 +58,7 @@ type classy_cache = <
      * classy_error Classy.stock_library_element) list;
   stock_libs : classy_error Classy.stock_library_element list;
   classy_persons: classy_error Data_access_types.classy_persons_information;
+  classy_libraries: classy_error Data_access_types.classy_libraries_information;
 >
 
 let classy_cache =
@@ -80,6 +81,9 @@ let classy_cache =
               Data_access.make_classy_persons_information
                 ~configuration ~layout_cache
               >>= fun classy_persons ->
+              Data_access.make_classy_libraries_information
+                ~configuration ~layout_cache
+              >>= fun classy_libraries ->
               layout_cache#person >>= fun persons ->
               layout_cache#pgm_run >>= fun pgm_runs ->
               layout_cache#pgm_pool >>= fun pgm_pools ->
@@ -103,6 +107,7 @@ let classy_cache =
                 method pgm_stock_libs = pgm_stock_libs
                 method stock_libs = stock_libs
                 method classy_persons = classy_persons
+                method classy_libraries = classy_libraries
               end))
       in
       eprintf "Creation of classy pgm data\n%!";
