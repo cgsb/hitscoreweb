@@ -29,9 +29,9 @@ let person_link ?(style=`full_name) dbh person_t =
 let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
   State.persons_info state
   >>= fun info ->
-  while_sequential info#persons (fun person ->
+  while_sequential info#classy_persons#persons (fun person ->
     let opt f m = Option.value_map ~f ~default:(f "") m in
-    let is_vip = List.exists highlight ((=) person#email) in
+    let is_vip = List.exists highlight ((=) person#t#email) in
     if not is_vip && (highlight <> []) then
       return None
     else Html5.(
@@ -39,15 +39,15 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
         let style = if is_vip then "color: green" else "" in
         if not full_view
         then
-          `sortable (person#email,
-                     [code ~a:[a_id person#email; a_style style]
-                         [pcdata person#email]])
+          `sortable (person#t#email,
+                     [code ~a:[a_id person#t#email; a_style style]
+                         [pcdata person#t#email]])
         else
-          `sortable (person#email,
+          `sortable (person#t#email,
                      [Template.a_link Services.person
-                         [code ~a:[a_id person#email; a_style style]
-                             [pcdata person#email]]
-                         (person#email, None);
+                         [code ~a:[a_id person#t#email; a_style style]
+                             [pcdata person#t#email]]
+                         (person#t#email, None);
                       Hitscoreweb_meta_form.(
                         create ~state ~and_reload:true
                           Form.(function
@@ -58,7 +58,7 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
                               let open Authentication in
                               user_logged () >>= fun a ->
                               map_option a (fun adminauditor ->
-                                find_user person#email >>= fun person ->
+                                find_user person#t#email >>= fun person ->
                                 authorizes (`impersonate (`person person)) >>= fun can ->
                                 if can
                                 then
@@ -83,31 +83,29 @@ let persons ~full_view ?(transpose=false) ?(highlight=[]) ~state =
       let text s = `sortable (s, [pcdata s]) in
       let opttext o = opt text o in
       let applications =
-        [pcdata "TEMPORARILY OUT OF SERVICE"] in
-          (*
         List.map person#libraries (fun l ->
           String.concat_array ~sep:"/" l#application)
         |> List.dedup
         |> List.map ~f:(codef "%s")
-        |> interleave_list ~sep:(pcdata ", ") in *)
+        |> interleave_list ~sep:(pcdata ", ") in
       let default = [
-        opttext person#print_name;
-        text person#given_name;
-        opttext person#middle_name;
-        text person#family_name;
-        opttext person#nickname;
+        opttext person#t#print_name;
+        text person#t#given_name;
+        opttext person#t#middle_name;
+        text person#t#family_name;
+        opttext person#t#nickname;
         email_field;
-        `text (array_to_list_intermap person#secondary_emails ~sep:(pcdata ", ")
+        `text (array_to_list_intermap person#t#secondary_emails ~sep:(pcdata ", ")
                  ~f:(codef "%s\n"));
-        opttext person#login;
+        opttext person#t#login;
         `text applications;
       ] in
       let supplement =
         if not full_view then [] else [
-          `text (array_to_list_intermap person#roles ~sep:(br ())
+          `text (array_to_list_intermap person#t#roles ~sep:(br ())
                    ~f:(fun s -> pcdataf "%s"
                      (Layout.Enumeration_role.to_string s)));
-          opttext person#note;]
+          opttext person#t#note;]
       in
       return (Some (default @ supplement))))
   >>= fun rows ->
