@@ -74,7 +74,7 @@ let classy_cache =
         Data_access.init_retrieval_loop
           ~loop_waiting_time:!_loop_withing_time
           ~log ~allowed_age:!_allowed_age ~maximal_age:!_allowed_age
-          ~log_prefix:"classy_pgm_data"
+          ~log_prefix:"hsw_classy_cache"
           ~configuration:!_configuration
           ~f:(fun ~configuration ~layout_cache ->
               Data_access.make_classy_persons_information
