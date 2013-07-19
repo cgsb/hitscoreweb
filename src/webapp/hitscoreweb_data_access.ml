@@ -56,6 +56,8 @@ type classy_cache = <
   pgm_stock_libs:
     (classy_error Classy.pgm_input_library_element
      * classy_error Classy.stock_library_element) list;
+  stock_libs : classy_error Classy.stock_library_element list;
+  classy_persons: classy_error Data_access_types.classy_persons_information;
 >
 
 let classy_cache =
@@ -65,6 +67,9 @@ let classy_cache =
   begin fun () ->
     begin match !r with
     | None ->
+      let errf fmt =
+        ksprintf (fun s -> error (`io_exn (Failure ("classy_cache: " ^ s)))) fmt
+      in
       let classy_info =
         Data_access.init_retrieval_loop
           ~loop_waiting_time:!_loop_withing_time
@@ -72,15 +77,22 @@ let classy_cache =
           ~log_prefix:"classy_pgm_data"
           ~configuration:!_configuration
           ~f:(fun ~configuration ~layout_cache ->
+              Data_access.make_classy_persons_information
+                ~configuration ~layout_cache
+              >>= fun classy_persons ->
               layout_cache#person >>= fun persons ->
               layout_cache#pgm_run >>= fun pgm_runs ->
               layout_cache#pgm_pool >>= fun pgm_pools ->
               layout_cache#invoicing >>= fun invoicings ->
               layout_cache#pgm_input_library >>= fun pgm_input_libs ->
+              layout_cache#stock_library >>= fun stock_libs ->
               while_sequential pgm_input_libs (fun pil ->
-                  pil#library#get
-                  >>= fun sl ->
-                  return (pil, sl))
+                  match
+                    List.find stock_libs (fun sl -> sl#g_id = pil#library#id)
+                  with
+                  | Some s -> return (pil, s)
+                  | None -> errf "pgm input library %d has no stock (%d?)"
+                              pil#g_id pil#library#id)
               >>= fun pgm_stock_libs ->
               return (object
                 method persons = persons
@@ -89,6 +101,8 @@ let classy_cache =
                 method invoicings =  invoicings
                 method pgm_input_libs =  pgm_input_libs
                 method pgm_stock_libs = pgm_stock_libs
+                method stock_libs = stock_libs
+                method classy_persons = classy_persons
               end))
       in
       eprintf "Creation of classy pgm data\n%!";
