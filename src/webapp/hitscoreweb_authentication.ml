@@ -486,34 +486,34 @@ let display_state () =
     Data_access.person_by_pointer u.person
     >>= fun impersonated ->
     return (span [
-      pcdata "User: ";
-      Html5.a ~service:(Services.person ())
-        [pcdataf "%s" admin#t#email] (admin#t#email, None);
-      pcdataf " (%s) impersonating "
-        (String.concat ~sep:", " Array.(map admin#t#roles
-                                          ~f:Layout.Enumeration_role.to_string
-                                        |> to_list));
-      Html5.a ~service:(Services.person ())
-        [pcdataf "%s" impersonated#t#email] (impersonated#t#email, None);
-        pcdataf " (%s) "
-          (String.concat ~sep:", " Array.(map impersonated#t#roles
-                                            ~f:Layout.Enumeration_role.to_string
-                                          |> to_list));
-      ])
-    | `user_logged u ->
-      Data_access.person_by_pointer u.person
-      >>= fun user ->
-      return (span [
         pcdata "User: ";
-        Html5.a ~service:(Services.self ()) [pcdataf "%s" user#t#email] None;
-        pcdataf " (%s)"
-          (String.concat ~sep:", " Array.(map user#t#roles
+        Html5.a ~service:(Services.person ())
+          [pcdataf "%s" admin#email] (admin#email, None);
+        pcdataf " (%s) impersonating "
+          (String.concat ~sep:", " Array.(map admin#roles
+                                            ~f:Layout.Enumeration_role.to_string
+                                          |> to_list));
+        Html5.a ~service:(Services.person ())
+          [pcdataf "%s" impersonated#email] (impersonated#email, None);
+        pcdataf " (%s) "
+          (String.concat ~sep:", " Array.(map impersonated#roles
                                             ~f:Layout.Enumeration_role.to_string
                                           |> to_list));
       ])
-    | `error (s, _)
-    | `insufficient_credentials s ->
-      return (pcdataf "Wrong credentials for: %s" s)
+  | `user_logged u ->
+    Data_access.person_by_pointer u.person
+    >>= fun user ->
+    return (span [
+        pcdata "User: ";
+        Html5.a ~service:(Services.self ()) [pcdataf "%s" user#email] None;
+        pcdataf " (%s)"
+          (String.concat ~sep:", " Array.(map user#roles
+                                            ~f:Layout.Enumeration_role.to_string
+                                          |> to_list));
+      ])
+  | `error (s, _)
+  | `insufficient_credentials s ->
+    return (pcdataf "Wrong credentials for: %s" s)
   end
   >>= fun state ->
   let impersonation_form =
@@ -527,21 +527,21 @@ let display_state () =
     else [] in
   return (state
           :: (match s with
-          | `user_logged _ ->
-            impersonation_form @ [pcdata "; "; logout_form () ()]
-            @ maintenance_warning
-          | `user_impersonating _ ->
-            [stop_impersonating_form () ()] @ [pcdata "; "; logout_form () ()]
-            @ maintenance_warning
-          | _ ->
-             if Eliom_request_info.get_ssl () then
-               [pcdata ". "; login_form ()]
-               @ maintenance_warning
-             else
-               [pcdata ": ";
-                Html5.a
-                  ~service:Eliom_service.https_void_coservice'
-                  [pcdata "Login with HTTPS"] ();
-               pcdata "."]
+            | `user_logged _ ->
+              impersonation_form @ [pcdata "; "; logout_form () ()]
+              @ maintenance_warning
+            | `user_impersonating _ ->
+              [stop_impersonating_form () ()] @ [pcdata "; "; logout_form () ()]
+              @ maintenance_warning
+            | _ ->
+              if Eliom_request_info.get_ssl () then
+                [pcdata ". "; login_form ()]
+                @ maintenance_warning
+              else
+                [pcdata ": ";
+                 Html5.a
+                   ~service:Eliom_service.https_void_coservice'
+                   [pcdata "Login with HTTPS"] ();
+                 pcdata "."]
 
-          ))
+            ))

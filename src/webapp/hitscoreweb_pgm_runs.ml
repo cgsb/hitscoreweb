@@ -13,13 +13,13 @@ let all_pgm_runs ~configuration =
     | None -> stock#name
     | Some p -> sprintf "%s.%s" p stock#name in
   let start = Time.(now () |> to_float) in
-  Web_data_access.classy_pgm_data ()
-  >>= fun pgm_data ->
-  let all_persons = pgm_data#persons in
-  let all_pgm_runs = pgm_data#pgm_runs in
-  let all_pgm_pools = pgm_data#pgm_pools in
-  let all_invoicings = pgm_data#invoicings in
-  let all_pgm_stock_libs = pgm_data#pgm_stock_libs in
+  Web_data_access.classy_cache ()
+  >>= fun cache ->
+  let all_persons = cache#persons in
+  let all_pgm_runs = cache#pgm_runs in
+  let all_pgm_pools = cache#pgm_pools in
+  let all_invoicings = cache#invoicings in
+  let all_pgm_stock_libs = cache#pgm_stock_libs in
   let after_db = Time.(now () |> to_float) in
   let pgm_run_rows =
     List.map all_pgm_runs (fun pgm_run ->

@@ -22,7 +22,7 @@ let user_spying () =
     Web_data_access.get_person_by_id id
     >>= begin function
     | Some p ->
-      return (sprintf "%d (%s, %s)" p#t#g_id p#t#family_name p#t#given_name)
+      return (sprintf "%d (%s, %s)" p#g_id p#family_name p#given_name)
     | None -> return "NO-USER"
     end
   in
