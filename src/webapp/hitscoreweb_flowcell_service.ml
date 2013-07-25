@@ -533,10 +533,14 @@ let make configuration =
        | true ->
          flowcell_lanes_table ~serial_name configuration
          >>= fun tab_section ->
-         invoicing_section ~serial_name configuration
-         >>= fun invoicing_sec ->
          Authentication.authorizes (`view `hiseq_raw_info)
          >>= fun hiseq_raw_authorization ->
+         begin if hiseq_raw_authorization then
+             invoicing_section ~serial_name configuration
+           else
+             return (content_paragraph [])
+         end
+         >>= fun invoicing_sec ->
          begin if hiseq_raw_authorization then
              hiseq_raw_info ~configuration ~serial_name
            else
