@@ -56,6 +56,10 @@ type classy_cache = <
   pgm_stock_libs:
     (classy_error Classy.pgm_input_library_element
      * classy_error Classy.stock_library_element) list;
+  hiseq_runs       : classy_error Classy.hiseq_run_element list;
+  hiseq_flowcells  : classy_error Classy.flowcell_element list;
+  hiseq_lanes      : classy_error Classy.lane_element list;
+  hiseq_input_libs : classy_error Classy.input_library_element list;
   stock_libs : classy_error Classy.stock_library_element list;
   classy_persons: classy_error Data_access_types.classy_persons_information;
   classy_libraries: classy_error Data_access_types.classy_libraries_information;
@@ -90,6 +94,12 @@ let classy_cache =
               layout_cache#invoicing >>= fun invoicings ->
               layout_cache#pgm_input_library >>= fun pgm_input_libs ->
               layout_cache#stock_library >>= fun stock_libs ->
+              layout_cache#hiseq_run         >>= fun hiseq_runs ->
+              layout_cache#flowcell    >>= fun hiseq_flowcells ->
+              layout_cache#lane        >>= fun hiseq_lanes->
+              layout_cache#input_library   >>= fun hiseq_input_libs->
+
+
               while_sequential pgm_input_libs (fun pil ->
                   match
                     List.find stock_libs (fun sl -> sl#g_id = pil#library#id)
@@ -108,6 +118,11 @@ let classy_cache =
                 method stock_libs = stock_libs
                 method classy_persons = classy_persons
                 method classy_libraries = classy_libraries
+                method hiseq_runs       = hiseq_runs
+                method hiseq_flowcells  = hiseq_flowcells
+                method hiseq_lanes      = hiseq_lanes
+                method hiseq_input_libs = hiseq_input_libs
+
               end))
       in
       eprintf "Creation of classy pgm data\n%!";
