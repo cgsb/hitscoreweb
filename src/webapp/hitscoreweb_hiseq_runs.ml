@@ -1,6 +1,13 @@
 
 open Hitscoreweb_std_server
 
+(* Testing flow-stuff: *)
+(* let (>>!) m f = bind_on_error m ~f in *)
+let flow_some opt ~err =
+  match opt with
+  | Some s -> return s
+  | None -> error err
+
 module Web_data_access = Hitscoreweb_data_access
 
 module Services = Hitscoreweb_services
@@ -91,7 +98,7 @@ let hiseq_runs ~configuration =
                `head [pcdata "Flowcell B"]; ]
              :: sorted))
 
-let lanes_table broker lanes dmux_sum_opt =
+let lanes_table lanes dmux_sum_opt =
   let open Html5 in
   let open Template in
   let open Option in
@@ -153,34 +160,229 @@ let lanes_table broker lanes dmux_sum_opt =
         (fun l ->
            [ `text [pcdataf "Lane %d" l.lane_index]; one_lane l ])))
 
-let simple_lanes_table broker lanes =
-  lanes_table broker lanes None
+let simple_lanes_table lanes =
+  lanes_table lanes None
 
-let lanes_table_with_stats broker lanes dmux_sum =
-  lanes_table broker lanes dmux_sum
+let lanes_table_with_stats lanes dmux_sum =
+  lanes_table lanes dmux_sum
 
 
-let person_flowcells ~configuration =
+let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
   let open Html5 in
   let open Template in
 
-  let open Broker_types in
-    (* Testing flow-stuff: *)
-  let (>>!) m f = bind_on_error m ~f in
-  let flow_some opt ~err =
-    match opt with
-    | Some s -> return s
-    | None -> error err in
+  (* let open Broker_types in *)
+  let start_time = Time.(now () |> to_float) in
 
-  Web_data_access.broker () >>= fun broker ->
-  Authentication.user_logged () >>= fun user_opt ->
-  flow_some user_opt (`hiseq_runs (`no_logged_user))
-  >>= fun {Authentication.person; _} ->
-  (Broker.person_affairs broker person.Layout.Record_person.id
-   >>! (function
-   | `person_not_found person ->
-     error (`hiseq_runs (`cannot_retrieve_person_affairs person))))
-  >>= fun affairs ->
+  (* Web_data_access.broker () >>= fun broker -> *)
+  Web_data_access.classy_cache ()
+  >>= fun classy_cache ->
+  flow_some  ~err:(`hiseq_runs (`cannot_retrieve_person_affairs person))
+    (List.find classy_cache#classy_persons#persons
+       (fun p -> p#t#g_pointer = person))
+  >>= fun person_affairs ->
+  let meta_hiseq_runs =
+    List.map classy_cache#hiseq_runs (fun hr ->
+        let find_flowcell fcopt =
+          Option.bind fcopt (fun fc ->
+              List.find classy_cache#hiseq_flowcells (fun f -> f#g_id = fc#id))
+        in
+        let flowcell_a = find_flowcell hr#flowcell_a in
+        let flowcell_b = find_flowcell hr#flowcell_b in
+        let lane_info idx lane fc =
+          let contacts = Array.to_list lane#contacts in
+          Option.some_if (List.exists contacts (fun c -> c#pointer = person))
+            (let people =
+              List.filter_map contacts (fun ct ->
+                  List.find classy_cache#classy_persons#persons
+                    (fun p -> p#t#g_id = ct#id)) in
+             let libraries =
+               List.filter_map (Array.to_list lane#libraries) (fun lpointer ->
+                   List.find classy_cache#hiseq_input_libs (fun hil ->
+                       hil#g_pointer = lpointer#pointer))
+               |> List.filter_map ~f:(fun il ->
+                   List.find_map classy_cache#classy_libraries#libraries
+                     (fun cl ->
+                        if (cl#stock#g_id = il#library#id)
+                        then
+                          (match
+                            List.find cl#submissions (fun sub ->
+                                List.exists sub#lane#inputs
+                                  (fun i -> i#g_id = il#g_id))
+                          with
+                          | Some right_submission ->
+                            let delivered_demuxes =
+                              List.map right_submission#flowcell#hiseq_raws
+                                (fun hsr ->
+                                   List.filter hsr#demultiplexings
+                                     (fun demux -> demux#deliveries <> []))
+                              |> List.concat
+                            in
+                            Some (object
+                              method classy_library = cl
+                              method input_library = il
+                              method submission = right_submission
+                              method delivered_demuxes = delivered_demuxes
+                            end)
+                          | None -> None)
+                        else None))
+             in
+              (*
+                 find libraries
+                 check all data is there
+                 provide table of paths?
+              *)
+             object
+               method flowcell = fc
+               method lane = lane
+               method lane_index = idx
+               method people = people
+               method classy_libraries = libraries
+             end)
+        in
+        let lanes_of_flowcell fc =
+          List.filter_map classy_cache#hiseq_lanes (fun l ->
+              let rec find_map_with_index idx = function
+              | [] -> None
+              | x :: t ->
+                if x#id = l#g_id
+                then lane_info idx l fc
+                else find_map_with_index (idx + 1) t
+              in
+              find_map_with_index 1 (Array.to_list fc#lanes))
+        in
+        let deliveries_of_flowcell fc =
+          let meta_lanes = lanes_of_flowcell fc in
+          List.map meta_lanes (fun lane ->
+              List.map lane#classy_libraries (fun cl ->
+                  let delivered_demuxes = cl#delivered_demuxes in
+                  List.map delivered_demuxes (fun demux ->
+                      List.filter_map demux#deliveries (fun d ->
+                          Option.bind d#client_fastqs_dir (fun s ->
+                              let invoice =
+                                List.find classy_cache#invoicings
+                                  (fun i -> i#g_id = d#oo#invoice#id) in
+                              Option.bind invoice (fun invoice ->
+                                  Option.some_if
+                                    (Array.exists lane#lane#contacts
+                                       (fun c -> c#id = invoice#pi#id))
+                                    (object
+                                      method delivery = d
+                                      method delivery_dir = s
+                                      method demux = demux
+                                      method lanes = meta_lanes
+                                    end)))))))
+          |> List.concat
+          |> List.concat
+          |> List.concat
+          |> List.dedup ~compare:(fun a b ->
+              Int.compare a#delivery_dir#g_id b#delivery_dir#g_id)
+        in
+
+        let make_run a_or_b flowcell deliveries =
+          Option.some_if (deliveries <> [])
+            (object
+              method hr = hr
+              method a_or_b = a_or_b
+              method flowcell = flowcell
+              method deliveries = deliveries
+            end) in
+        List.filter_opt [
+          Option.bind flowcell_a (fun f ->
+              make_run "A" f (deliveries_of_flowcell f));
+          Option.bind flowcell_b (fun f ->
+              make_run "B" f (deliveries_of_flowcell f));
+        ])
+    |> List.concat
+  in
+
+  let display_run hiseq_meta_run =
+    let hr = hiseq_meta_run#hr in
+    let a_or_b = hiseq_meta_run#a_or_b in
+    let flowcell = hiseq_meta_run#flowcell in
+    let deliveries = hiseq_meta_run#deliveries in
+    let run_title =
+      pcdataf "%s Run (Flowcell %s: %s)"
+        (hr#date |> Date.of_time |> Date.to_string)
+        a_or_b (flowcell#serial_name) in
+    let delivery_table delivery =
+      let base_head =
+        [ `head_cell Msg.lane;
+          `head_cell Msg.library_name;
+          `head_cell Msg.library_project;
+          `head_cell Msg.library_description ] in
+      let demux_sum_opt =
+        Option.(
+          delivery#demux#unaligned
+          >>= fun u ->
+          u#dmux_summary) in
+      let summary_head =
+        match demux_sum_opt with
+        | None -> []
+        | Some _ ->
+          [ `head_cell Msg.number_of_reads;
+            `head_cell Msg.percent_bases_over_q30;
+            `head_cell Msg.mean_qs ] in
+      let sorted_lanes =
+        List.sort delivery#lanes
+          ~cmp:(fun l1 l2 -> Int.compare l1#lane_index l2#lane_index) in
+      content_table (
+        (base_head @ summary_head)
+        :: List.map sorted_lanes (fun l ->
+            let index_text = l#lane_index |> Int.to_string in
+            let libraries_subtable =
+              List.sort ~cmp:(fun l1 l2 ->
+                  String.compare
+                    l1#classy_library#stock#name l1#classy_library#stock#name)
+                l#classy_libraries
+              |> List.filter ~f:(fun cl ->
+                    cl#classy_library#stock#name <> "PhiX_v3"
+                    && cl#classy_library#stock#name <> "PhiX_v2")
+              |> List.map ~f:(fun cl ->
+                  let libname = pcdata cl#classy_library#stock#name in
+                  let libproj =
+                    Option.value_map ~f:pcdata ~default:(pcdata "")
+                      cl#classy_library#stock#project in
+                  let libdesc =
+                    Option.value_map ~f:pcdata ~default:(pcdata "")
+                      cl#classy_library#stock#description in
+                  let stats =
+                    let nb0 f = `number (sprintf "%.0f", f) in
+                    let nb2 f = `number (sprintf "%.2f", f) in
+                    let module Bui = Hitscore_interfaces.B2F_unaligned_information in
+                    let open Option in
+                    demux_sum_opt
+                    >>= fun dmx ->
+                    List.find dmx.(l#lane_index - 1)
+                      (fun x -> x.Bui.name = cl#classy_library#stock#name)
+                    >>= fun found ->
+                    return [nb0 found.Bui.cluster_count;
+                            nb2 (100. *. found.Bui.yield_q30 /. found.Bui.yield);
+                            nb2 (found.Bui.quality_score_sum /. found.Bui.yield)]
+                  in
+                  [`text [libname]; `text [libproj]; `text [libdesc];]
+                  @ Option.value ~default:[] stats)
+            in
+            [
+              `sortable (index_text, [pcdata index_text]);
+              `subtable libraries_subtable;
+            ])
+      )
+    in
+    content_section run_title
+      (content_list
+         (List.map deliveries ~f:(fun delivery ->
+              let title =
+                span [
+                  codef "%s" delivery#delivery_dir#directory;
+                  pcdata " on ";
+                  html_of_cluster delivery#delivery_dir#host;
+                ]  in
+              let section_content = delivery_table delivery in
+              content_section title  section_content)))
+  in
+
+  (*
   while_sequential affairs.pa_flowcells (fun fc ->
     while_sequential  fc.ff_runs (fun run ->
       Broker.delivered_demultiplexings broker run
@@ -242,27 +444,49 @@ let person_flowcells ~configuration =
     return (content_section (pcdataf "Flowcell %s" fc.ff_id)
               (content_list run_subsections)))
   >>= fun sections ->
-  let content = content_list sections in
+  *)
+  let middle_time = Time.(now () |> to_float) in
+  let sections = List.map ~f:display_run meta_hiseq_runs in
+  let end_time = Time.(now () |> to_float) in
+  let content =
+    content_list ((content_paragraph [pcdataf "DEBUG INFO: %f s, rendering: %f s"
+                                        (end_time -. start_time)
+                                        (end_time -. middle_time)
+                                     ])
+                  :: sections)
+  in
   return content
 
 
 
 let make configuration =
   (fun () () ->
-    Template.default ~title:"HiSeq 2500 Runs"
+    Template.default ~title:"HiSeq Runs"
       (Authentication.authorizes (`view `all_hiseq_runs)
        >>= fun can_view_hiseq_runs ->
        Authentication.authorizes (`view `user_hiseq_runs)
        >>= fun can_view_all_flowcells ->
        if can_view_hiseq_runs
        then
-         Template.make_content ~configuration
-           ~main_title:"HiSeq 2500 Runs" (hiseq_runs configuration)
+
+         person_flowcells ~configuration (Layout.Record_person.unsafe_cast 3150)
+         >>= fun content ->
+           Template.make_content ~configuration
+             ~main_title:"HiSeq Runs" (return content)
+
+         (* Template.make_content ~configuration *)
+           (* ~main_title:"HiSeq Runs" (hiseq_runs configuration) *)
        else if can_view_all_flowcells
        then
-         Template.make_content ~configuration
-           ~main_title:"HiSeq 2500 Runs" (person_flowcells ~configuration)
+         begin
+           Authentication.user_logged () >>= fun user_opt ->
+           flow_some user_opt (`hiseq_runs (`no_logged_user))
+           >>= fun {Authentication.person; _} ->
+           Template.make_content ~configuration
+             ~main_title:"HiSeq Runs"
+             (person_flowcells ~configuration person)
+         end
        else
          Template.make_authentication_error ~configuration
-           ~main_title:"HiSeq 2500 Runs"
+           ~main_title:"HiSeq Runs"
            (return [Html5.pcdataf "You may not view anything here."])))
