@@ -102,8 +102,6 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
   let open Html5 in
   let open Template in
 
-  let start_time = Time.(now () |> to_float) in
-
   Web_data_access.classy_cache ()
   >>= fun classy_cache ->
   flow_some  ~err:(`hiseq_runs (`cannot_retrieve_person_affairs person))
@@ -231,16 +229,8 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
               content_section title  section_content)))
   in
 
-  let middle_time = Time.(now () |> to_float) in
   let sections = List.map ~f:display_run filtered_meta_hiseq_runs in
-  let end_time = Time.(now () |> to_float) in
-  let content =
-    content_list ((content_paragraph [pcdataf "DEBUG INFO: %f s, rendering: %f s"
-                                        (end_time -. start_time)
-                                        (end_time -. middle_time)
-                                     ])
-                  :: sections)
-  in
+  let content = content_list sections in
   return content
 
 
