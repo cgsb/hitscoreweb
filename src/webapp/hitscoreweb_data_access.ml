@@ -63,7 +63,146 @@ type classy_cache = <
   stock_libs : classy_error Classy.stock_library_element list;
   classy_persons: classy_error Data_access_types.classy_persons_information;
   classy_libraries: classy_error Data_access_types.classy_libraries_information;
+
+  meta_hiseq_runs: <
+    a_or_b: string;
+    flowcell : classy_error Classy.flowcell_element;
+    hr : classy_error Classy.hiseq_run_element;
+    deliveries: <
+      delivery: classy_error Data_access_types.delivery;
+      delivery_dir: classy_error Classy.client_fastqs_dir_element;
+      demux: classy_error Data_access_types.demultiplexing;
+      lanes: <
+        classy_libraries: <
+          classy_library: classy_error Data_access_types.classy_library;
+          delivered_demuxes: classy_error Data_access_types.demultiplexing list;
+          input_library: classy_error Classy.input_library_element;
+          submission: classy_error Data_access_types.submission
+        > list;
+        flowcell : classy_error Classy.flowcell_element;
+        lane: classy_error Classy.lane_element;
+        lane_index: int;
+        people : classy_error Data_access_types.person list;
+      > list;
+    > list;
+  > list;
 >
+
+let meta_hiseq_runs
+    ~hiseq_runs ~hiseq_flowcells ~classy_persons
+    ~hiseq_input_libs ~classy_libraries
+    ~hiseq_lanes ~invoicings =
+  List.map hiseq_runs (fun hr ->
+      let find_flowcell fcopt =
+        Option.bind fcopt (fun fc ->
+            List.find hiseq_flowcells (fun f -> f#g_id = fc#id))
+      in
+      let flowcell_a = find_flowcell hr#flowcell_a in
+      let flowcell_b = find_flowcell hr#flowcell_b in
+      let lane_info idx lane fc =
+        let contacts = Array.to_list lane#contacts in
+        let people =
+          List.filter_map contacts (fun ct ->
+              List.find classy_persons#persons
+                (fun p -> p#t#g_id = ct#id)) in
+        let libraries =
+          List.filter_map (Array.to_list lane#libraries) (fun lpointer ->
+              List.find hiseq_input_libs (fun hil ->
+                  hil#g_pointer = lpointer#pointer))
+          |> List.filter_map ~f:(fun il ->
+              List.find_map classy_libraries#libraries
+                (fun cl ->
+                   if (cl#stock#g_id = il#library#id)
+                   then
+                     (match
+                       List.find cl#submissions (fun sub ->
+                           List.exists sub#lane#inputs
+                             (fun i -> i#g_id = il#g_id))
+                     with
+                     | Some right_submission ->
+                       let delivered_demuxes =
+                         List.map right_submission#flowcell#hiseq_raws
+                           (fun hsr ->
+                              List.filter hsr#demultiplexings
+                                (fun demux -> demux#deliveries <> []))
+                         |> List.concat
+                       in
+                       Some (object
+                         method classy_library = cl
+                         method input_library = il
+                         method submission = right_submission
+                         method delivered_demuxes = delivered_demuxes
+                       end)
+                     | None -> None)
+                   else None))
+        in
+        object
+          method flowcell = fc
+          method lane = lane
+          method lane_index = idx
+          method people = people
+          method classy_libraries = libraries
+        end
+      in
+      let lanes_of_flowcell fc =
+        List.filter_map hiseq_lanes (fun l ->
+            let rec find_map_with_index idx = function
+            | [] -> None
+            | x :: t ->
+              if x#id = l#g_id
+              then Some (lane_info idx l fc)
+              else find_map_with_index (idx + 1) t
+            in
+            find_map_with_index 1 (Array.to_list fc#lanes))
+      in
+      let deliveries_of_flowcell fc =
+        let meta_lanes = lanes_of_flowcell fc in
+        List.map meta_lanes (fun lane ->
+            List.map lane#classy_libraries (fun cl ->
+                let delivered_demuxes = cl#delivered_demuxes in
+                List.map delivered_demuxes (fun demux ->
+                    List.filter_map demux#deliveries (fun d ->
+                        Option.bind d#client_fastqs_dir (fun s ->
+                            let invoice =
+                              List.find invoicings
+                                (fun i -> i#g_id = d#oo#invoice#id) in
+                            Option.bind invoice (fun invoice ->
+                                Option.some_if
+                                  (Array.exists lane#lane#contacts
+                                     (fun c -> c#id = invoice#pi#id))
+                                  (object
+                                    method delivery = d
+                                    method delivery_dir = s
+                                    method demux = demux
+                                    method lanes =
+                                      List.filter meta_lanes
+                                        (fun lane ->
+                                           (Array.exists lane#lane#contacts
+                                              (fun c -> c#id = invoice#pi#id)))
+                                  end)))))))
+        |> List.concat
+        |> List.concat
+        |> List.concat
+        |> List.dedup ~compare:(fun a b ->
+            Int.compare a#delivery_dir#g_id b#delivery_dir#g_id)
+      in
+
+      let make_run a_or_b flowcell deliveries =
+        Option.some_if (deliveries <> [])
+            (object
+              method hr = hr
+              method a_or_b = a_or_b
+              method flowcell = flowcell
+              method deliveries = deliveries
+            end) in
+        List.filter_opt [
+          Option.bind flowcell_a (fun f ->
+              make_run "A" f (deliveries_of_flowcell f));
+          Option.bind flowcell_b (fun f ->
+              make_run "B" f (deliveries_of_flowcell f));
+        ])
+    |> List.concat
+
 
 let classy_cache =
   let r =
@@ -108,6 +247,14 @@ let classy_cache =
                   | None -> errf "pgm input library %d has no stock (%d?)"
                               pil#g_id pil#library#id)
               >>= fun pgm_stock_libs ->
+
+
+              let meta_hiseq_runs =
+                meta_hiseq_runs
+                  ~hiseq_runs ~hiseq_flowcells ~classy_persons
+                  ~hiseq_input_libs ~classy_libraries
+                  ~hiseq_lanes ~invoicings in
+
               return (object
                 method persons = persons
                 method pgm_runs =  pgm_runs
@@ -122,6 +269,7 @@ let classy_cache =
                 method hiseq_flowcells  = hiseq_flowcells
                 method hiseq_lanes      = hiseq_lanes
                 method hiseq_input_libs = hiseq_input_libs
+                method meta_hiseq_runs = meta_hiseq_runs
 
               end))
       in
