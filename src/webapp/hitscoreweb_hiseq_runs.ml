@@ -138,6 +138,11 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
             method flowcell = mhr#flowcell
             method deliveries = l
           end))
+    |> List.sort ~cmp:(fun hr1 hr2 ->
+        let cmp_date = Time.compare hr2#hr#date hr1#hr#date in
+        if cmp_date = 0
+        then String.compare hr1#a_or_b hr2#a_or_b
+        else cmp_date)
   in
 
   let display_run hiseq_meta_run =
