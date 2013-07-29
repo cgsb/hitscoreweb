@@ -120,9 +120,7 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
                     List.exists contacts (fun c -> c#pointer = person))
               in
               match filtered_lanes with
-              | [] ->
-                dbg "%s filtered OUT" deliv#delivery_dir#directory;
-                None
+              | [] -> None
               | l ->
                 Some (object
                   method delivery = deliv#delivery
@@ -251,14 +249,8 @@ let make configuration =
        >>= fun can_view_all_flowcells ->
        if can_view_hiseq_runs
        then
-
-         person_flowcells ~configuration (Layout.Record_person.unsafe_cast 3150)
-         >>= fun content ->
-           Template.make_content ~configuration
-             ~main_title:"HiSeq Runs" (return content)
-
-         (* Template.make_content ~configuration *)
-           (* ~main_title:"HiSeq Runs" (hiseq_runs configuration) *)
+         Template.make_content ~configuration
+         ~main_title:"HiSeq Runs" (hiseq_runs configuration)
        else if can_view_all_flowcells
        then
          begin
