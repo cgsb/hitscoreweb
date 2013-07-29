@@ -98,83 +98,12 @@ let hiseq_runs ~configuration =
                `head [pcdata "Flowcell B"]; ]
              :: sorted))
 
-let lanes_table lanes dmux_sum_opt =
-  let open Html5 in
-  let open Template in
-  let open Option in
-  let open Broker_types in
-  let module SL = Layout.Record_stock_library in
-  let lib_name lib_in_lan =
-    let p = lib_in_lan.lil_stock.SL.g_value.SL.project in
-    let n = lib_in_lan.lil_stock.SL.g_value.SL.name in
-    sprintf "%s%s" Option.(value_map p ~default:"" ~f:(sprintf "%s.")) n in
-  let lib_link l =
-    Template.a_link Services.libraries
-      [pcdata l.lil_stock.SL.g_value.SL.name] ([`basic], [lib_name l]) in
-  let nb0 f = `number (sprintf "%.0f", f) in
-  let nb2 f = `number (sprintf "%.2f", f) in
-  let one_lane l =
-    let without_phix =
-      List.filter l.lane_libraries ~f:(fun lib ->
-        lib.lil_stock.SL.g_value.SL.name <> "PhiX_v3"
-        && lib.lil_stock.SL.g_value.SL.name <> "PhiX_v2")
-    in
-    `subtable
-      (List.map without_phix (fun lib ->
-        let stats =
-          let module Bui = Hitscore_interfaces.B2F_unaligned_information in
-          dmux_sum_opt
-          >>= fun dmx ->
-          List.find dmx.(l.lane_index - 1)
-            (fun x ->
-              x.Bui.name = lib.lil_stock.SL.g_value.SL.name)
-          >>= fun found ->
-          return [nb0 found.Bui.cluster_count;
-                  nb2 (100. *. found.Bui.yield_q30 /. found.Bui.yield);
-                  nb2 (found.Bui.quality_score_sum /. found.Bui.yield)]
-        in
-        let desc = value ~default:"" lib.lil_stock.SL.g_value.SL.description in
-        let proj = Option.value ~default:"" lib.lil_stock.SL.g_value.SL.project in
-        [ `sortable (lib.lil_stock.SL.g_value.SL.name, [lib_link lib]);
-          `sortable (proj, [pcdata proj]);
-          `sortable (desc, [pcdata desc]) ]
-        @ (value ~default:[] stats)))
-  in
-  let base_head =
-    [ `head_cell Msg.lane;
-      `head_cell Msg.library_name;
-      `head_cell Msg.library_project;
-      `head_cell Msg.library_description ] in
-  let summary_head =
-    match dmux_sum_opt with
-    | None -> []
-    | Some o ->
-      [ `head_cell Msg.number_of_reads;
-        `head_cell Msg.percent_bases_over_q30;
-        `head_cell Msg.mean_qs ] in
-  ((base_head @ summary_head)
-   ::
-     (List.map
-        (List.sort ~cmp:(fun la lb -> Int.compare la.lane_index lb.lane_index)
-           lanes)
-        (fun l ->
-           [ `text [pcdataf "Lane %d" l.lane_index]; one_lane l ])))
-
-let simple_lanes_table lanes =
-  lanes_table lanes None
-
-let lanes_table_with_stats lanes dmux_sum =
-  lanes_table lanes dmux_sum
-
-
 let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
   let open Html5 in
   let open Template in
 
-  (* let open Broker_types in *)
   let start_time = Time.(now () |> to_float) in
 
-  (* Web_data_access.broker () >>= fun broker -> *)
   Web_data_access.classy_cache ()
   >>= fun classy_cache ->
   flow_some  ~err:(`hiseq_runs (`cannot_retrieve_person_affairs person))
@@ -227,11 +156,6 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
                           | None -> None)
                         else None))
              in
-              (*
-                 find libraries
-                 check all data is there
-                 provide table of paths?
-              *)
              object
                method flowcell = fc
                method lane = lane
@@ -382,69 +306,6 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
               content_section title  section_content)))
   in
 
-  (*
-  while_sequential affairs.pa_flowcells (fun fc ->
-    while_sequential  fc.ff_runs (fun run ->
-      Broker.delivered_demultiplexings broker run
-      >>| List.filter_map ~f:(fun ddmux ->
-        let person_deliveries =
-          List.filter ddmux.ddmux_deliveries ~f:(fun (fpud, cfd) ->
-            List.exists fc.ff_lanes
-              ~f:(fun lane ->
-                List.exists lane.lane_invoices
-                  ~f:(fun invoice ->
-                    Layout.Function_prepare_unaligned_delivery.(
-                      fpud.g_evaluation.invoice.Layout.Record_invoicing.id)
-                    = invoice.Layout.Record_invoicing.g_id)))
-        in
-        if person_deliveries = []
-        then None
-        else Some (ddmux, person_deliveries))
-      >>= fun run_deliveries ->
-      while_sequential run_deliveries ~f:(fun (ddmux, pdeliv) ->
-        let dmux_summary_m =
-          Data_access.File_cache.get_demux_summary ddmux.ddmux_summary_path
-        in
-        double_bind dmux_summary_m
-          ~ok:(fun dmux_summary -> return (ddmux, pdeliv, Some dmux_summary))
-          ~error:(fun e ->
-            eprintf "Error getting: %s\n%!" ddmux.ddmux_summary_path;
-            return (ddmux, pdeliv, None)))
-      >>= fun run_deliveries_with_stats ->
-      return (run, run_deliveries_with_stats))
-    >>= fun runs_and_deliveries ->
-    let run_subsections =
-      List.map runs_and_deliveries (fun (hrt, deliveries) ->
-        let date = Layout.Record_hiseq_run.(hrt.hr_t.g_value.date) in
-        let run_title =
-          pcdataf "%s Run" (Time.to_local_date date |> Date.to_string) in
-        let deliveries_list =
-          let delivery_title cfd =
-            span [
-              pcdata "Delivery ";
-              codef "%s" Layout.Record_client_fastqs_dir.(cfd.g_value.directory);
-              pcdata " on ";
-              html_of_cluster Layout.Record_client_fastqs_dir.(cfd.g_value.host);
-            ] in
-          List.map deliveries (fun (ddmux, delivp, dmux_sum) ->
-            List.map delivp (fun (fpub, cfd) ->
-              content_section (delivery_title cfd)
-                (lanes_table_with_stats broker fc.ff_lanes dmux_sum
-                 |> content_table))
-          ) |> List.concat;
-        in
-        if deliveries = []
-        then
-          content_section run_title
-            (simple_lanes_table broker fc.ff_lanes |> content_table)
-        else
-          content_section run_title (content_list deliveries_list)
-      )
-    in
-    return (content_section (pcdataf "Flowcell %s" fc.ff_id)
-              (content_list run_subsections)))
-  >>= fun sections ->
-  *)
   let middle_time = Time.(now () |> to_float) in
   let sections = List.map ~f:display_run meta_hiseq_runs in
   let end_time = Time.(now () |> to_float) in
