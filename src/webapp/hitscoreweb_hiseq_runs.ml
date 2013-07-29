@@ -110,114 +110,36 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
     (List.find classy_cache#classy_persons#persons
        (fun p -> p#t#g_pointer = person))
   >>= fun person_affairs ->
-  let meta_hiseq_runs =
-    List.map classy_cache#hiseq_runs (fun hr ->
-        let find_flowcell fcopt =
-          Option.bind fcopt (fun fc ->
-              List.find classy_cache#hiseq_flowcells (fun f -> f#g_id = fc#id))
-        in
-        let flowcell_a = find_flowcell hr#flowcell_a in
-        let flowcell_b = find_flowcell hr#flowcell_b in
-        let lane_info idx lane fc =
-          let contacts = Array.to_list lane#contacts in
-          Option.some_if (List.exists contacts (fun c -> c#pointer = person))
-            (let people =
-              List.filter_map contacts (fun ct ->
-                  List.find classy_cache#classy_persons#persons
-                    (fun p -> p#t#g_id = ct#id)) in
-             let libraries =
-               List.filter_map (Array.to_list lane#libraries) (fun lpointer ->
-                   List.find classy_cache#hiseq_input_libs (fun hil ->
-                       hil#g_pointer = lpointer#pointer))
-               |> List.filter_map ~f:(fun il ->
-                   List.find_map classy_cache#classy_libraries#libraries
-                     (fun cl ->
-                        if (cl#stock#g_id = il#library#id)
-                        then
-                          (match
-                            List.find cl#submissions (fun sub ->
-                                List.exists sub#lane#inputs
-                                  (fun i -> i#g_id = il#g_id))
-                          with
-                          | Some right_submission ->
-                            let delivered_demuxes =
-                              List.map right_submission#flowcell#hiseq_raws
-                                (fun hsr ->
-                                   List.filter hsr#demultiplexings
-                                     (fun demux -> demux#deliveries <> []))
-                              |> List.concat
-                            in
-                            Some (object
-                              method classy_library = cl
-                              method input_library = il
-                              method submission = right_submission
-                              method delivered_demuxes = delivered_demuxes
-                            end)
-                          | None -> None)
-                        else None))
-             in
-             object
-               method flowcell = fc
-               method lane = lane
-               method lane_index = idx
-               method people = people
-               method classy_libraries = libraries
-             end)
-        in
-        let lanes_of_flowcell fc =
-          List.filter_map classy_cache#hiseq_lanes (fun l ->
-              let rec find_map_with_index idx = function
-              | [] -> None
-              | x :: t ->
-                if x#id = l#g_id
-                then lane_info idx l fc
-                else find_map_with_index (idx + 1) t
+  let filtered_meta_hiseq_runs =
+    List.filter_map classy_cache#meta_hiseq_runs (fun mhr ->
+        let filtered_deliveries =
+          List.filter_map mhr#deliveries (fun deliv ->
+              let filtered_lanes =
+                List.filter deliv#lanes (fun l ->
+                    let contacts = Array.to_list l#lane#contacts in
+                    List.exists contacts (fun c -> c#pointer = person))
               in
-              find_map_with_index 1 (Array.to_list fc#lanes))
+              match filtered_lanes with
+              | [] ->
+                dbg "%s filtered OUT" deliv#delivery_dir#directory;
+                None
+              | l ->
+                Some (object
+                  method delivery = deliv#delivery
+                  method delivery_dir = deliv#delivery_dir
+                  method demux = deliv#demux
+                  method lanes = l
+                end))
         in
-        let deliveries_of_flowcell fc =
-          let meta_lanes = lanes_of_flowcell fc in
-          List.map meta_lanes (fun lane ->
-              List.map lane#classy_libraries (fun cl ->
-                  let delivered_demuxes = cl#delivered_demuxes in
-                  List.map delivered_demuxes (fun demux ->
-                      List.filter_map demux#deliveries (fun d ->
-                          Option.bind d#client_fastqs_dir (fun s ->
-                              let invoice =
-                                List.find classy_cache#invoicings
-                                  (fun i -> i#g_id = d#oo#invoice#id) in
-                              Option.bind invoice (fun invoice ->
-                                  Option.some_if
-                                    (Array.exists lane#lane#contacts
-                                       (fun c -> c#id = invoice#pi#id))
-                                    (object
-                                      method delivery = d
-                                      method delivery_dir = s
-                                      method demux = demux
-                                      method lanes = meta_lanes
-                                    end)))))))
-          |> List.concat
-          |> List.concat
-          |> List.concat
-          |> List.dedup ~compare:(fun a b ->
-              Int.compare a#delivery_dir#g_id b#delivery_dir#g_id)
-        in
-
-        let make_run a_or_b flowcell deliveries =
-          Option.some_if (deliveries <> [])
-            (object
-              method hr = hr
-              method a_or_b = a_or_b
-              method flowcell = flowcell
-              method deliveries = deliveries
-            end) in
-        List.filter_opt [
-          Option.bind flowcell_a (fun f ->
-              make_run "A" f (deliveries_of_flowcell f));
-          Option.bind flowcell_b (fun f ->
-              make_run "B" f (deliveries_of_flowcell f));
-        ])
-    |> List.concat
+        match filtered_deliveries with
+        | [] -> None
+        | l ->
+          Some (object
+            method hr = mhr#hr
+            method a_or_b = mhr#a_or_b
+            method flowcell = mhr#flowcell
+            method deliveries = l
+          end))
   in
 
   let display_run hiseq_meta_run =
@@ -307,7 +229,7 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
   in
 
   let middle_time = Time.(now () |> to_float) in
-  let sections = List.map ~f:display_run meta_hiseq_runs in
+  let sections = List.map ~f:display_run filtered_meta_hiseq_runs in
   let end_time = Time.(now () |> to_float) in
   let content =
     content_list ((content_paragraph [pcdataf "DEBUG INFO: %f s, rendering: %f s"
