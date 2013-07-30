@@ -684,9 +684,7 @@ TODO: All exceptions in coservices should be handled in some other way
             ?vol_directory:!vols ?raw_data_path:!raw ?hiseq_directory:!hsd
             ?root_path:!rodi ?db_configuration () in
         Authentication.init ~disabled:!debug_mode ?pam_service:!pam_service config;
-        Web_data_access.init
-          ~loop_time:(if !debug_mode then 90. else 600.)
-          ~configuration:config ()
+        Web_data_access.init ~configuration:config ()
         |> Lwt.ignore_result;
         let state =
           Hitscoreweb_state.init_state ~configuration:config () in

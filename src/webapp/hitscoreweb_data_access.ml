@@ -1,37 +1,5 @@
 open Hitscoreweb_std_server
 
-type broker_error =
-[ `broker_not_initialized
-| `io_exn of exn
-| `db_backend_error of Backend.error
-| `Layout of
-        Hitscore_layout.Layout.error_location *
-          Hitscore_layout.Layout.error_cause
-| `pg_exn of exn ]
-
-let _global_broker : broker_error Broker.t option ref = ref None
-
-let _global_timeout = ref 500.
-
-let broker () =
-  match !_global_broker with
-  | Some b -> return b
-  | None -> error `broker_not_initialized
-
-let rec update  ~configuration () =
-  with_database configuration (fun ~dbh ->
-    begin match !_global_broker with
-    | Some b ->
-      Broker.reload b ~dbh ~configuration
-      >>= fun () ->
-      logf "Broker reloaded"
-    | None -> return ()
-    end)
-  >>= fun () ->
-  wrap_io Lwt_unix.sleep !_global_timeout
-  >>= fun () ->
-  update ~configuration ()
-
 
 
 let _loop_withing_time = ref 5.
@@ -273,7 +241,7 @@ let classy_cache =
 
               end))
       in
-      eprintf "Creation of classy pgm data\n%!";
+      eprintf "Update of classy data\n%!";
       r := Some classy_info;
       classy_info ()
       >>= fun c ->
@@ -286,25 +254,11 @@ let classy_cache =
     end
   end
 
-let init ~loop_time ~configuration () =
-  _global_timeout := loop_time;
+let init ~configuration () =
   _configuration := configuration;
-  (* classy_persons () *)
-  (* >>= fun _ -> *)
-  with_database configuration (fun ~dbh ->
-    let broker_mutex = Lwt_mutex.create () in
-    let mutex =
-      ((fun () -> wrap_io Lwt_mutex.lock broker_mutex),
-       (fun () -> Lwt_mutex.unlock broker_mutex)) in
-    Broker.create ~mutex ~dbh ~configuration ()
-    >>= fun broker ->
-    logf "Broker created" >>= fun () ->
-    _global_broker := Some broker;
-    return ())
-  >>= fun () ->
-  wrap_io Lwt_unix.sleep !_global_timeout
-  >>= fun () ->
-  update ~configuration ()
+  classy_cache ()
+  >>= fun _ ->
+  return ()
 
 
 let find_person_opt id =
