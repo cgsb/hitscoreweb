@@ -1,12 +1,33 @@
+(*D
+
+`Web_data_access`: Manage the Cache of the Data-base
+----------------------------------------------------
+
+
+*)
 open Hitscoreweb_std_server
 
+(*D
 
+### The Classy Cache
 
+These global variables are used by the asynchronous update of the
+“classy cache”.
+
+The configuration must be set before the first call to `classy_cache`
+(i.e. use the function `init`).
+
+*)
 let _loop_withing_time = ref 5.
 let _allowed_age = ref 60.
 let _maximal_age = ref 900.
 let _configuration = ref (Configuration.configure ())
 
+(*D
+
+The use of the `Layout.Classy` module forces us to fix this error
+type:
+*)
 type classy_error =
 [ `Layout of
     Hitscore_layout.Layout.error_location *
@@ -15,6 +36,12 @@ type classy_error =
 | `io_exn of exn
 | `root_directory_not_configured
 ]
+
+(*D
+
+This is a description of the contents of the “classy cache”:
+
+*)
 type classy_cache = <
   persons: classy_error Classy.person_element list;
   pgm_runs : classy_error Classy.pgm_run_element list;
@@ -56,6 +83,16 @@ type classy_cache = <
   > list;
 >
 
+(*D
+
+This function is the part of `classy_cache` that creates/updates the
+`meta_hiseq_runs` field. It basically reorganizes the data so that the
+`/hiseq_runs` service for normal users just has to filter it for the
+given user and display.
+
+Note that when this code was part of the `/hiseq_runs` service the
+page loading time was much much bigger.
+*)
 let meta_hiseq_runs
     ~hiseq_runs ~hiseq_flowcells ~classy_persons
     ~hiseq_input_libs ~classy_libraries
@@ -171,7 +208,15 @@ let meta_hiseq_runs
         ])
     |> List.concat
 
+(*D
 
+This is the main function of the module that provides the whole
+currently available cache object.
+
+The first time it is called it starts the asynchronous update loop,
+see `Hitscore.Data_access.init_retrieval_loop`.
+
+*)
 let classy_cache =
   let r =
     ref (None: (unit ->
@@ -205,8 +250,6 @@ let classy_cache =
               layout_cache#flowcell    >>= fun hiseq_flowcells ->
               layout_cache#lane        >>= fun hiseq_lanes->
               layout_cache#input_library   >>= fun hiseq_input_libs->
-
-
               while_sequential pgm_input_libs (fun pil ->
                   match
                     List.find stock_libs (fun sl -> sl#g_id = pil#library#id)
@@ -215,14 +258,11 @@ let classy_cache =
                   | None -> errf "pgm input library %d has no stock (%d?)"
                               pil#g_id pil#library#id)
               >>= fun pgm_stock_libs ->
-
-
               let meta_hiseq_runs =
                 meta_hiseq_runs
                   ~hiseq_runs ~hiseq_flowcells ~classy_persons
                   ~hiseq_input_libs ~classy_libraries
                   ~hiseq_lanes ~invoicings in
-
               return (object
                 method persons = persons
                 method pgm_runs =  pgm_runs
@@ -238,10 +278,9 @@ let classy_cache =
                 method hiseq_lanes      = hiseq_lanes
                 method hiseq_input_libs = hiseq_input_libs
                 method meta_hiseq_runs = meta_hiseq_runs
-
               end))
       in
-      eprintf "Update of classy data\n%!";
+      eprintf "Creation of classy data\n%!";
       r := Some classy_info;
       classy_info ()
       >>= fun c ->
@@ -254,13 +293,28 @@ let classy_cache =
     end
   end
 
+(*D
+
+The purpose of the `init` function is to set the `_configuration`
+global variable and to start the update loop.
+
+*)
 let init ~configuration () =
   _configuration := configuration;
   classy_cache ()
   >>= fun _ ->
   return ()
 
+(*D
 
+### Finding People
+
+These functions are “shortcuts” which use the `classy_cache`
+themselves, to find users in different forms.
+
+This one finds a “classy person” option using it's emails addresses or
+login.
+*)
 let find_person_opt id =
   classy_cache ()
   >>= fun classy_cache ->
@@ -271,6 +325,11 @@ let find_person_opt id =
         then Some p
         else None))
 
+(*D
+
+This one is like the previous but fails on `None`.
+
+*)
 let find_person id =
   find_person_opt id
   >>= fun op ->
@@ -279,6 +338,12 @@ let find_person id =
   | None -> error (`person_not_found id)
   end
 
+(*D
+
+These three functions find a “classy person” by data-base identifier
+(`int`) or typed pointer (`Layout.Record_person.pointer`).
+
+*)
 let get_person_by_id id =
   classy_cache ()
   >>= fun classy_cache ->
@@ -301,6 +366,14 @@ let person_by_pointer p =
   | None -> error (`person_not_found (Int.to_string p.id))
   end
 
+(*D
+
+### Additional Functions
+
+This function helps the error management with the `Flow` monad by
+encapsulating errors into <code>`classy_data_access of 'error</code>.
+
+*)
 let wrap_action f x =
   f x
   >>< begin function
