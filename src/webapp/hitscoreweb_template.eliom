@@ -756,7 +756,8 @@ let rec html_of_content ?(section_level=2) content =
             Json.t<unit> (fun () ->
                 let next, delay = List.split_n !to_serve p in
                 to_serve := delay;
-                return ((next |> List.concat): _ list)
+                let ret = (next |> List.concat) in
+                return (ret: _ list)
               ) in
         let span_id = id ^ "message" in
         let onload_js = {{ fun ev ->
@@ -768,13 +769,26 @@ let rec html_of_content ?(section_level=2) content =
             let table =
               get_exn "table" (Dom_html.CoerceTo.table (get_element_exn %id)) in
             Lwt.ignore_result begin
+              let msg = get_element_exn %span_id in
               let rec loop () =
-                (%next ())
+                let waiting_thread =
+                  let rec loop n =
+                    msg##innerHTML <-
+                      ksprintf Js.string "<code>Getting more rows … %s</code>"
+                        (String.make n '=');
+                    Lwt_js.sleep 0.3
+                    >>= fun () ->
+                    loop (n + 1) in
+                  loop 0
+                in
+                Lwt.on_cancel waiting_thread (fun () ->
+                    dbg "Waiting thread canceled !"
+                  );
+                Lwt.pick [waiting_thread; (%next ())]
                 >>= fun next_bunch ->
                 begin match next_bunch with
                 | [] ->
                   dbg "loading table finished";
-                  let msg = get_element_exn %span_id in
                   msg##style##display <- Js.string "none";
                   return ()
                 | some ->
@@ -836,7 +850,7 @@ let rec html_of_content ?(section_level=2) content =
                       | e -> dbg "Exn: %s" (Printexc.to_string e)
                       end
                     );
-                  Lwt_js.sleep 0.1
+                  Lwt_js.yield ()
                   >>= fun () ->
                   loop ()
                 end
