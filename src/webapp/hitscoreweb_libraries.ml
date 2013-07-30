@@ -351,7 +351,7 @@ let libraries_table ~showing ~can_view_fastq_details info =
         if List.exists where ~f:(fun w -> List.exists showing ((=) w))
         then Some (what ()) else None)) in
   let progressive =
-    if List.length table > 200 then Some 30 else None in
+    if List.length table > 300 then Some 10 else None in
   Template.content_table ~style:`alternate_colors table ?progressive
 
 let benchmarks work_started info_got table_generated info =
