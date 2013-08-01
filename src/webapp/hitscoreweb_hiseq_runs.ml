@@ -186,7 +186,11 @@ let person_flowcells ~configuration (person : Layout.Record_person.pointer) =
                     cl#classy_library#stock#name <> "PhiX_v3"
                     && cl#classy_library#stock#name <> "PhiX_v2")
               |> List.map ~f:(fun cl ->
-                  let libname = pcdata cl#classy_library#stock#name in
+                  let libname =
+                    span (Hitscoreweb_libraries.qualified_link
+                            ~showing:[`basic;`fastq]
+                            cl#classy_library#stock#project
+                            cl#classy_library#stock#name )  in
                   let libproj =
                     Option.value_map ~f:pcdata ~default:(pcdata "")
                       cl#classy_library#stock#project in
