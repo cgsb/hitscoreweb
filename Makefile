@@ -11,17 +11,24 @@ _build/hitscoreweb/%.ml: src/webapp/%.ml
 	CC=$$PWD ; cd _build/hitscoreweb ; ln -s ../../$< ; cd $$CC
 _build/hitscoreweb/Makefile: src/webapp/Makefile
 	CC=$$PWD ; cd _build/hitscoreweb ; ln -s ../../$< ; cd $$CC
+_build/hsw_manager.ml: src/app/hsw_manager.ml
+	CC=$$PWD ; cd _build/ ; ln -s ../$< ; cd $$CC
 
 TO_MOUNT=$(patsubst src/webapp/%,_build/hitscoreweb/%,${wildcard src/webapp/*})
 mount_hitscoreweb:: _build/hitscoreweb $(TO_MOUNT)
 
-build: mount_hitscoreweb
-	make -C _build/hitscoreweb byte js css
-	ocaml setup.ml -build
+hsw_manager: _build/hsw_manager.ml
+	ocamlfind ocamlc -package core,hitscore -thread -linkpkg $< -o $@
 
-build_opt: mount_hitscoreweb
+build: mount_hitscoreweb hsw_manager
+	make -C _build/hitscoreweb byte js css
+
+# ocaml setup.ml -build
+
+build_opt: mount_hitscoreweb hsw_manager
 	make -C _build/hitscoreweb  opt js css
-	ocaml setup.ml -build
+
+#	ocaml setup.ml -build
 
 _build/hitscoreweb/hitscoreweb.cmxa: build_opt
 
@@ -33,7 +40,7 @@ hitscoreserver: _build/hitscoreweb/hitscoreweb.cmxa
 	     _build/hitscoreweb/hitscoreweb.cmxa \
 	     server_main.cmx -o hitscoreserver -linkpkg -thread
 
-static:  hitscoreserver
+static:  hitscoreserver hsw_manager
 
 install: build
 	ocaml setup.ml -reinstall
