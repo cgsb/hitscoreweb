@@ -244,22 +244,16 @@ let libraries_table ~showing ~can_view_fastq_details ~classy_cache ~user_opt inf
         cell_fmt "%s" (String.concat ~sep:"/" (Array.to_list lib#stock#application)));
       stock (fun () ->
         let f b =
-          match b#kind with
-          | `custom ->
-            sprintf "Custom[%s%s%s]"
-              (Option.value ~default:"None" b#sequence)
-              Option.(value_map b#read ~default:"" ~f:(function
-                | 1 -> "-read1" | 2 -> "-index" | 3 -> "-read2"
-                | r -> sprintf "-R%d" r))
-              Option.(value_map b#position ~default:"" ~f:(sprintf ":%d"))
-          | `bioo     -> sprintf     "BIOO[%d]" (Option.value ~default:0 b#index)
-          | `bioo_96  -> sprintf  "BIOO-96[%d]" (Option.value ~default:0 b#index)
-          | `illumina -> sprintf "Illumina[%d]" (Option.value ~default:0 b#index)
-          | `nugen    -> sprintf    "NuGen[%d]" (Option.value ~default:0 b#index)
+          let o o default = Option.value ~default o in
+          sprintf "%s:%s[%s:%s:%s]"
+            (o b#provider "Custom") (o b#name "?")
+            (o b#read "?")
+            (Option.value_map b#position ~default:"?" ~f:(sprintf "%d"))
+            (o b#sequence "?")
         in
         cell_text (String.concat ~sep:" OR "
                      (List.map lib#barcoding (fun l ->
-                       String.concat ~sep:" AND " (List.map l ~f)))));
+                          String.concat ~sep:" AND " (List.map l ~f)))));
       stock (fun () -> cell_int_option lib#stock#x_adapter_length);
       stock (fun () -> cell_int_option lib#stock#y_adapter_length);
       stock (fun () -> cell_text (Bool.to_string lib#stock#stranded));
