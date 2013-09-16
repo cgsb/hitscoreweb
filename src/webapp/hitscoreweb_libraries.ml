@@ -748,6 +748,11 @@ let make ~configuration =
            >>= fun filtered_info ->
            let info_got = Time.now () in
            let showing = if showing = [] then [`fastq] else showing in
+           Authentication.spy_userf "/libraries: [%s] Showing [%s]"
+             (String.concat ~sep:", " qualified_names)
+             (List.map showing Services.string_of_libraries_show
+              |> String.concat ~sep:", ")
+           >>= fun () ->
            libraries ~showing work_started info_got filtered_info)
        | false ->
          Template.make_authentication_error ~configuration ~main_title
