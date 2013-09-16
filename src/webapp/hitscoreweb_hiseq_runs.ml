@@ -246,6 +246,9 @@ let make configuration =
        >>= fun can_view_hiseq_runs ->
        Authentication.authorizes (`view `user_hiseq_runs)
        >>= fun can_view_all_flowcells ->
+       Authentication.spy_userf "/hiseq_runs: can view: %b, will view all: %b"
+         can_view_hiseq_runs can_view_all_flowcells
+       >>= fun () ->
        if can_view_hiseq_runs
        then
          Template.make_content ~configuration
