@@ -18,9 +18,9 @@ The configuration must be set before the first call to `classy_cache`
 (i.e. use the function `init`).
 
 *)
-let _loop_withing_time = ref 5.
-let _allowed_age = ref 60.
-let _maximal_age = ref 900.
+let _loop_withing_time = ref 25.
+let _allowed_age = ref 120.
+let _maximal_age = ref (60. *. 20.)
 let _configuration = ref (Configuration.configure ())
 
 (*D
@@ -36,6 +36,10 @@ type classy_error =
 | `io_exn of exn
 | `root_directory_not_configured
 ]
+
+let lwt_yield_unit () =
+  Lwt_main.yield () |> Lwt.ignore_result
+let lwt_slow_down () = Lwt.(Lwt_unix.sleep 0.1 >>= fun () -> return (Ok ()))
 
 (*D
 
@@ -98,6 +102,7 @@ let meta_hiseq_runs
     ~hiseq_input_libs ~classy_libraries
     ~hiseq_lanes ~invoicings =
   List.map hiseq_runs (fun hr ->
+      lwt_yield_unit ();
       let find_flowcell fcopt =
         Option.bind fcopt (fun fc ->
             List.find hiseq_flowcells (fun f -> f#g_id = fc#id))
@@ -151,6 +156,7 @@ let meta_hiseq_runs
       in
       let lanes_of_flowcell fc =
         List.filter_map hiseq_lanes (fun l ->
+            lwt_yield_unit ();
             let rec find_map_with_index idx = function
             | [] -> None
             | x :: t ->
@@ -237,9 +243,11 @@ let classy_cache =
               Data_access.make_classy_persons_information
                 ~configuration ~layout_cache
               >>= fun classy_persons ->
+              lwt_slow_down () >>= fun () ->
               Data_access.make_classy_libraries_information
                 ~configuration ~layout_cache
               >>= fun classy_libraries ->
+              lwt_slow_down () >>= fun () ->
               layout_cache#person >>= fun persons ->
               layout_cache#pgm_run >>= fun pgm_runs ->
               layout_cache#pgm_pool >>= fun pgm_pools ->
