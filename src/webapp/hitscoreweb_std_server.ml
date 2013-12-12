@@ -76,6 +76,7 @@ let logf fmt = ksprintf log fmt
 (*
   https://bitbucket.org/yminsky/ocaml-core/src/c0e9df7b574d/base/core/extended/lib/sendmail.mli
 *)
+    (*
 let send_mail ?subject ?sender ?cc ?bcc ?reply_to ?content_type ~recipients content =
   let m =
     wrap_io
@@ -86,6 +87,7 @@ let send_mail ?subject ?sender ?cc ?bcc ?reply_to ?content_type ~recipients cont
   in
   double_bind m ~ok:return ~error:(function
   | `io_exn e -> error (`sendmail e))
+*)
 
 let rec interleave_list ~sep = function
   | [] -> []

@@ -4,7 +4,7 @@
 APP_NAME := hitscoreweb
 
 ## Packages required to build the server part of the application
-SERVER_PACKAGES := hitscoregen threads core hitscore core_extended re.posix eliom.server tyxml
+SERVER_PACKAGES := hitscoregen threads core hitscore re.posix eliom.server tyxml
 
 ## Packages to be linked in the client part
 
@@ -33,6 +33,7 @@ SERVER_FILES := $(COMMON_FILES) \
   hitscoreweb_flowcell_service.ml \
   hitscoreweb_facility_stats.ml \
   hitscoreweb_libraries.ml \
+  sequme_doc_syntax.ml \
   hitscoreweb.ml
 CLIENT_FILES := $(COMMON_FILES)
 

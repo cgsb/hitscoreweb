@@ -166,6 +166,7 @@ let do_edition ~state id cap edition =
     )
 
 let add_or_change_email ~id ?current ~next person =
+  (*
   let key =
     let rng = Cryptokit.Random.pseudo_rng Time.(now () |> to_string) in
     let s = String.make 42 'B' in
@@ -176,12 +177,13 @@ let add_or_change_email ~id ?current ~next person =
   let service =
     Eliom_service.preapply (email_verification_service ())
       (id, (next, (current, key))) in
-  let uri = Html5.make_string_uri ~absolute:true ~service () in
+  (* let uri = Html5.make_string_uri ~absolute:true ~service () in *)
   wrap_io Lwt.(fun () ->
     Eliom_reference.get email_verification_tokens
     >>= fun tokens ->
     Eliom_reference.set email_verification_tokens ((id, next, key) :: tokens)) ()
   >>= fun () ->
+  (*
   send_mail ~sender:"gencore.bio@nyu.edu"
     ~subject:"Gencore Email Verification"
     ~reply_to:["noreply"]
@@ -190,6 +192,8 @@ let add_or_change_email ~id ?current ~next person =
     (sprintf "Please, click on that link this link to verify \
                     your email address:\n\n%s\n\n" uri)
   >>= fun () ->
+  *)
+  *)
   error (`email_verification_in_progress (42, next))
 
 
