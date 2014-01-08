@@ -107,6 +107,10 @@ let layout_log ~dbh fmt =
 
 let dbg fmt = ksprintf (fun s -> eprintf "DBG: %s\n%!" s) fmt
 
+let dbgt fmt =
+  ksprintf (fun s -> dbg "%.4f: %s" Time.(now ()|> to_float) s) fmt
+
+
 let pretty_string_of_float ?(sof=sprintf "%.3f") f =
   let s = sof f in
   let rec f s =
