@@ -36,7 +36,7 @@ hitscoreserver: _build/hitscoreweb/hitscoreweb.cmxa
 	ocamlfind ocamlopt -linkall \
 	    -package ocsigenserver,ocsigenserver.ext.ocsipersist-sqlite  \
 	    -package eliom.server,ocsigenserver.ext.staticmod  \
-	    -package re.posix,hitscore,core_extended \
+	    -package re.posix,hitscore \
 	     _build/hitscoreweb/hitscoreweb.cmxa \
 	     server_main.cmx -o hitscoreserver -linkpkg -thread
 
