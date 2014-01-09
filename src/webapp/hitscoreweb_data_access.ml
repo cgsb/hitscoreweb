@@ -266,11 +266,13 @@ let classy_cache =
                   | None -> errf "pgm input library %d has no stock (%d?)"
                               pil#g_id pil#library#id)
               >>= fun pgm_stock_libs ->
-              let meta_hiseq_runs =
-                meta_hiseq_runs
-                  ~hiseq_runs ~hiseq_flowcells ~classy_persons
-                  ~hiseq_input_libs ~classy_libraries
-                  ~hiseq_lanes ~invoicings in
+              (* let meta_hiseq_runs = *)
+              Lwt_preemptive.detach (fun () ->
+                Ok (meta_hiseq_runs
+                    ~hiseq_runs ~hiseq_flowcells ~classy_persons
+                    ~hiseq_input_libs ~classy_libraries
+                    ~hiseq_lanes ~invoicings)) ()
+              >>= fun meta_hiseq_runs ->
               return (object
                 method persons = persons
                 method pgm_runs =  pgm_runs
