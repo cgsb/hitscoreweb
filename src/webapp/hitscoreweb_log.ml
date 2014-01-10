@@ -46,6 +46,79 @@ let user_spying () =
       return (div [section; div [ul content]] :: acc))
 
 
+let feature_to_string = function
+| `fd_passing      ->  "fd_passing"
+| `fdatasync       ->  "fdatasync"
+| `get_affinity    ->  "get_affinity"
+| `get_cpu         ->  "get_cpu"
+| `get_credentials ->  "get_credentials"
+| `libev           ->  "libev"
+| `madvise         ->  "madvise"
+| `mincore         ->  "mincore"
+| `recv_msg        ->  "recv_msg"
+| `send_msg        ->  "send_msg"
+| `set_affinity    ->  "set_affinity"
+| `wait4           ->  "wait4"
+
+let features = [
+  `fd_passing     ;
+  `fdatasync      ;
+  `get_affinity   ;
+  `get_cpu        ;
+  `get_credentials;
+  `libev          ;
+  `madvise        ;
+  `mincore        ;
+  `recv_msg       ;
+  `send_msg       ;
+  `set_affinity   ;
+  `wait4          ;
+]
+
+
+
+let lwt_monitor_info =
+  let open Lwt in
+  let started = ref false in
+  let previous = ref (None : float option) in
+  let reads = ref [] in
+  fun () ->
+    begin match !started with
+    | false ->
+      Lwt.ignore_result begin
+        let rec loop () =
+          let time = Time.(now () |> to_float) in
+          begin match !previous with
+          | None -> previous := Some time
+          | Some p ->
+            (* if time -. p > !maximum then maximum := time -. p else (); *)
+            reads := (time, time -. p) :: !reads;
+            if List.length !reads > 10 then (
+              reads := List.sort 
+                  ~cmp:(fun a b -> Float.compare (snd b) (snd a)) !reads 
+                       |> (fun l -> List.take l 10);
+            );
+            previous := Some time;
+          end;
+          Lwt_main.yield () >>= fun () ->
+          loop ()
+        in
+        loop ()
+      end;
+      started := true;
+    | true -> ();
+    end;
+    let open Html5 in
+    div [
+      pcdataf "Maximal unavailability:";
+      ul (List.map !reads ~f:(fun (date, delay) ->
+          li [pcdataf "%s (%.3f): %f" 
+                Time.(of_float date |> to_string) date delay]));
+      pcdataf "Features:";
+      ul (List.map features ~f:(fun f ->
+          li [pcdataf "%s: %b" (feature_to_string f) (Lwt_sys.have f)]));
+    ]
+
 let make ~state =
   (fun () () ->
     let open Html5 in
@@ -78,6 +151,8 @@ let make ~state =
         user_spying ()
         >>= fun spying_divs ->
         return [
+          h1 [pcdata "Lwt Info"];
+          lwt_monitor_info ();
           h1 [pcdata "Hitscoreweb Log:"];
           display_output_box (stdout ^ stderr);
           h1 [pcdata "Layout  Log:"];
