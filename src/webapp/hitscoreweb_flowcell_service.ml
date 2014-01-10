@@ -46,7 +46,7 @@ let sortable_libraries_cell libs =
          ::
            (List.map l (fun (n, p) ->
              Template.a_link Services.libraries
-               [pcdata n] ([`basic;`fastq], [qname (n, p)]))
+               [pcdata n] ([`basic;`fastq],  ([qname (n, p)], None)))
              |> interleave_list ~sep:(pcdata ", ")))) in
   let cell =
     paragraphs @ [
@@ -54,7 +54,7 @@ let sortable_libraries_cell libs =
         p [
           pcdata " (";
           Template.a_link Services.libraries [pcdata "all"]
-            ([`basic; `fastq], List.map ~f:qname libs);
+            ([`basic; `fastq], (List.map ~f:qname libs, None));
           pcdata ")"
         ]
       else

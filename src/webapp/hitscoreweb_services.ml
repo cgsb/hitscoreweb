@@ -75,8 +75,12 @@ let libraries =
   make (
     Eliom_service.service
       ~path:["libraries"]
-      ~get_params:Eliom_parameter.(set libraries_show_eliom_type "show"
-                                    ** set string "qualified_name"))
+      ~get_params:Eliom_parameter.(
+        set libraries_show_eliom_type "show"
+        **  (set string "qualified_name")
+        **  (opt (int "range_from" ** int "range_to"))
+      )
+  )
 
 let evaluations =
   make (Eliom_service.service

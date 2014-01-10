@@ -19,7 +19,8 @@ let qualified_name po n =
 
 let qualified_link ~showing po n =
   let qn = qualified_name po n in
-  [Template.a_link Services.libraries [Html5.pcdata n] (showing, [qn])]
+  [Template.a_link Services.libraries [Html5.pcdata n] 
+     (showing, ([qn], None))]
 
 let layout_id_link type_name id =
   let open Html5 in
@@ -29,7 +30,7 @@ let intro_paragraph info =
   let open Html5 in
   let make_link (shwg, name) =
     Template.a_link Services.libraries [pcdata name]
-      (shwg, info#qualified_names) in
+      (shwg,  (info#qualified_names, None)) in
   let links =
     List.map [ [`basic; `stock], "Metadata";
                [`basic; `fastq], "Sequencing Info";
@@ -681,21 +682,49 @@ let libraries ~showing work_started info_got info =
   >>| Option.map ~f:(fun ul -> ul.Authentication.person)
   >>= fun user_opt ->
   let libnb = List.length info#libraries in
+  let title =
+    pcdataf "Viewing %d %sLibrar%s" libnb
+      (if libnb = info#total_number then "" else
+         sprintf "(of %d) " info#total_number)
+      (if libnb = 1 then "y" else "ies")
+  in
+  let range_links =
+    if libnb = info#total_number then [] else (
+      let ranges =
+        let total = info#total_number in
+        let width = 30 in
+        let full_ranges_nb = (total / width) in
+        let additional = total mod width <> 0 in
+        List.init full_ranges_nb (fun n -> (n * width, (n + 1)  * width - 1))
+        @ (if additional then [(full_ranges_nb * width, total - 1)] else [])
+      in
+      [
+        strong [pcdata "View libraries: "];
+        span (
+          List.map ranges ~f:(fun (b, e) ->
+            span [
+              Template.a_link Services.libraries 
+                [pcdataf "[%d, %d]" (b + 1) (e + 1)] 
+                (showing, (info#qualified_names, (Some (b, e))));
+              pcdataf ", ";
+            ]))
+      ]
+    ) in
   return Template.(
-    content_section (pcdataf "Viewing %d Librar%s" libnb
-                       (if libnb = 1 then "y" else "ies"))
-      (content_list [
-        benchmarks;
-        content_section (pcdataf "Summary Table")
-          (content_list [
-            content_paragraph (intro_paragraph info);
-            libraries_table ~classy_cache ~user_opt ~showing ~can_view_fastq_details;
-           ]);
-        details;
-      ]))
+      content_section title
+        (content_list [
+           benchmarks;
+           content_section (pcdataf "Summary Table")
+             (content_list [
+                content_paragraph range_links;
+                content_paragraph (intro_paragraph info);
+                libraries_table ~classy_cache ~user_opt ~showing ~can_view_fastq_details;
+              ]);
+           details;
+         ]))
 
 let filter_classy_libraries_information
-    ~exclude ~qualified_names ~configuration ~people_filter info =
+    ~range ~exclude ~qualified_names ~configuration ~people_filter info =
   while_sequential info#libraries ~f:(fun l ->
     let qualified = qualified_name l#stock#project l#stock#name in
     if not (List.exists exclude ((=) qualified))
@@ -715,20 +744,26 @@ let filter_classy_libraries_information
   >>| List.filter_opt
   >>= fun filtered ->
   let filtered_time = Time.now () in
+  let extract = 
+    let b, e = range in
+    List.drop filtered b |> (fun l -> List.take l (e - b)) in
+  let total_number = List.length filtered in
   return (object
     method static_info = info
     method filtered_on = filtered_time
     method configuration = configuration
     method qualified_names = qualified_names
-    method libraries = filtered
+    method libraries = extract
+    method total_number = total_number
   end)
 
 let make ~configuration =
   let people_filter people =
     Authentication.authorizes (`view (`libraries_of people)) in
-  (fun (showing, qualified_names) () ->
+  (fun (showing, (qualified_names, range_opt)) () ->
     let work_started = Time.now () in
     let main_title = "Libraries" in
+    let range = Option.value ~default:(0, 30) range_opt in
     Template.default ~title:main_title
       (Authentication.authorizes (`view `libraries)
        >>= function
@@ -744,7 +779,7 @@ let make ~configuration =
            >>= fun cache ->
            let info = cache#classy_libraries in
            filter_classy_libraries_information
-             ~exclude ~people_filter ~configuration ~qualified_names info
+             ~range ~exclude ~people_filter ~configuration ~qualified_names info
            >>= fun filtered_info ->
            let info_got = Time.now () in
            let showing = if showing = [] then [`fastq] else showing in
