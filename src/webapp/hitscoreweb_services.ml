@@ -77,8 +77,9 @@ let libraries =
       ~path:["libraries"]
       ~get_params:Eliom_parameter.(
         set libraries_show_eliom_type "show"
-        **  (set string "qualified_name")
-        **  (opt (int "range_from" ** int "range_to"))
+        ** (set string "qualified_name")
+        ** (opt (int "range_from" ** int "range_to"))
+        ** (set string "filter")
       )
   )
 

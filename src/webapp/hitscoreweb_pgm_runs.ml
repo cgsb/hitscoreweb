@@ -44,7 +44,7 @@ let all_pgm_runs ~configuration =
                     qnames := qn :: !qnames;
                     Some (span [
                         Template.a_link Services.libraries [pcdata sl#name] 
-                          ([`basic;`fastq], ([qn], None));
+                          ([`basic;`fastq], ([qn], (None, [])));
                       ])
                   end
                   else None)
@@ -53,7 +53,7 @@ let all_pgm_runs ~configuration =
             list_of_links @ [
               pcdata " (";
               Template.a_link Services.libraries [pcdata "all"]
-                ([`basic; `fastq],  (!qnames, None));
+                ([`basic; `fastq],  (!qnames, (None, [])));
               pcdata ")"
             ]
           in

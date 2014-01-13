@@ -20,17 +20,17 @@ let qualified_name po n =
 let qualified_link ~showing po n =
   let qn = qualified_name po n in
   [Template.a_link Services.libraries [Html5.pcdata n] 
-     (showing, ([qn], None))]
+     (showing, ([qn], (None, [])))]
 
 let layout_id_link type_name id =
   let open Html5 in
   Template.a_link Services.layout [codef "%d" id] ([type_name], [id])
 
-let intro_paragraph info =
+let intro_paragraph ~filter ~range info =
   let open Html5 in
   let make_link (shwg, name) =
     Template.a_link Services.libraries [pcdata name]
-      (shwg,  (info#qualified_names, None)) in
+      (shwg,  (info#qualified_names, (range, filter))) in
   let links =
     List.map [ [`basic; `stock], "Metadata";
                [`basic; `fastq], "Sequencing Info";
@@ -662,7 +662,7 @@ let per_lirbary_simple_details info =
 
 
 
-let libraries ~showing work_started info_got info =
+let libraries ~showing ~filter ~range work_started info_got info =
   let open Html5 in
 
   let libraries_table = libraries_table info in
@@ -705,25 +705,62 @@ let libraries ~showing work_started info_got info =
             span [
               Template.a_link Services.libraries 
                 [pcdataf "[%d, %d]" (b + 1) (e + 1)] 
-                (showing, (info#qualified_names, (Some (b, e))));
+                (showing, (info#qualified_names, (Some (b, e), filter)));
               pcdataf ", ";
             ]))
       ]
     ) in
+  let search_form =
+    let open Html5 in [
+      strong [pcdata "Filter "];
+      pcdata "(plus-separated list of patterns, e.g. “bouh + bah”):";
+      get_form ~service:Services.(libraries ()) 
+        (fun (showing_name, (qn_name, (range_name, filter_name))) ->
+          let showing_inputs =
+            List.map showing (fun sh ->
+              user_type_input 
+                Services.string_of_libraries_show ~input_type:`Hidden
+                ~value:sh ~name:showing_name ()) in
+          let qn_inputs =
+            List.map info#qualified_names (fun qn ->
+              string_input ~input_type:`Hidden ~value:qn ()) in
+          (* Passing the range while changing the filter does not really make
+             sense. *)
+          showing_inputs @ qn_inputs
+          @ [
+            string_input ~input_type:`Text ~name:filter_name
+              ~value:(String.concat ~sep:" + " filter) ();
+            button ~button_type:`Submit [pcdata "Go!"];
+          ])
+    ] in
   return Template.(
       content_section title
         (content_list [
            benchmarks;
            content_section (pcdataf "Summary Table")
              (content_list [
+                content_paragraph search_form;
                 content_paragraph range_links;
-                content_paragraph (intro_paragraph info);
+                content_paragraph (intro_paragraph ~filter ~range info);
                 libraries_table ~classy_cache ~user_opt ~showing ~can_view_fastq_details;
               ]);
            details;
          ]))
 
+let flat_list_of_words lib =
+  return (List.filter_opt [
+      Some lib#stock#name;
+      lib#stock#project;
+      lib#stock#description;
+      Option.map lib#sample (fun s -> s#sample#name);
+      Option.(lib#sample >>= fun s -> s#organism >>= fun o -> o#name);
+      Some (String.concat ~sep:"/" (Array.to_list lib#stock#application));
+      Option.map lib#preparator ~f:(fun p -> p#email);
+      Option.map lib#protocol ~f:(fun p -> p#name);
+    ])
+
 let filter_classy_libraries_information
+    ?(filter=[])
     ~range ~exclude ~qualified_names ~configuration ~people_filter info =
   while_sequential info#libraries ~f:(fun l ->
     let qualified = qualified_name l#stock#project l#stock#name in
@@ -737,7 +774,28 @@ let filter_classy_libraries_information
         |> List.map ~f:(fun p -> p#g_pointer) in
       people_filter people
       >>= function
-      | true -> return (Some l)
+      | true -> 
+        begin match filter with
+        | [] -> return (Some l)
+        | words ->
+          flat_list_of_words l
+          >>= fun flat ->
+          let success =
+            let pcre_matches rex str =
+              try ignore (Pcre.exec ~rex str); true with _ -> false in
+            let pcre_build qs =
+              try Pcre.regexp ~flags:[`CASELESS] qs
+              with _ -> Pcre.regexp (String.make 42 'B') in
+            let rexes = List.map words pcre_build in
+            List.for_all rexes (fun rex ->
+              List.exists flat (fun libword ->
+                pcre_matches rex libword))
+          in
+          (* dbgt "words: [%s] against lib: [%s]" *)
+          (*   (String.concat ~sep:"," words) *)
+          (*   (String.concat ~sep:"," flat); *)
+          if success then return (Some l) else return None
+        end
       | false -> return None
     end
     else return None)
@@ -760,10 +818,13 @@ let filter_classy_libraries_information
 let make ~configuration =
   let people_filter people =
     Authentication.authorizes (`view (`libraries_of people)) in
-  (fun (showing, (qualified_names, range_opt)) () ->
+  (fun (showing, (qualified_names, (range_opt, filter))) () ->
     let work_started = Time.now () in
     let main_title = "Libraries" in
     let range = Option.value ~default:(0, 30) range_opt in
+    let filter =
+      List.map filter (fun patt ->
+        String.split ~on:'+' patt |> List.map ~f:String.strip) |> List.concat in
     Template.default ~title:main_title
       (Authentication.authorizes (`view `libraries)
        >>= function
@@ -778,7 +839,7 @@ let make ~configuration =
            Web_data_access.classy_cache ()
            >>= fun cache ->
            let info = cache#classy_libraries in
-           filter_classy_libraries_information
+           filter_classy_libraries_information ~filter
              ~range ~exclude ~people_filter ~configuration ~qualified_names info
            >>= fun filtered_info ->
            let info_got = Time.now () in
@@ -788,7 +849,8 @@ let make ~configuration =
              (List.map showing Services.string_of_libraries_show
               |> String.concat ~sep:", ")
            >>= fun () ->
-           libraries ~showing work_started info_got filtered_info)
+           libraries ~showing ~filter ~range:range_opt work_started info_got
+             filtered_info)
        | false ->
          Template.make_authentication_error ~configuration ~main_title
            (return [Html5.pcdataf "You may not view the libraries."])))

@@ -384,7 +384,7 @@ let menu_ul () =
      [a_link Services.persons [pcdata "Persons"] (None, [])]);
     (`view `libraries,
      [a_link Services.libraries [pcdata "Libraries"]
-        ([`basic; `fastq], ([], None)); ]);
+        ([`basic; `fastq], ([], (None, []))); ]);
     (`view `facility_statistics,
      [a_link Services.facility_statistics [pcdata "Stats"] (); ]);
     (`view `all_evaluations,
