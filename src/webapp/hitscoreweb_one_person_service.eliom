@@ -851,9 +851,8 @@ let edit_api_tokens_interface person_email (api_tokens : (string * string) list)
                   | New_api_token (n, t) ->
                     elt##innerHTML <-
                       ksprintf Js.string
-                        "<b>A new API token was successfully created:\
-                          Name: %s, Value: %s
-                         </b>" n t;
+                        "<b>A new API token:</b> \
+                          Name: %S, Value: <code>%s</code>" n t;
                     return ()
                   | Error_string s ->
                     dbg "Error: %S" s;
