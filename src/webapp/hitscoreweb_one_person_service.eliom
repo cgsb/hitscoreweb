@@ -90,12 +90,14 @@ let init_email_verification_service ~state =
 
 {shared{
 type up_message =
-| Change_password of string * string * string  (* email, pwd1, pwd2 *)
-| Change_email of string * string
-| Set_primary_email of string
-| Delete_email of string
-| Add_secondary_email of string * string
-| Create_api_token of string * string (* email × name-of-token *)
+  | Change_password of string * string * string  (* email, pwd1, pwd2 *)
+  | Change_email of string * string
+  | Set_primary_email of string
+  | Delete_email of string
+  | Add_secondary_email of string * string
+  | Create_api_token of string * string (* email × name-of-token *)
+  | Delete_api_token of string * string * string
+  (* email × name-of-token × token-hash*)
 deriving (Json)
 
 type down_message =
@@ -267,6 +269,28 @@ let reply ~state =
                            [| atp#pointer |])
                 >>= fun () ->
                 return (New_api_token (token_name, new_token)))) ()
+      end
+  | Delete_api_token (email, token_name, token_hash) ->
+    do_edition ~state email (fun p -> `api_tokens_of_person p)
+      begin fun person ->
+        let configuration = State.configuration state in
+        Web_data_access.wrap_action (fun () ->
+            with_database ~configuration (fun ~dbh ->
+                let layout = Classy.make dbh in
+                layout#authentication_token#all
+                >>| List.filter
+                  ~f:(fun t -> t#name = token_name && t#hash = token_hash)
+                >>= fun all_matching_tokens ->
+                person#set_auth_tokens
+                  Array.(
+                    filter (person#auth_tokens) ~f:(fun p ->
+                        List.for_all all_matching_tokens
+                          ~f:(fun t-> t#g_id <> p#id))
+                    |> map ~f:(fun p -> p#pointer)
+                  )
+                >>= fun () ->
+                (* we explicitely do not remove the auth token for now *)
+                return Success)) ()
       end
 
 let init_caml_service ~state =
@@ -763,29 +787,31 @@ let edit_api_tokens_interface person_email (api_tokens : (string * string) list)
           span
         in
 
-        let delete_email_button email =
+*)
+        let delete_token_button email name token =
           let span =
             (span ~a:[a_class ["like_link"]] [pcdata "delete"]) in
           let elt = Html5_to_dom.of_element span in
           elt##onclick <- Dom_html.(handler (fun ev ->
-            dbg "delete_email_button %s" email;
+            dbg "delete_token %s" email;
             elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
             elt##innerHTML <- Js.string "<b>In progress …</b>";
             elt##classList##remove(Js.string "like_link");
             elt##style##fontWeight <- Js.string "bold";
             Lwt.ignore_result
               begin
-                call_caml (Delete_email email)
+                call_caml (Delete_api_token (email, name, token))
                 >>= fun msg ->
                 begin match msg with
                 | Success ->
                   elt##innerHTML <-
-                    ksprintf Js.string "<b>Done.</b>";
-                  reload ()
+                    ksprintf Js.string "<b>Deleted.</b>";
+                  return ()
                 | Error_string s ->
                   dbg "Got Error: %S" s;
                   elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
                   return ()
+                | New_api_token _
                 | Email_verification_in_progress _ ->
                   dbg "Wut?";
                   elt##innerHTML <- ksprintf Js.string
@@ -796,7 +822,6 @@ let edit_api_tokens_interface person_email (api_tokens : (string * string) list)
             Js._true));
           span
         in
-*)
 
         let add_token_button person_email =
           let span =
@@ -863,7 +888,11 @@ let edit_api_tokens_interface person_email (api_tokens : (string * string) list)
                      li [add_token_button %person_email]
                      ::
                      List.map api_tokens ~f:(fun (name, tok) ->
-                         li [pcdataf "Name: %s, Value: %s" name tok]
+                         li [pcdataf "Name: %s, Value: " name;
+                             codef "%s" tok;
+                             pcdata " (";
+                             delete_token_button (%person_email) name tok;
+                             pcdata ")"; ]
                        )
                    )]) in
             Dom.appendChild the_span to_attach;
