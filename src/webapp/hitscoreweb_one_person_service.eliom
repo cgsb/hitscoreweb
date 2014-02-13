@@ -95,12 +95,14 @@ type up_message =
 | Set_primary_email of string
 | Delete_email of string
 | Add_secondary_email of string * string
+| Create_api_token of string * string (* email × name-of-token *)
 deriving (Json)
 
 type down_message =
-| Success
-| Email_verification_in_progress of int * string
-| Error_string of string
+  | New_api_token of string * string (* name × value *)
+  | Success
+  | Email_verification_in_progress of int * string
+  | Error_string of string
 
 let password_minimum_size = 8
 }}
@@ -117,9 +119,9 @@ let do_edition ~state id cap edition =
     Authentication.authorizes (`edit (cap person#g_t))
     >>= fun can_edit ->
     if can_edit
-    then (edition person >>= fun () ->
+    then (edition person >>= fun down_msg ->
           logf "Edition of %s successful" id >>= fun () ->
-          return Success)
+          return down_msg)
     else (
       logf "Attempt to modify %s with authorization" id
       >>= fun () ->
@@ -211,14 +213,19 @@ let reply ~state =
         let new_hash =
           Communication.Authentication.hash_password person#g_id pw1 in
         eprintf "hashed passwd for %s\n%!" id;
-        Web_data_access.wrap_action person#set_password_hash (Some new_hash))
+        Web_data_access.wrap_action person#set_password_hash (Some new_hash)
+        >>= fun () ->
+        return Success)
   | Set_primary_email email ->
     do_edition ~state email (fun p -> `emails_of_person p) (fun person ->
       begin match Array.findi person#secondary_emails (fun _ -> (=) email) with
       | Some (idx, _) ->
         person#secondary_emails.(idx) <- person#email;
-        Web_data_access.wrap_action person#set_secondary_emails person#secondary_emails >>= fun () ->
+        Web_data_access.wrap_action person#set_secondary_emails person#secondary_emails
+        >>= fun () ->
         Web_data_access.wrap_action person#set_email email
+        >>= fun () ->
+        return Success
       | None -> error (`cannot_find_secondary_email)
       end)
   | Delete_email email ->
@@ -229,6 +236,8 @@ let reply ~state =
         let secondary_emails =
           Array.filter person#secondary_emails ~f:((<>) email) in
         Web_data_access.wrap_action person#set_secondary_emails secondary_emails
+        >>= fun () ->
+        return Success
       | None -> error (`cannot_find_secondary_email)
       end)
   | Change_email (current, next) ->
@@ -237,6 +246,28 @@ let reply ~state =
   | Add_secondary_email (id, next) ->
     do_edition ~state id (fun p -> `emails_of_person p)
       (add_or_change_email ~id ~next)
+  | Create_api_token (email, token_name) ->
+    do_edition ~state email (fun p -> `api_tokens_of_person p)
+      begin fun person ->
+        let new_token =
+          Random.self_init ();
+          String.init 128 (fun i -> Random.int 64 + 32 |! Char.of_int_exn)
+          |> Communication.Authentication.hash_password person#g_id
+        in
+        let configuration = State.configuration state in
+        Web_data_access.wrap_action (fun () ->
+            with_database ~configuration (fun ~dbh ->
+                let layout = Classy.make dbh in
+                layout#add_authentication_token ()
+                  ~name:token_name
+                  ~hash:new_token
+                >>= fun atp ->
+                person#set_auth_tokens
+                  Array.(append (map person#auth_tokens ~f:(fun p -> p#pointer))
+                           [| atp#pointer |])
+                >>= fun () ->
+                return (New_api_token (token_name, new_token)))) ()
+      end
 
 let init_caml_service ~state =
   let already = ref false in
@@ -335,6 +366,7 @@ let change_password_interface (person_email : string) =
                     dbg "Got Error: %S" s;
                     the_span##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
                     return ()
+                  | New_api_token _
                   | Email_verification_in_progress _ ->
                     dbg "Wut?";
                     the_span##innerHTML <-
@@ -377,6 +409,227 @@ let change_emails_interface person_email (secondary_emails : string array) =
         let call_caml msg =
           Eliom_client.call_caml_service ~service: %caml msg () in
 
+        let change_email_button email =
+          let span =
+            (span ~a:[a_class ["like_link"]] [pcdata "change"]) in
+          let elt = Html5_to_dom.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "change %s" email;
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            elt##innerHTML <- Js.string "change: ";
+            elt##classList##remove(Js.string "like_link");
+            elt##style##fontWeight <- Js.string "bold";
+            let field, submit =
+              let open Html5 in
+              (string_input ~input_type:`Text ~value:email (),
+               button ~button_type:`Button [pcdata "submit"]) in
+            let submit_elt = Html5_to_dom.of_element submit in
+            let field_elt = Html5_to_dom.of_input field in
+            submit_elt##onclick <- Dom_html.(handler (fun ev ->
+              elt##innerHTML <- Js.string "<b>In progress …</b>";
+              Lwt.ignore_result
+                begin
+                  let s = Js.to_string field_elt##value in
+                  call_caml (Change_email (email, s))
+                  >>= fun msg ->
+                  begin match msg with
+                  | New_api_token _
+                  | Success ->
+                    dbg "Wut?";
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>Error: Unexpected response from server</b>";
+                    return ()
+                  | Email_verification_in_progress (t, s) ->
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>An email has been sent to %S to verify the address \
+                      (the link will expire in %d minutes).</b>" s t;
+                    return ()
+                  | Error_string s ->
+                    dbg "Got Error: %S" s;
+                    elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                    return ()
+                  end
+                end;
+              Js._true));
+            Dom.appendChild elt field_elt;
+            Dom.appendChild elt submit_elt;
+            Js._true));
+          span
+        in
+
+        let add_email_button person_email =
+          let span =
+            (span ~a:[a_class ["like_link"]]
+               [pcdata "add an email address"]) in
+          let elt = Html5_to_dom.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "add email";
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            elt##innerHTML <- Js.string "enter a valid email address: ";
+            elt##classList##remove(Js.string "like_link");
+            elt##style##fontWeight <- Js.string "bold";
+            let field, submit =
+              let open Html5 in
+              (string_input ~input_type:`Text (),
+               button ~button_type:`Button [pcdata "submit"]) in
+            let submit_elt = Html5_to_dom.of_element submit in
+            let field_elt = Html5_to_dom.of_input field in
+            submit_elt##onclick <- Dom_html.(handler (fun ev ->
+              elt##innerHTML <- Js.string "<b>In progress …</b>";
+              Lwt.ignore_result
+                begin
+                  let s = Js.to_string field_elt##value in
+                  call_caml (Add_secondary_email (person_email, s))
+                  >>= fun msg ->
+                  begin match msg with
+                  | Email_verification_in_progress (t, s) ->
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>An email has been sent to %S to verify the address \
+                      (the link will expire in %d minutes).</b>" s t;
+                    return ()
+                  | Error_string s ->
+                    dbg "Got Error: %S" s;
+                    elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                    return ()
+                  | New_api_token _
+                  | Success ->
+                    dbg "Wut?";
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>Error: Unexpected response from server</b>";
+                    return ()
+                  end
+                end;
+              Js._true));
+            Dom.appendChild elt field_elt;
+            Dom.appendChild elt submit_elt;
+            Js._true));
+          span
+        in
+
+        let set_primary_email_button email =
+          let span =
+            (span ~a:[a_class ["like_link"]] [pcdata "set as primary"]) in
+          let elt = Html5_to_dom.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "set_primary_email_button %s" email;
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            elt##innerHTML <- Js.string "<b>In progress …</b>";
+            elt##classList##remove(Js.string "like_link");
+            elt##style##fontWeight <- Js.string "bold";
+            Lwt.ignore_result
+              begin
+                call_caml (Set_primary_email email)
+                >>= fun msg ->
+                begin match msg with
+                | Success ->
+                  elt##innerHTML <-
+                    ksprintf Js.string "<b>Done.</b>";
+                  reload ()
+                | Error_string s ->
+                  dbg "Got Error: %S" s;
+                  elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                  return ()
+                | New_api_token _
+                | Email_verification_in_progress _ ->
+                  dbg "Wut?";
+                  elt##innerHTML <- ksprintf Js.string
+                    "<b>Error: Unexpected response from server</b>";
+                  return ()
+                end
+              end;
+            Js._true));
+          span
+        in
+
+        let delete_email_button email =
+          let span =
+            (span ~a:[a_class ["like_link"]] [pcdata "delete"]) in
+          let elt = Html5_to_dom.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "delete_email_button %s" email;
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            elt##innerHTML <- Js.string "<b>In progress …</b>";
+            elt##classList##remove(Js.string "like_link");
+            elt##style##fontWeight <- Js.string "bold";
+            Lwt.ignore_result
+              begin
+                call_caml (Delete_email email)
+                >>= fun msg ->
+                begin match msg with
+                | Success ->
+                  elt##innerHTML <-
+                    ksprintf Js.string "<b>Done.</b>";
+                  reload ()
+                | Error_string s ->
+                  dbg "Got Error: %S" s;
+                  elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                  return ()
+                | New_api_token _
+                | Email_verification_in_progress _ ->
+                  dbg "Wut?";
+                  elt##innerHTML <- ksprintf Js.string
+                    "<b>Error: Unexpected response from server</b>";
+                  return ()
+                end
+              end;
+            Js._true));
+          span
+        in
+
+        let the_span = get_element_exn %chgpwd_id in
+        the_span##onclick <-
+          Dom_html.(handler (fun ev ->
+            the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            the_span##innerHTML <-
+              Js.string "Please, configure your email addresses: ";
+            the_span##classList##remove(Js.string "like_link");
+            let to_attach =
+              Html5_to_dom.of_div
+                (div [ul
+                         (li [pcdata %person_email;
+                              pcdata " (primary) → ";
+                              change_email_button %person_email;]
+                          :: li [add_email_button %person_email;]
+                          :: (List.map (fun e ->
+                            li [pcdata e; pcdata " → ";
+                                change_email_button e; pcdata ", ";
+                                delete_email_button e; pcdata ", or ";
+                                set_primary_email_button e])
+                                (Array.to_list %secondary_emails)))
+                     ]) in
+            Dom.appendChild the_span to_attach;
+            Js._true
+          ));
+
+      end
+    with e ->
+      dbg "Exception in onload for %S: %s" %chgpwd_id (Printexc.to_string e);
+      ()
+  }};
+  the_link_like
+
+
+let edit_api_tokens_interface person_email (api_tokens : (string * string) list) =
+  let chgpwd_id = unique_id "edit_api_tokens" in
+  let the_link_like =
+    let open Html5 in
+    [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
+        [pcdata "You may edit your API tokens"]] in
+  let caml = caml_service () in
+  ignore {unit{
+    let open Html5 in
+    let open Lwt in
+    try
+      begin
+
+        let api_tokens = %api_tokens in
+        let call_caml msg =
+          Eliom_client.call_caml_service ~service: %caml msg () in
+(*
         let change_email_button email =
           let span =
             (span ~a:[a_class ["like_link"]] [pcdata "change"]) in
@@ -543,31 +796,79 @@ let change_emails_interface person_email (secondary_emails : string array) =
             Js._true));
           span
         in
+*)
+
+        let add_token_button person_email =
+          let span =
+            (span ~a:[a_class ["like_link"]]
+               [pcdata "Create a new token."]) in
+          let elt = Html5_to_dom.of_element span in
+          elt##onclick <- Dom_html.(handler (fun ev ->
+            dbg "add token";
+            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
+            elt##innerHTML <- Js.string "A name for the token: ";
+            elt##classList##remove(Js.string "like_link");
+            elt##style##fontWeight <- Js.string "bold";
+            let field, submit =
+              let open Html5 in
+              (string_input ~input_type:`Text (),
+               button ~button_type:`Button [pcdata "submit"]) in
+            let submit_elt = Html5_to_dom.of_element submit in
+            let field_elt = Html5_to_dom.of_input field in
+            submit_elt##onclick <- Dom_html.(handler (fun ev ->
+              elt##innerHTML <- Js.string "<b>In progress …</b>";
+              Lwt.ignore_result
+                begin
+                  let s = Js.to_string field_elt##value in
+                  call_caml (Create_api_token (person_email, s))
+                  >>= fun msg ->
+                  begin match msg with
+                  | New_api_token (n, t) ->
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                        "<b>A new API token was successfully created:\
+                          Name: %s, Value: %s
+                         </b>" n t;
+                    return ()
+                  | Error_string s ->
+                    dbg "Error: %S" s;
+                    elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
+                    return ()
+                  | Success
+                  | Email_verification_in_progress _ ->
+                    dbg "Wut?";
+                    elt##innerHTML <-
+                      ksprintf Js.string
+                      "<b>Error: Unexpected response from server</b>";
+                    return ()
+                  end
+                end;
+              Js._true));
+            Dom.appendChild elt field_elt;
+            Dom.appendChild elt submit_elt;
+            Js._true));
+          span
+        in
 
         let the_span = get_element_exn %chgpwd_id in
         the_span##onclick <-
           Dom_html.(handler (fun ev ->
             the_span##onclick <- Dom_html.(handler (fun ev -> Js._true));
             the_span##innerHTML <-
-              Js.string "Please, configure your email addresses: ";
+              Js.string "Please, configure your API Tokens: ";
             the_span##classList##remove(Js.string "like_link");
             let to_attach =
               Html5_to_dom.of_div
-                (div [ul
-                         (li [pcdata %person_email;
-                              pcdata " (primary) → ";
-                              change_email_button %person_email;]
-                          :: li [add_email_button %person_email;]
-                          :: (List.map (fun e ->
-                            li [pcdata e; pcdata " → ";
-                                change_email_button e; pcdata ", ";
-                                delete_email_button e; pcdata ", or ";
-                                set_primary_email_button e])
-                                (Array.to_list %secondary_emails)))
-                     ]) in
+                (div [ul (
+                     li [add_token_button %person_email]
+                     ::
+                     List.map api_tokens ~f:(fun (name, tok) ->
+                         li [pcdataf "Name: %s, Value: %s" name tok]
+                       )
+                   )]) in
             Dom.appendChild the_span to_attach;
             Js._true
-          ));
+            ));
 
       end
     with e ->
@@ -607,6 +908,8 @@ let make_view_page ~home ~state person =
   >>= fun can_edit_password ->
   Authentication.authorizes (`edit (`emails_of_person person#g_t))
   >>= fun can_edit_emails ->
+  Authentication.authorizes (`edit (`api_tokens_of_person person#g_t))
+  >>= fun can_edit_api_tokens ->
   let error_message =
     Option.value_map ~default:(span []) potential_error_to_display
       ~f:(fun e ->
@@ -618,6 +921,24 @@ let make_view_page ~home ~state person =
   let change_emails_link =
     if not can_edit_emails then []
     else change_emails_interface person#email person#secondary_emails in
+  begin match can_edit_api_tokens with
+  | true ->
+    let configuration = State.configuration state in
+    Web_data_access.wrap_action (fun () ->
+        with_database ~configuration (fun ~dbh ->
+            let layout = Classy.make dbh in
+            layout#person#get person#g_pointer
+            >>= fun fresh_person ->
+            while_sequential (Array.to_list fresh_person#auth_tokens) (fun t ->
+                t#get
+                >>= fun tok ->
+                return (tok#name, tok#hash)))) ()
+    >>= fun api_tokens ->
+    edit_api_tokens_interface person#email api_tokens |> return
+  | false ->
+    return []
+  end
+  >>= fun edit_api_tokens_link ->
   let pv = person in
   return (content_paragraph
             [error_message;
@@ -641,6 +962,7 @@ let make_view_page ~home ~state person =
              div edition_link;
              div change_password_link;
              div change_emails_link;
+             div edit_api_tokens_link;
             ]
   )
 

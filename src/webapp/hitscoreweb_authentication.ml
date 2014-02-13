@@ -37,6 +37,7 @@ type capability = [
   | `password_of_person of Layout.Record_person.t
   | `names_of_person of Layout.Record_person.t
   | `emails_of_person of Layout.Record_person.t
+  | `api_tokens_of_person of Layout.Record_person.t
   | `facility_statistics
   | `own_submission_forms
   | `all_submission_forms
@@ -64,6 +65,7 @@ let roles_allow
       ~f:(fun r -> r <> `auditor && r <> `administrator)
   | `edit something when impersonation || maintenance_mode -> false
   | `edit (`names_of_person p)
+  | `edit (`api_tokens_of_person p)
   (* | `edit (`emails_of_person p) *)
   | `view (`person p) when id_opt = Some p.P.g_id -> true
   | `edit (`password_of_person p) when id_opt = Some p.P.g_id ->
