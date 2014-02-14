@@ -37,8 +37,8 @@ let list_libraries ~configuration ~user query =
         while_sequential hr#demultiplexings (fun dmux ->
           let read_number =
             Data_access.get_fastq_stats lib sub dmux
-            |> Option.map ~f:(fun s -> s.Bui.cluster_count)
-            |> Option.value ~default:0.
+            |> Option.map ~f:(fun s -> Float.to_int s.Bui.cluster_count)
+            |> Option.value ~default:0
           in
           map_option (Data_access.choose_delivery_for_user dmux sub)
             (fun (del, inv) ->
@@ -53,15 +53,20 @@ let list_libraries ~configuration ~user query =
             map_option dmux#unaligned (fun un ->
                 let files =
                   Data_access.user_file_paths ~unaligned:un ~submission:sub lib in
-                let prefix =
-                  Option.value ~default:""
-                    (Configuration.root_path configuration) in
+                let hack_prefix path =
+                  let prefix =
+                    Option.value ~default:""
+                      (Configuration.root_path configuration) in
+                  String.chop_prefix ~prefix path
+                  |>  Option.map ~f:(sprintf "/data/cgsb/gencore/%s")
+                    (* this Hack is due to the fact that the webserver 
+                       has not the same mount as the cluster which was
+                       the initial plan *)
+                in
                 let r1s =
-                  List.map files#fastq_r1s (String.chop_prefix ~prefix)
-                  |> List.filter_opt in
+                  List.map files#fastq_r1s hack_prefix |> List.filter_opt in
                 let r2s =
-                  List.map files#fastq_r2s (String.chop_prefix ~prefix)
-                  |> List.filter_opt in
+                  List.map files#fastq_r2s hack_prefix |> List.filter_opt in
                 return (r1s, r2s, read_number)
               )
           end)
@@ -114,8 +119,8 @@ let list_libraries ~configuration ~user query =
       let csv =
         List.map fastq_data (function
           | ([], _, c) -> base @ [ ""; ""; ""]
-          | (r1 :: _, [], c) -> base @ [ r1; ""; Float.to_string  c]
-          | (r1 :: _, r2 :: _, c) -> base @ [ r1; r2; Float.to_string c]
+          | (r1 :: _, [], c) -> base @ [ r1; ""; Int.to_string  c]
+          | (r1 :: _, r2 :: _, c) -> base @ [ r1; r2; Int.to_string c]
           )
       in
       (* return (object *)
