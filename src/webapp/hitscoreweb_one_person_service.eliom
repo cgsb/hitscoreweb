@@ -642,7 +642,7 @@ let edit_api_tokens_interface person_email (api_tokens : (string * string) list)
   let the_link_like =
     let open Html5 in
     [span ~a:[a_id chgpwd_id; a_class ["like_link"]]
-        [pcdata "You may edit your API tokens"]] in
+        [pcdata "You may manage your API authentication tokens"]] in
   let caml = caml_service () in
   ignore {unit{
     let open Html5 in
@@ -653,141 +653,7 @@ let edit_api_tokens_interface person_email (api_tokens : (string * string) list)
         let api_tokens = %api_tokens in
         let call_caml msg =
           Eliom_client.call_caml_service ~service: %caml msg () in
-(*
-        let change_email_button email =
-          let span =
-            (span ~a:[a_class ["like_link"]] [pcdata "change"]) in
-          let elt = Html5_to_dom.of_element span in
-          elt##onclick <- Dom_html.(handler (fun ev ->
-            dbg "change %s" email;
-            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
-            elt##innerHTML <- Js.string "change: ";
-            elt##classList##remove(Js.string "like_link");
-            elt##style##fontWeight <- Js.string "bold";
-            let field, submit =
-              let open Html5 in
-              (string_input ~input_type:`Text ~value:email (),
-               button ~button_type:`Button [pcdata "submit"]) in
-            let submit_elt = Html5_to_dom.of_element submit in
-            let field_elt = Html5_to_dom.of_input field in
-            submit_elt##onclick <- Dom_html.(handler (fun ev ->
-              elt##innerHTML <- Js.string "<b>In progress …</b>";
-              Lwt.ignore_result
-                begin
-                  let s = Js.to_string field_elt##value in
-                  call_caml (Change_email (email, s))
-                  >>= fun msg ->
-                  begin match msg with
-                  | Success ->
-                    dbg "Wut?";
-                    elt##innerHTML <-
-                      ksprintf Js.string
-                      "<b>Error: Unexpected response from server</b>";
-                    return ()
-                  | Email_verification_in_progress (t, s) ->
-                    elt##innerHTML <-
-                      ksprintf Js.string
-                      "<b>An email has been sent to %S to verify the address \
-                      (the link will expire in %d minutes).</b>" s t;
-                    return ()
-                  | Error_string s ->
-                    dbg "Got Error: %S" s;
-                    elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
-                    return ()
-                  end
-                end;
-              Js._true));
-            Dom.appendChild elt field_elt;
-            Dom.appendChild elt submit_elt;
-            Js._true));
-          span
-        in
 
-        let add_email_button person_email =
-          let span =
-            (span ~a:[a_class ["like_link"]]
-               [pcdata "add an email address"]) in
-          let elt = Html5_to_dom.of_element span in
-          elt##onclick <- Dom_html.(handler (fun ev ->
-            dbg "add email";
-            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
-            elt##innerHTML <- Js.string "enter a valid email address: ";
-            elt##classList##remove(Js.string "like_link");
-            elt##style##fontWeight <- Js.string "bold";
-            let field, submit =
-              let open Html5 in
-              (string_input ~input_type:`Text (),
-               button ~button_type:`Button [pcdata "submit"]) in
-            let submit_elt = Html5_to_dom.of_element submit in
-            let field_elt = Html5_to_dom.of_input field in
-            submit_elt##onclick <- Dom_html.(handler (fun ev ->
-              elt##innerHTML <- Js.string "<b>In progress …</b>";
-              Lwt.ignore_result
-                begin
-                  let s = Js.to_string field_elt##value in
-                  call_caml (Add_secondary_email (person_email, s))
-                  >>= fun msg ->
-                  begin match msg with
-                  | Email_verification_in_progress (t, s) ->
-                    elt##innerHTML <-
-                      ksprintf Js.string
-                      "<b>An email has been sent to %S to verify the address \
-                      (the link will expire in %d minutes).</b>" s t;
-                    return ()
-                  | Error_string s ->
-                    dbg "Got Error: %S" s;
-                    elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
-                    return ()
-                  | Success ->
-                    dbg "Wut?";
-                    elt##innerHTML <-
-                      ksprintf Js.string
-                      "<b>Error: Unexpected response from server</b>";
-                    return ()
-                  end
-                end;
-              Js._true));
-            Dom.appendChild elt field_elt;
-            Dom.appendChild elt submit_elt;
-            Js._true));
-          span
-        in
-
-        let set_primary_email_button email =
-          let span =
-            (span ~a:[a_class ["like_link"]] [pcdata "set as primary"]) in
-          let elt = Html5_to_dom.of_element span in
-          elt##onclick <- Dom_html.(handler (fun ev ->
-            dbg "set_primary_email_button %s" email;
-            elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
-            elt##innerHTML <- Js.string "<b>In progress …</b>";
-            elt##classList##remove(Js.string "like_link");
-            elt##style##fontWeight <- Js.string "bold";
-            Lwt.ignore_result
-              begin
-                call_caml (Set_primary_email email)
-                >>= fun msg ->
-                begin match msg with
-                | Success ->
-                  elt##innerHTML <-
-                    ksprintf Js.string "<b>Done.</b>";
-                  reload ()
-                | Error_string s ->
-                  dbg "Got Error: %S" s;
-                  elt##innerHTML <- ksprintf Js.string "<b>Error: %s</b>" s;
-                  return ()
-                | Email_verification_in_progress _ ->
-                  dbg "Wut?";
-                  elt##innerHTML <- ksprintf Js.string
-                    "<b>Error: Unexpected response from server</b>";
-                  return ()
-                end
-              end;
-            Js._true));
-          span
-        in
-
-*)
         let delete_token_button email name token =
           let span =
             (span ~a:[a_class ["like_link"]] [pcdata "delete"]) in
@@ -833,7 +699,7 @@ let edit_api_tokens_interface person_email (api_tokens : (string * string) list)
             elt##onclick <- Dom_html.(handler (fun ev -> Js._true));
             elt##innerHTML <- Js.string "A name for the token: ";
             elt##classList##remove(Js.string "like_link");
-            elt##style##fontWeight <- Js.string "bold";
+            (* elt##style##fontWeight <- Js.string "bold"; *)
             let field, submit =
               let open Html5 in
               (string_input ~input_type:`Text (),
