@@ -119,6 +119,8 @@ let file =
 let register_file s =
   Eliom_registration.Any.register ~service:(s ())
 
+(* let api = .. has been moved to Hitscoreweb_api to speed up compilation *)
+
 let register f =
   Output_app.register
     ~content_type:"text/html"

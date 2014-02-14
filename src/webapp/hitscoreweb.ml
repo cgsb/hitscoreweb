@@ -743,6 +743,8 @@ TODO: All exceptions in coservices should be handled in some other way
       Services.(register fastx_results)
         All_or_any_fastx_stats.(make ~configuration:hitscore_configuration);
 
+      Hitscoreweb_api.make ~configuration:hitscore_configuration;
+
       logf "All services are registered" |> Lwt.ignore_result;
 
     )
