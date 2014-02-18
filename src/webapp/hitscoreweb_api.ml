@@ -29,7 +29,7 @@ let authenticate ~configuration ?user ?token () =
   | _, _ ->
     error (`authentication "Nope")
 
-let list_libraries ~configuration ~user query =
+let list_libraries ~configuration ~user ~filter_qualified_names () =
   let find_fastq_files lib =
     let module Bui = Hitscore_interfaces.B2F_unaligned_information in
     while_sequential lib#submissions (fun sub ->
@@ -76,7 +76,7 @@ let list_libraries ~configuration ~user query =
   in
   Hitscoreweb_data_access.classy_cache ()
   >>= fun classy_cache ->
-  dbg "qnames: %s" (String.concat ~sep:", " query);
+  dbg "qnames: %s" (String.concat ~sep:", " filter_qualified_names);
   let classy_libs = classy_cache#classy_libraries in
   let libraries =
     let persons_libraries =
@@ -92,16 +92,16 @@ let list_libraries ~configuration ~user query =
       try ignore (Pcre.exec ~rex str); true with _ -> false in
     let pcre_build qs =
       try Pcre.regexp qs with _ -> Pcre.regexp (String.make 42 'B') in
-    if query = []
+    if filter_qualified_names = []
     then persons_libraries
     else
-      List.map query (fun qs ->
-          let rex = pcre_build qs in
-          List.filter persons_libraries (fun l ->
-              pcre_matches rex
-                (sprintf "%s.%s"
-                   (Option.value ~default:"" l#stock#project) l#stock#name)))
-      |! List.concat
+      List.fold ~init:persons_libraries filter_qualified_names 
+        ~f:(fun prev qs ->
+            let rex = pcre_build qs in
+            List.filter prev (fun l ->
+                pcre_matches rex
+                  (sprintf "%s.%s"
+                     (Option.value ~default:"" l#stock#project) l#stock#name)))
   in
   while_sequential libraries (fun l ->
       find_fastq_files l >>= fun fastq_data ->
@@ -150,7 +150,7 @@ let format_libraries ~format result =
     Csv.(output_all csv_output_obj result);
     String.concat ~sep:"" (List.rev !res)
 
-let run ~configuration ~query ?token ?user ~format =
+let run ~configuration ~query ?token ?user ~format ~filter_qualified_names () =
   authenticate ~configuration ?token ?user ()
   >>= fun user ->
   begin match query with
@@ -163,7 +163,7 @@ let run ~configuration ~query ?token ?user ~format =
     | Some other -> error (`wrong_format other)
     end
     >>= fun return_type ->
-    list_libraries ~user ~configuration []
+    list_libraries ~user ~configuration ~filter_qualified_names ()
     >>= fun libs_csv ->
     return (format_libraries ~format:`CSV libs_csv, return_type)
   | Some other -> 
@@ -183,17 +183,20 @@ let service_api =
               ** opt (string "token")
               ** opt (string "user")
               ** opt (string "format")
+              ** set string "filter_qualified_names"
             ))
 let make ~configuration =
   Eliom_registration.Any.register
     ~service:(service_api ())
-    Lwt.(fun (query, (token, (user, format))) () ->
-        dbg "query: %S user: %S token: %S format: %S" 
+    Lwt.(fun (query, (token, (user, (format, filter_qualified_names)))) () ->
+        dbg "query: %S user: %S token: %S format: %S filter_QN: [%s]" 
           (Option.value ~default:"not-provided" query)   
           (Option.value ~default:"not-provided" user)   
           (Option.value ~default:"not-provided" token)   
-          (Option.value ~default:"not-provided" format);
+          (Option.value ~default:"not-provided" format)
+          (String.concat ~sep:"," filter_qualified_names);
         run ~configuration ~query ?token ?user ~format
+          ~filter_qualified_names ()
         >>= function
         | Ok (v, t) -> Eliom_registration.String.send (v, t)
         | Error (`wrong_query s) -> send_error "unknown query: %S" s
