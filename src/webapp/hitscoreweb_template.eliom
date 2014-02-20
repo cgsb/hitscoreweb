@@ -439,11 +439,12 @@ let default ?(title) content =
             core_a
               ~a:[ a_hreff "http://biology.as.nyu.edu/object/biology.facilities.sequencing" ]
               [pcdata "Gencore"];
-            pcdata " 2011 — 2012.  ";
+            pcdata " 2011 — 2014.  ";
+            pcdata "Powered by ";
             core_a ~a:[ a_hreff "http://www.ocaml.org" ] [pcdata "OCaml"];
             pcdata "/";
             core_a ~a:[ a_hreff "http://ocsigen.org" ] [pcdata "Ocsigen"];
-            pcdata " powered.";
+            pcdata ".";
           ];
         ]))
   in
