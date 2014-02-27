@@ -110,35 +110,36 @@ let list_libraries ~configuration ~user ~filter_qualified_names () =
       let li_organism =
         Option.(l#sample >>= fun s ->
                 s#organism >>= fun o -> o#name) in
-      let base = [
-        l#stock#name;
-        Option.value ~default:"" l#stock#project;
-        Option.value ~default:"" l#stock#description;
-        Option.value ~default:"" li_sample;
-        Option.value ~default:"" li_organism;
-      ] in
-      let csv =
-        List.map fastq_data (function
-          | ([], _, c) -> base @ [ ""; ""; ""]
-          | (r1 :: _, [], c) -> base @ [ r1; ""; Int.to_string  c]
-          | (r1 :: _, r2 :: _, c) -> base @ [ r1; r2; Int.to_string c]
-          )
-      in
-      (* return (object *)
-      (*   method name = l#stock#name *)
-      (*   method project = l#stock#project *)
-      (*   method description = l#stock#description *)
-      (*   method sample = li_sample *)
-      (*   method organism = li_organism *)
-      (*   method fastq_files = li_fastq_files *)
-      (* end)) *)
-      return csv)
-  >>= fun result ->
-  return (List.concat result)
+      return (object
+        method name = l#stock#name
+        method project = l#stock#project
+        method description = l#stock#description
+        method sample = li_sample
+        method organism = li_organism
+        method fastq_files = fastq_data
+      end))
 
 let format_libraries ~format result =
   match format with
   | `CSV ->
+    let flattened =
+      List.map result (fun obj  ->
+          let base = [
+            obj#name;
+            Option.value ~default:"" obj#project;
+            Option.value ~default:"" obj#description;
+            Option.value ~default:"" obj#sample;
+            Option.value ~default:"" obj#organism;
+          ] in
+          let csv =
+            List.map obj#fastq_files (function
+              | ([], _, c) -> base @ [ ""; ""; ""]
+              | (r1 :: _, [], c) -> base @ [ r1; ""; Int.to_string  c]
+              | (r1 :: _, r2 :: _, c) -> base @ [ r1; r2; Int.to_string c]
+              )
+          in
+          csv)
+      |> List.concat in
     let res = ref [] in
     let csv_output_obj =
       Csv.to_out_obj ~separator:',' 
@@ -148,7 +149,7 @@ let format_libraries ~format result =
             res := String.sub s x y :: !res;
             y 
         end) in
-    Csv.(output_all csv_output_obj result);
+    Csv.(output_all csv_output_obj flattened);
     String.concat ~sep:"" (List.rev !res)
 
 let run ~configuration ~query ?token ?user ~format ~filter_qualified_names () =
@@ -157,16 +158,16 @@ let run ~configuration ~query ?token ?user ~format ~filter_qualified_names () =
   begin match query with
   | None | Some "libraries" ->
     begin match format with
-    | Some "html/csv" -> return "text/html"
+    | Some "html/csv" -> return (`CSV, "text/html")
     | Some "csv" | None -> 
       (* returning `text/csv` because http://tools.ietf.org/html/rfc4180 *) 
-      return "text/csv"
+      return (`CSV, "text/csv")
     | Some other -> error (`wrong_format other)
     end
-    >>= fun return_type ->
+    >>= fun (format, return_type) ->
     list_libraries ~user ~configuration ~filter_qualified_names ()
     >>= fun libs_csv ->
-    return (format_libraries ~format:`CSV libs_csv, return_type)
+    return (format_libraries ~format libs_csv, return_type)
   | Some other -> 
     error (`wrong_query other)
   end
