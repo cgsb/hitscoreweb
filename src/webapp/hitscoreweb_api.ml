@@ -151,6 +151,32 @@ let format_libraries ~format result =
         end) in
     Csv.(output_all csv_output_obj flattened);
     String.concat ~sep:"" (List.rev !res)
+  | `JSON ->
+    let array =
+      List.map result (fun lib ->
+          let string_or_null = function
+          | Some s -> `String s
+          | None -> `Null in
+          let fastq = 
+            List.map lib#fastq_files (fun (r1s, r2s, readnb) ->
+                `Object [
+                  "R1", `Array (List.map r1s (fun r -> `String r));
+                  "R2", `Array (List.map r1s (fun r -> `String r));
+                  "read_count", `String (Int.to_string readnb);
+                ]) in
+          let base = `Object [
+            "name", `String lib#name;
+            "project", string_or_null lib#project;
+            "description", string_or_null lib#description;
+            "sample",      string_or_null lib#sample;
+            "organism",    string_or_null lib#organism;
+            "fastq_files", `Array fastq;
+          ] in
+          base)
+    in
+    Json_output.to_string (`Array array)
+
+
 
 let run ~configuration ~query ?token ?user ~format ~filter_qualified_names () =
   authenticate ~configuration ?token ?user ()
@@ -162,6 +188,8 @@ let run ~configuration ~query ?token ?user ~format ~filter_qualified_names () =
     | Some "csv" | None -> 
       (* returning `text/csv` because http://tools.ietf.org/html/rfc4180 *) 
       return (`CSV, "text/csv")
+    | Some "json" -> 
+      return (`JSON, "application/json")
     | Some other -> error (`wrong_format other)
     end
     >>= fun (format, return_type) ->
