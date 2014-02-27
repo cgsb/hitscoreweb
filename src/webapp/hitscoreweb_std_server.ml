@@ -148,17 +148,19 @@ module Json_output = struct
   (* See http://erratique.ch/software/jsonm/doc/Jsonm.html
     “Generic JSON representation”
   *)
-  type json = 
+  type json_base = 
     [ `Null | `Bool of bool | `Float of float| `String of string
-    | `A of json list | `O of (string * json) list ]
+    | `Array of json_base list | `Object of (string * json_base) list ]
+  type json = 
+    [ `Array of json_base list | `Object of (string * json_base) list ]
 
   let json_to_dst ~minify 
       (dst : [`Channel of out_channel | `Buffer of Buffer.t ]) 
       (json : json) =
     let enc e l = ignore (Jsonm.encode e (`Lexeme l)) in
     let rec value v k e = match v with 
-    | `A vs -> arr vs k e 
-    | `O ms -> obj ms k e 
+    | `Array vs -> arr vs k e 
+    | `Object ms -> obj ms k e 
     | `Null | `Bool _ | `Float _ | `String _ as v -> enc e v; k e
     and arr vs k e = enc e `As; arr_vs vs k e
     and arr_vs vs k e = match vs with 
@@ -172,8 +174,7 @@ module Json_output = struct
     let e = Jsonm.encoder ~minify dst in
     let finish e = ignore (Jsonm.encode e `End) in
     match json with
-    | `A _ | `O _ as json -> value json finish e
-    | _ -> invalid_arg "invalid json text"
+    | `Array _ | `Object _ as json -> value (json : json_base) finish e
 
 
   let to_string json =
