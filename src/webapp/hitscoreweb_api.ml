@@ -91,7 +91,8 @@ let list_libraries ~configuration ~user ~filter_qualified_names () =
     let pcre_matches rex str =
       try ignore (Pcre.exec ~rex str); true with _ -> false in
     let pcre_build qs =
-      try Pcre.regexp qs with _ -> Pcre.regexp (String.make 42 'B') in
+      try Pcre.regexp ~flags:[`ANCHORED; `DOLLAR_ENDONLY] (qs ^ "$")
+      with _ -> Pcre.regexp (String.make 42 'B') in
     if filter_qualified_names = []
     then persons_libraries
     else
